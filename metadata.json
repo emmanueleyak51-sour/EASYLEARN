@@ -1,0 +1,6 @@
+{
+  "name": "Road to Campus",
+  "description": "National SS1–SS3 secondary learning platform across Mathematics, Chemistry, Physics, Biology, Agricultural Science, Economics, and English Language with interactive lessons, virtual laboratories, AI mentors, and spaced mastery.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
