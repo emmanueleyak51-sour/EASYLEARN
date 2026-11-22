@@ -1,5 +1,6 @@
 import type { Question, SubjectId, Topic, UserProgress } from '../types';
 import { SUBJECT_INFO, bankForTopic, perm } from './engine';
+import { SUBJECT_TUTOR_REGISTRY } from './tutorRegistry';
 
 export interface PeerDuelSpec {
   code: string;
@@ -9,35 +10,25 @@ export interface PeerDuelSpec {
   title: string;
 }
 
-const VALID_SUBJ_MAP: Record<string, SubjectId> = {
-  MTH: 'maths',
-  FMT: 'fmaths',
-  CHM: 'chem',
-  PHY: 'phys',
-  BIO: 'bio',
-  AGR: 'agric',
-  GEO: 'geog',
-  ECN: 'econ',
-  ENG: 'eng',
-  CVC: 'civic',
-  DGT: 'digitech',
-  DPR: 'dataproc',
-};
+const SUBJ_TO_TAG: Record<SubjectId, string> = (
+  Object.keys(SUBJECT_TUTOR_REGISTRY) as SubjectId[]
+).reduce(
+  (acc, id) => {
+    acc[id] = SUBJECT_TUTOR_REGISTRY[id].duelTag;
+    return acc;
+  },
+  {} as Record<SubjectId, string>
+);
 
-const SUBJ_TO_TAG: Record<SubjectId, string> = {
-  maths: 'MTH',
-  fmaths: 'FMT',
-  chem: 'CHM',
-  phys: 'PHY',
-  bio: 'BIO',
-  agric: 'AGR',
-  geog: 'GEO',
-  econ: 'ECN',
-  eng: 'ENG',
-  civic: 'CVC',
-  digitech: 'DGT',
-  dataproc: 'DPR',
-};
+const VALID_SUBJ_MAP: Record<string, SubjectId> = (
+  Object.keys(SUBJ_TO_TAG) as SubjectId[]
+).reduce(
+  (acc, id) => {
+    acc[SUBJ_TO_TAG[id]] = id;
+    return acc;
+  },
+  {} as Record<string, SubjectId>
+);
 
 export function createDuelCode(subj: SubjectId, seedOverride?: string): PeerDuelSpec {
   const tag = SUBJ_TO_TAG[subj] || 'MTH';

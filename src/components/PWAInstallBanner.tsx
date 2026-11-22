@@ -35,7 +35,7 @@ export function PWAInstallButton({
         }
       >
         <Icon name="bolt" size={15} />
-        <span>Install Offline App</span>
+        <span>Install offline app</span>
       </button>
     );
   }
@@ -52,7 +52,7 @@ export function PWAInstallButton({
         }
       >
         <Icon name="books" size={15} />
-        <span>{isIOS ? 'Install on iPhone / iPad' : 'Install Offline PWA'}</span>
+        <span>{isIOS ? 'Install on iPhone or iPad' : 'Install offline app'}</span>
       </button>
 
       {showGuide && (
@@ -92,7 +92,7 @@ export function PWAInstallButton({
               <ol className="text-[13.5px] text-[var(--ink)] space-y-2 list-decimal pl-5 leading-relaxed">
                 <li>Open your browser menu (<strong>⋮</strong> or the address bar install icon).</li>
                 <li>Select <strong>Install EYAK</strong> or <strong>Add to Home Screen</strong>.</li>
-                <li>All 12 subjects and practice banks cache automatically for offline study.</li>
+                <li>All 49 JAMB and WAEC/NECO subjects save automatically so you can study offline.</li>
               </ol>
             )}
 
@@ -120,7 +120,7 @@ export function OfflineIndicator() {
       className="fixed bottom-16 min-[980px]:bottom-5 left-4 z-50 rounded-xl bg-amber-600 text-white px-3.5 py-2 text-[12.5px] font-semibold shadow-lg flex items-center gap-2 border border-amber-400/40"
     >
       <Icon name="shield" size={15} />
-      <span>Offline Mode · Notes, formulas &amp; drills cached locally</span>
+      <span>Offline mode · Your notes and practice questions are saved on this device</span>
     </div>
   );
 }

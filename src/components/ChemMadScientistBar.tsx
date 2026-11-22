@@ -1,23 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useSyncLiveCoachContext } from '../context/LiveCoachContext';
+import {
+  liveCoachModeToSubjectId,
+  useSyncLiveCoachContext,
+  type LiveCoachMode,
+} from '../context/LiveCoachContext';
+import { useEntitlement } from '../context/EntitlementContext';
 import type { ChemLessonVoiceContext } from '../utils/chemVoiceLogic';
+import { SUBJECT_TUTOR_REGISTRY } from '../utils/tutorRegistry';
+import { unlockStudioAudioOnGesture } from '../utils/studioAudioPlayer';
 import { Icon } from './Icons';
 
 type TtsState = 'idle' | 'loading' | 'playing' | 'paused';
-type VoiceMode =
-  | 'chem'
-  | 'math'
-  | 'fmath'
-  | 'mathLab'
-  | 'phys'
-  | 'bio'
-  | 'agric'
-  | 'geog'
-  | 'econ'
-  | 'eng'
-  | 'civic'
-  | 'digitech'
-  | 'dataproc';
+type VoiceMode = LiveCoachMode | 'mathLab';
 
 interface CachedAudioPayload {
   bytes: Uint8Array;
@@ -100,18 +94,10 @@ export function ChemMadScientistBar({
   actionLabel?: string;
   muted?: boolean;
 }) {
+  const { isPremium } = useEntitlement();
   const isMathLab = mode === 'mathLab';
-  const isMath = mode === 'math';
-  const isFMath = mode === 'fmath';
-  const isPhys = mode === 'phys';
-  const isBio = mode === 'bio';
-  const isAgric = mode === 'agric';
-  const isGeog = mode === 'geog';
-  const isEcon = mode === 'econ';
-  const isEng = mode === 'eng';
-  const isCivic = mode === 'civic';
-  const isDigiTech = mode === 'digitech';
-  const isDataProc = mode === 'dataproc';
+  const subjId = liveCoachModeToSubjectId(mode);
+  const tutorMeta = SUBJECT_TUTOR_REGISTRY[subjId];
   const isCompact = variant === 'compact';
 
   const effectiveSessionKey = sessionKey || stepKey.split('|').slice(0, 3).join('|');
@@ -120,29 +106,7 @@ export function ChemMadScientistBar({
   useSyncLiveCoachContext(
     stepKey,
     context,
-    mode === 'dataproc'
-      ? 'dataproc'
-      : mode === 'digitech'
-        ? 'digitech'
-        : mode === 'civic'
-          ? 'civic'
-          : mode === 'eng'
-            ? 'eng'
-            : mode === 'econ'
-              ? 'econ'
-              : mode === 'geog'
-                ? 'geog'
-                : mode === 'agric'
-                  ? 'agric'
-                  : mode === 'bio'
-                    ? 'bio'
-                    : mode === 'phys'
-                      ? 'phys'
-                      : mode === 'fmath'
-                        ? 'fmath'
-                        : mode === 'chem'
-                          ? 'chem'
-                          : 'math'
+    mode === 'mathLab' ? 'math' : mode
   );
 
   // ── TTS Narration State ──
@@ -201,6 +165,7 @@ export function ChemMadScientistBar({
 
   // Pre-synthesize all remaining steps/chapters in the background once Teach is tapped
   const triggerBackgroundPreSynthesis = useCallback(() => {
+    if (!isPremium) return;
     if (!upcomingScripts || upcomingScripts.length <= 1) return;
     const queue = upcomingScripts
       .map((s) => s.trim())
@@ -237,10 +202,11 @@ export function ChemMadScientistBar({
     return () => {
       cancelled = true;
     };
-  }, [context.stepText, context.topicName, mode, upcomingScripts]);
+  }, [context.stepText, context.topicName, isPremium, mode, upcomingScripts]);
 
   const playCurrentScreenTts = useCallback(
     async (forceReload = false) => {
+      if (!isPremium) return;
       window.dispatchEvent(new CustomEvent('rtc:clear-live-audio'));
 
       if (!forceReload && audioElRef.current && loadedStepKeyRef.current === stepKey) {
@@ -313,6 +279,7 @@ export function ChemMadScientistBar({
       context.stepText,
       context.topicName,
       effectiveSessionKey,
+      isPremium,
       mode,
       stepKey,
       stopTtsAudio,
@@ -330,38 +297,20 @@ export function ChemMadScientistBar({
     loadedStepKeyRef.current = '';
     stopTtsAudio();
 
-    if (activeVoiceSessions.has(effectiveSessionKey) && !muted) {
+    if (isPremium && activeVoiceSessions.has(effectiveSessionKey) && !muted) {
       setSessionActive(true);
       void playCurrentScreenTts(true);
     }
-  }, [effectiveSessionKey, muted, playCurrentScreenTts, stepKey, stopTtsAudio]);
+  }, [effectiveSessionKey, isPremium, muted, playCurrentScreenTts, stepKey, stopTtsAudio]);
+
+  if (!isPremium) {
+    return null;
+  }
 
   const idleButtonLabel = actionLabel || 'Teach';
   const titleText = isMathLab
     ? 'Geometry Coach · Studio Voice'
-    : isFMath
-      ? 'Prof. Chinedu · Further Maths Studio Voice'
-      : isMath
-        ? 'Master Chike · Maths Studio Voice'
-        : isPhys
-          ? 'Dr. Faraday · Physics Studio Voice'
-          : isBio
-            ? 'Dr. Amaka · Biology Studio Voice'
-            : isAgric
-              ? 'Dr. Fatima · Agronomy Studio Voice'
-              : isGeog
-                ? 'Dr. Ibrahim · Geography Studio Voice'
-                : isEcon
-                  ? 'Dr. Ngozi · Economics Studio Voice'
-                  : isEng
-                    ? 'Miss Adaeze · English Studio Voice'
-                    : isCivic
-                      ? 'Barrister Kunle · Civic Studio Voice'
-                      : isDigiTech
-                        ? 'Engr. Tunde · Digital Tech Studio Voice'
-                        : isDataProc
-                          ? 'Mrs. Kemi · Data Processing Studio Voice'
-                          : 'Prof. Spark · Chemistry Studio Voice';
+    : `${tutorMeta.tutorName} · ${tutorMeta.short} Studio Voice`;
 
   const totalUpcoming = upcomingScripts?.length || 0;
   const readyBadge =
@@ -389,29 +338,7 @@ export function ChemMadScientistBar({
       aria-label={
         isMathLab
           ? 'Geometry Coach Studio Voice'
-          : isFMath
-            ? 'Professor Chinedu Further Mathematics Studio Voice'
-            : isMath
-              ? 'Master Chike Mathematics Studio Voice'
-              : isPhys
-                ? 'Dr. Faraday Physics Studio Voice'
-                : isBio
-                  ? 'Dr. Amaka Biology Studio Voice'
-                  : isAgric
-                    ? 'Dr. Fatima Agricultural Science Studio Voice'
-                    : isGeog
-                      ? 'Dr. Ibrahim Geography Studio Voice'
-                      : isEcon
-                        ? 'Dr. Ngozi Economics Studio Voice'
-                        : isEng
-                          ? 'Miss Adaeze English Studio Voice'
-                          : isCivic
-                            ? 'Barrister Kunle Civic Education Studio Voice'
-                            : isDigiTech
-                              ? 'Engineer Tunde Digital Technologies Studio Voice'
-                              : isDataProc
-                                ? 'Mrs. Kemi Data Processing Studio Voice'
-                                : 'Professor Spark Chemistry Studio Voice'
+          : `${tutorMeta.tutorName} ${tutorMeta.name} Studio Voice`
       }
       className={`flex flex-col gap-2.5 transition-colors ${
         isCompact
@@ -429,33 +356,7 @@ export function ChemMadScientistBar({
             }`}
           >
             <Icon
-              name={
-                isMathLab
-                  ? 'pen'
-                  : isFMath
-                    ? 'integral'
-                    : isMath
-                      ? 'sigma'
-                      : isPhys
-                        ? 'atom'
-                        : isBio
-                          ? 'dna'
-                          : isAgric
-                            ? 'leaf'
-                            : isGeog
-                              ? 'globe'
-                              : isEcon
-                                ? 'chart'
-                                : isEng
-                                  ? 'book'
-                                  : isCivic
-                                    ? 'scales'
-                                    : isDigiTech
-                                      ? 'cpu'
-                                      : isDataProc
-                                        ? 'database'
-                                        : 'flask'
-              }
+              name={isMathLab ? 'pen' : tutorMeta.icon}
               size={isCompact ? 17 : 19}
             />
           </div>
@@ -482,7 +383,10 @@ export function ChemMadScientistBar({
           <button
             type="button"
             disabled={ttsState === 'loading'}
-            onClick={() => playCurrentScreenTts(false)}
+            onClick={() => {
+              unlockStudioAudioOnGesture();
+              void playCurrentScreenTts(false);
+            }}
             className="min-h-[38px] px-3.5 rounded-xl bg-[var(--gold)] hover:brightness-105 active:scale-[0.985] disabled:opacity-60 text-[var(--on-acc)] font-[var(--display)] font-bold text-[13px] shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition"
           >
             <Icon name={ttsState === 'playing' ? 'pause' : 'play'} size={14} />
@@ -500,7 +404,10 @@ export function ChemMadScientistBar({
           {(ttsState === 'playing' || ttsState === 'paused') && (
             <button
               type="button"
-              onClick={() => playCurrentScreenTts(true)}
+              onClick={() => {
+                unlockStudioAudioOnGesture();
+                void playCurrentScreenTts(true);
+              }}
               aria-label="Replay current screen narration"
               title="Replay current screen"
               className="min-h-[38px] px-2.5 rounded-xl bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] flex items-center justify-center cursor-pointer shrink-0 transition"

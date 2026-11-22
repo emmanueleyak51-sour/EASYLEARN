@@ -1,44 +1,81 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { ChemClassId, SubjectId } from '../../types';
-import { CHEM_CLASSES } from '../../data/chemNerdc2027';
-import { SUBJECT_IDS } from '../../data/curriculum';
 import { SUBJECT_INFO } from '../../utils/engine';
 import {
   authenticateAccount,
   buildRegisteredAccount,
-  findAccountByIdentifier,
-  generateScholarOtp,
   loadAccounts,
   saveAccounts,
   setSessionUnlocked,
-  validateOtpCode,
   validateRegisterInput,
 } from '../../utils/authAccounts';
-import { AdirePattern, CrestSvg, Icon } from '../Icons';
+import { typesetMathHtml } from '../../utils/mathTypesetter';
+import { CrestSvg, Icon } from '../Icons';
+import { StudyBuddy } from '../StudyBuddy';
+import { LiquidCapsuleBar } from '../ULessonMotion';
 
-type AuthStage = 'split' | 'otp' | 'verified';
 type SplitMode = 'login' | 'register';
 
-interface PendingScholarPayload {
-  name: string;
-  email: string;
-  subjs: SubjectId[];
-  classLevel: ChemClassId;
-  target: number;
-  otpCode: string;
-  reason: 'register' | 'recovery';
-  passwordToSave?: string;
+interface SampleQuestionSpec {
+  id: string;
+  subjectLabel: string;
+  subj: SubjectId;
+  stem: string;
+  options: string[];
+  correct: number;
+  whyWrong: string[];
+  explanation: string;
 }
 
-const CONFETTI_SPECS = [
-  { left: '12%', delay: '0s', bg: '#10B981' },
-  { left: '22%', delay: '0.08s', bg: '#FFD84D' },
-  { left: '34%', delay: '0.04s', bg: '#3B82F6' },
-  { left: '46%', delay: '0.12s', bg: '#F59E0B' },
-  { left: '58%', delay: '0.02s', bg: '#10B981' },
-  { left: '70%', delay: '0.10s', bg: '#EC4899' },
-  { left: '82%', delay: '0.06s', bg: '#FFD84D' },
-  { left: '90%', delay: '0.14s', bg: '#06B6D4' },
+const SAMPLE_QUESTIONS: SampleQuestionSpec[] = [
+  {
+    id: 'sq-maths',
+    subjectLabel: 'Mathematics',
+    subj: 'maths',
+    stem: 'A trader bought a school bag for ₦8,000 and sold it for ₦9,600. What was her percentage profit?',
+    options: ['15%', '16.7%', '20%', '25%'],
+    correct: 2,
+    whyWrong: [
+      '15% comes from guessing instead of dividing ₦1,600 by the cost price ₦8,000.',
+      '16.7% divides the profit by the selling price (₦9,600) instead of the cost price (₦8,000).',
+      '',
+      '25% would mean a profit of ₦2,000 on ₦8,000, not ₦1,600.',
+    ],
+    explanation:
+      'Profit = selling price − cost price = ₦9,600 − ₦8,000 = ₦1,600. Percentage profit is always measured on the cost price: (1,600 ÷ 8,000) × 100% = 20%.',
+  },
+  {
+    id: 'sq-eng',
+    subjectLabel: 'Use of English',
+    subj: 'eng',
+    stem: 'Choose the option that best completes the sentence: Neither the captain nor the players _____ aware of the new kick-off time.',
+    options: ['was', 'were', 'is', 'has been'],
+    correct: 1,
+    whyWrong: [
+      '"Was" agrees with "captain", but with "neither … nor" the verb must agree with the nearer subject ("players").',
+      '',
+      '"Is" is singular, while the nearer subject "players" is plural.',
+      '"Has been" is singular, so it cannot match the plural noun "players".',
+    ],
+    explanation:
+      'When two subjects are joined by "neither … nor" or "either … or", the verb agrees with the subject closer to it. Because "players" is plural, the correct verb is "were".',
+  },
+  {
+    id: 'sq-chem',
+    subjectLabel: 'Chemistry',
+    subj: 'chem',
+    stem: 'An element X has atomic number 11 and mass number 23. How many neutrons are in one atom of X?',
+    options: ['11', '12', '23', '34'],
+    correct: 1,
+    whyWrong: [
+      '11 is the number of protons (and electrons in a neutral atom), not neutrons.',
+      '',
+      '23 is the total mass number (protons + neutrons together).',
+      '34 adds the mass number and atomic number instead of subtracting.',
+    ],
+    explanation:
+      'Mass number = protons + neutrons. Subtract the atomic number from the mass number: 23 − 11 = 12 neutrons.',
+  },
 ];
 
 export function WelcomeScreen({
@@ -70,48 +107,30 @@ export function WelcomeScreen({
   onSkipToDemo: () => void;
 }) {
   const accounts = useMemo(() => loadAccounts(), []);
-  const hasReturningScholar = Boolean(initialName.trim() || accounts.length > 0);
+  const hasReturningStudent = Boolean(initialName.trim() || accounts.length > 0);
 
-  const [stage, setStage] = useState<AuthStage>('split');
-  const [mode, setMode] = useState<SplitMode>('login');
+  const [mode, setMode] = useState<SplitMode>(hasReturningStudent ? 'login' : 'register');
 
-  // Login state
+  // Interactive sample question state
+  const [sampleIdx, setSampleIdx] = useState(0);
+  const [samplePicked, setSamplePicked] = useState<number | null>(null);
+  const sample = SAMPLE_QUESTIONS[sampleIdx];
+
+  // Sign in state
   const [loginId, setLoginId] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [loginError, setLoginError] = useState('');
 
-  // Register state
+  // Create account state
   const [regName, setRegName] = useState(initialName || '');
   const [regEmail, setRegEmail] = useState('');
   const [regPass, setRegPass] = useState('');
   const [showRegPass, setShowRegPass] = useState(false);
-  const [classLevel, setClassLevel] = useState<ChemClassId>(initialClassLevel || 'ss1');
-  const [subjs, setSubjs] = useState<SubjectId[]>(
-    initialSubjs.length ? initialSubjs : [...SUBJECT_IDS]
-  );
-  const [target] = useState<number>(initialTarget || 75);
   const [regError, setRegError] = useState('');
 
-  // OTP & Verified state
-  const [pending, setPending] = useState<PendingScholarPayload | null>(null);
-  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
-  const [otpError, setOtpError] = useState('');
-  const [otpShake, setOtpShake] = useState(false);
-  const [verifiedPayload, setVerifiedPayload] = useState<{
-    name: string;
-    subjs: SubjectId[];
-    classLevel: ChemClassId;
-    target: number;
-    isExisting: boolean;
-  } | null>(null);
-
-  const otpRefs = [
-    useRef<HTMLInputElement | null>(null),
-    useRef<HTMLInputElement | null>(null),
-    useRef<HTMLInputElement | null>(null),
-    useRef<HTMLInputElement | null>(null),
-  ];
+  const defaultSubjs: SubjectId[] =
+    initialSubjs && initialSubjs.length > 0 ? initialSubjs : ['eng', 'maths'];
 
   const finalizeEntry = (payload: {
     name: string;
@@ -133,733 +152,434 @@ export function WelcomeScreen({
     });
   };
 
-  useEffect(() => {
-    if (stage !== 'verified' || !verifiedPayload) return;
-    const timer = window.setTimeout(() => {
-      finalizeEntry(verifiedPayload);
-    }, 950);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, verifiedPayload]);
-
-  useEffect(() => {
-    if (stage === 'otp') {
-      window.setTimeout(() => otpRefs[0].current?.focus(), 60);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage]);
-
-  const toggleSubj = (sid: SubjectId) => {
-    setSubjs((prev) => {
-      if (prev.includes(sid)) {
-        return prev.length > 1 ? prev.filter((x) => x !== sid) : prev;
-      }
-      return SUBJECT_IDS.filter((id) => id === sid || prev.includes(id));
-    });
-  };
-
-  const switchSplitMode = (nextMode: SplitMode) => {
-    setLoginError('');
-    setRegError('');
-    setMode(nextMode);
-  };
-
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!loginId.trim() || !loginPass.trim()) {
+      setLoginError('Enter your email or username and your password.');
+      return;
+    }
     const currentAccounts = loadAccounts();
     const res = authenticateAccount(currentAccounts, loginId, loginPass, initialName);
     if (!res.ok) {
-      setLoginError(res.error || 'Please check your credentials and try again.');
+      setLoginError(res.error || 'Check your sign-in details and try again.');
       return;
     }
     setLoginError('');
     const acc = res.account;
-    setVerifiedPayload({
+    finalizeEntry({
       name: acc ? acc.username : initialName.trim() || loginId.trim(),
-      subjs: acc?.subjs?.length ? acc.subjs : subjs,
-      classLevel: acc?.classLevel || classLevel,
-      target: acc?.target || target,
+      subjs: acc?.subjs?.length ? acc.subjs : defaultSubjs,
+      classLevel: acc?.classLevel || initialClassLevel || 'all',
+      target: acc?.target || initialTarget || 75,
       isExisting: true,
     });
-    setStage('verified');
-  };
-
-  const handleForgotPasscode = () => {
-    const clean = loginId.trim() || initialName.trim() || accounts[0]?.email || '';
-    if (!clean) {
-      setLoginError('Enter your username or email first so we can generate a 4-digit recovery code.');
-      return;
-    }
-    const currentAccounts = loadAccounts();
-    const found = findAccountByIdentifier(currentAccounts, clean);
-    const scholarName = found?.username || initialName.trim() || clean;
-    const otpCode = generateScholarOtp(found?.email || scholarName);
-    setLoginError('');
-    setOtpDigits(['', '', '', '']);
-    setOtpError('');
-    setPending({
-      name: scholarName,
-      email: found?.email || `${scholarName.toLowerCase().replace(/\s+/g, '')}@campus.ng`,
-      subjs: found?.subjs?.length ? found.subjs : subjs,
-      classLevel: found?.classLevel || classLevel,
-      target: found?.target || target,
-      otpCode,
-      reason: 'recovery',
-    });
-    setStage('otp');
-  };
-
-  const handleResumeSavedScholar = () => {
-    const fallbackAcc = accounts[0];
-    const resolvedName = initialName.trim() || fallbackAcc?.username || 'Scholar';
-    setVerifiedPayload({
-      name: resolvedName,
-      subjs: initialSubjs.length ? initialSubjs : fallbackAcc?.subjs || [...SUBJECT_IDS],
-      classLevel: initialClassLevel || fallbackAcc?.classLevel || 'ss1',
-      target: initialTarget || fallbackAcc?.target || 75,
-      isExisting: true,
-    });
-    setStage('verified');
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const check = validateRegisterInput(regName, regEmail, regPass);
     if (!check.ok) {
-      setRegError(check.error || 'Complete all registration fields.');
+      setRegError(check.error || 'Fill in your first name, email address and password.');
       return;
     }
     setRegError('');
-    const otpCode = generateScholarOtp(regEmail);
-    setOtpDigits(['', '', '', '']);
-    setOtpError('');
-    setPending({
-      name: regName.trim(),
-      email: regEmail.trim().toLowerCase(),
-      subjs,
-      classLevel,
-      target,
-      otpCode,
-      reason: 'register',
-      passwordToSave: regPass,
+    const current = loadAccounts();
+    const cleanName = regName.trim();
+    const cleanEmail = regEmail.trim().toLowerCase();
+    const startSubjs: SubjectId[] = ['eng', 'maths'];
+    const { accounts: updated } = buildRegisteredAccount(current, {
+      username: cleanName,
+      email: cleanEmail,
+      password: regPass,
+      classLevel: 'all',
+      subjs: startSubjs,
+      target: initialTarget || 75,
     });
-    setStage('otp');
-  };
-
-  const handleOtpDigitChange = (idx: number, rawVal: string) => {
-    const clean = rawVal.replace(/\D/g, '');
-    if (clean.length > 1) {
-      // Handle multi-digit paste/autofill
-      const chars = clean.slice(0, 4).split('');
-      const next = ['', '', '', ''];
-      chars.forEach((c, i) => {
-        next[i] = c;
-      });
-      setOtpDigits(next);
-      setOtpError('');
-      const focusIdx = Math.min(3, chars.length - 1);
-      otpRefs[focusIdx].current?.focus();
-      return;
-    }
-
-    const digit = clean.slice(-1);
-    const next = [...otpDigits];
-    next[idx] = digit;
-    setOtpDigits(next);
-    if (otpError) setOtpError('');
-    if (digit && idx < 3) {
-      otpRefs[idx + 1].current?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[idx] && idx > 0) {
-      otpRefs[idx - 1].current?.focus();
-    }
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 4);
-    if (!pasted) return;
-    e.preventDefault();
-    const next = ['', '', '', ''];
-    pasted.split('').forEach((ch, idx) => {
-      next[idx] = ch;
+    saveAccounts(updated);
+    finalizeEntry({
+      name: cleanName,
+      subjs: startSubjs,
+      classLevel: 'all',
+      target: initialTarget || 75,
+      isExisting: false,
     });
-    setOtpDigits(next);
-    setOtpError('');
-    otpRefs[Math.min(3, pasted.length - 1)].current?.focus();
   };
 
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pending) return;
-    const res = validateOtpCode(otpDigits, pending.otpCode);
-    if (!res.ok) {
-      setOtpError(res.error || 'Invalid 4-digit verification code.');
-      setOtpShake(true);
-      window.setTimeout(() => setOtpShake(false), 420);
-      return;
-    }
-
-    if (pending.reason === 'register' && pending.passwordToSave) {
-      const current = loadAccounts();
-      const { accounts: updated } = buildRegisteredAccount(current, {
-        username: pending.name,
-        email: pending.email,
-        password: pending.passwordToSave,
-        classLevel: pending.classLevel,
-        subjs: pending.subjs,
-        target: pending.target,
-      });
-      saveAccounts(updated);
-    }
-
-    setOtpError('');
-    setVerifiedPayload({
-      name: pending.name,
-      subjs: pending.subjs,
-      classLevel: pending.classLevel,
-      target: pending.target,
-      isExisting: pending.reason === 'recovery',
+  const handleResumeSavedStudent = () => {
+    const fallbackAcc = accounts[0];
+    const resolvedName = initialName.trim() || fallbackAcc?.username || 'Student';
+    finalizeEntry({
+      name: resolvedName,
+      subjs: initialSubjs.length ? initialSubjs : fallbackAcc?.subjs || ['eng', 'maths'],
+      classLevel: initialClassLevel || fallbackAcc?.classLevel || 'all',
+      target: initialTarget || fallbackAcc?.target || 75,
+      isExisting: true,
     });
-    setStage('verified');
   };
 
-  // ── Stage 2: 4-Digit OTP Verification Card (LxImXhpwC_g) ──
-  if (stage === 'otp' && pending) {
-    return (
-      <div className="min-h-[82vh] flex flex-col items-center justify-center py-6 px-4">
-        <section
-          aria-label="4-digit scholar verification"
-          className={`w-full max-w-[460px] rounded-[26px] bg-[var(--card)] border-2 border-[var(--gold)] shadow-[0_0_32px_var(--acc-glow)] p-6 sm:p-8 flex flex-col items-center text-center gap-5 anim-rise ${
-            otpShake ? 'anim-shake' : ''
-          }`}
-        >
-          <div className="w-16 h-16 rounded-2xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] flex items-center justify-center">
-            <Icon name="shield" size={32} />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow text-[var(--gold)]">Identity Check</span>
-            <h1 className="h26 text-[var(--ink)]">OTP Verification</h1>
-            <p className="text-[14px] text-[var(--dim)] leading-relaxed">
-              Enter the 4-digit studio code generated for{' '}
-              <strong className="text-[var(--ink)]">{pending.email}</strong>
-            </p>
-          </div>
-
-          {/* Instant local studio passcode helper so offline learners are never blocked */}
-          <div className="w-full rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3.5 py-2.5 flex items-center justify-between gap-2 text-[13px]">
-            <span className="text-[var(--dim)]">
-              Studio code:{' '}
-              <strong className="font-mono text-[15px] tracking-widest text-[var(--gold)] tabular-nums">
-                {pending.otpCode}
-              </strong>
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setOtpDigits(pending.otpCode.split(''));
-                setOtpError('');
-              }}
-              className="px-2.5 py-1 rounded-lg bg-[var(--acc-soft)] text-[var(--gold)] font-bold text-[12px] hover:brightness-95 cursor-pointer whitespace-nowrap"
-            >
-              Auto-fill code
-            </button>
-          </div>
-
-          <form onSubmit={handleVerifyOtp} className="w-full flex flex-col items-center gap-5" noValidate>
-            <div className="flex items-center justify-center gap-3" role="group" aria-label="4-digit verification code">
-              {otpDigits.map((digit, idx) => (
-                <input
-                  key={idx}
-                  ref={otpRefs[idx]}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={4}
-                  aria-label={`Verification digit ${idx + 1}`}
-                  value={digit}
-                  onChange={(e) => handleOtpDigitChange(idx, e.target.value)}
-                  onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                  onPaste={handleOtpPaste}
-                  className={`rtc-otp-box ${digit ? 'is-filled' : ''}`}
-                />
-              ))}
-            </div>
-
-            {otpError && (
-              <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
-                {otpError}
-              </p>
-            )}
-
-            <button type="submit" className="rtc-auth-pill-cta">
-              <span>Verify &amp; Unlock Studio</span>
-              <Icon name="check" size={18} />
-            </button>
-          </form>
-
-          <button
-            type="button"
-            onClick={() => {
-              setStage('split');
-              setOtpError('');
-            }}
-            className="text-[13px] font-bold text-[var(--dim)] hover:text-[var(--gold)] cursor-pointer"
-          >
-            Back to {pending.reason === 'register' ? 'Registration' : 'Sign In'}
-          </button>
-        </section>
-      </div>
-    );
-  }
-
-  // ── Stage 3: Successfully Verified! Emerald Checkmark & Confetti (LxImXhpwC_g) ──
-  if (stage === 'verified' && verifiedPayload) {
-    return (
-      <div className="min-h-[82vh] flex flex-col items-center justify-center py-6 px-4">
-        <section
-          aria-label="Verification complete"
-          className="relative overflow-hidden w-full max-w-[460px] rounded-[26px] bg-[var(--card)] border-2 border-[#10B981] shadow-[0_0_38px_rgba(16,185,129,0.28)] p-7 sm:p-9 flex flex-col items-center text-center gap-5 anim-rise"
-        >
-          {/* Celebratory confetti burst */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-            {CONFETTI_SPECS.map((c, idx) => (
-              <span
-                key={idx}
-                className="confetti-piece"
-                style={{
-                  left: c.left,
-                  top: '-10px',
-                  backgroundColor: c.bg,
-                  animationDelay: c.delay,
-                }}
-              />
-            ))}
-          </div>
-
-          <div className="rtc-verified-orb w-20 h-20 rounded-full bg-[#10B981] text-white flex items-center justify-center">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M5 13l4.5 4.5L19 7.5"
-                stroke="currentColor"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="rtc-verified-stroke"
-              />
-            </svg>
-          </div>
-
-          <div className="flex flex-col gap-1.5 relative z-10">
-            <span className="eyebrow text-[#10B981]">Identity Confirmed</span>
-            <h1 className="h28 text-[var(--ink)]">Successfully Verified!</h1>
-            <p className="text-[14.5px] text-[var(--dim)] leading-relaxed">
-              Welcome, <strong className="text-[var(--ink)]">{verifiedPayload.name}</strong>. Opening your{' '}
-              {verifiedPayload.subjs.length}-subject National Learning Studio...
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => finalizeEntry(verifiedPayload)}
-            className="rtc-auth-pill-cta relative z-10"
-          >
-            <span>Enter Studio Now</span>
-            <Icon name="go" size={18} />
-          </button>
-        </section>
-      </div>
-    );
-  }
-
-  // ── Stage 1: Diagonal Sweeping Split-Panel Login / Register Card (ITWVROnwt_s) ──
-  const isRegister = mode === 'register';
+  const buddyMood =
+    samplePicked === null
+      ? 'happy'
+      : samplePicked === sample.correct
+        ? 'cheer'
+        : 'think';
 
   return (
-    <div className="min-h-[84vh] flex flex-col items-center justify-center py-4 px-2 sm:px-4">
-      <div className={`rtc-auth-shell ${isRegister ? 'is-register' : ''}`}>
-        {/* Sweeping Diagonal Hero Curtain */}
-        <div className="rtc-auth-curtain" aria-hidden="true">
-          <AdirePattern />
+    <div className="max-w-[1060px] mx-auto py-4 sm:py-8 px-1 sm:px-3 flex flex-col gap-6 anim-rise">
+      {/* Top brand bar */}
+      <header className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <CrestSvg size={38} />
+          <span className="font-[var(--display)] font-bold text-[22px] tracking-tight text-[var(--ink)] whitespace-nowrap shrink-0">
+            EYAK
+          </span>
         </div>
+        <span className="text-[13px] font-semibold text-[var(--dim)] whitespace-nowrap">
+          Full access from ₦1,000/month
+        </span>
+      </header>
 
-        <div className="relative z-10 grid grid-cols-1 min-[820px]:grid-cols-12 min-h-[540px]">
-          {!isRegister ? (
-            <>
-              {/* LEFT PANEL: Login Form */}
-              <section
-                aria-label="Scholar Sign In"
-                className="min-[820px]:col-span-6 p-6 sm:p-9 min-[820px]:pr-11 flex flex-col justify-between gap-5"
-              >
-                <form
-                  key="login-form"
-                  onSubmit={handleLoginSubmit}
-                  className="flex flex-col gap-5 my-auto"
-                  noValidate
-                >
-                  <div className="rtc-auth-stagger-1">
-                    <span className="eyebrow text-[var(--gold)]">Scholar Portal</span>
-                    <h1 className="font-[var(--display)] font-extrabold text-[30px] leading-tight text-[var(--ink)] mt-1">
-                      Login
-                    </h1>
-                    <p className="text-[13.5px] text-[var(--dim)] mt-1">
-                      Sign in to sync your mastery across all 12 SS1–SS3 subjects.
-                    </p>
-                  </div>
+      <div className="grid grid-cols-1 min-[900px]:grid-cols-12 gap-6 items-start">
+        {/* Left column: Plain pitch + real interactive sample question */}
+        <section className="min-[900px]:col-span-7 flex flex-col gap-5">
+          <div className="rtc-eq-plate p-6 sm:p-7 flex flex-col gap-4">
+            <div className="flex items-start gap-4">
+              <div className="rounded-[22px] bg-[var(--card)] p-2 shrink-0">
+                <StudyBuddy mood={buddyMood} size={54} />
+              </div>
+              <div className="flex flex-col gap-1.5 min-w-0">
+                <span className="inline-flex self-start px-3 py-1 rounded-[16px] tile-peach text-[12.5px] font-bold">
+                  JAMB and WAEC prep
+                </span>
+                <h1 className="h28 sm:h34 text-white">
+                  Pass JAMB with calm, clear daily practice.
+                </h1>
+              </div>
+            </div>
+            <p className="text-[15.5px] text-white/90 leading-relaxed">
+              Learn each topic in plain English, test yourself with timed mock papers, and see step-by-step explanations whenever you miss a question.
+            </p>
+            <div className="grid grid-cols-3 gap-2.5 pt-1">
+              <div className="rounded-[16px] tile-peach p-3">
+                <div className="font-[var(--display)] font-bold text-[18px] leading-tight">Short lessons</div>
+                <div className="text-[12.5px] opacity-85 mt-0.5">Worked examples first</div>
+              </div>
+              <div className="rounded-[16px] tile-mint p-3">
+                <div className="font-[var(--display)] font-bold text-[18px] leading-tight">Mock exams</div>
+                <div className="text-[12.5px] opacity-85 mt-0.5">Full /400 UTME timing</div>
+              </div>
+              <div className="rounded-[16px] tile-sky p-3">
+                <div className="font-[var(--display)] font-bold text-[18px] leading-tight">Voice tutor</div>
+                <div className="text-[12.5px] opacity-85 mt-0.5">Ask questions out loud</div>
+              </div>
+            </div>
+          </div>
 
-                  {hasReturningScholar && (
-                    <button
-                      type="button"
-                      onClick={handleResumeSavedScholar}
-                      className="rtc-auth-stagger-2 w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] text-[13px] font-bold flex items-center justify-between gap-2 hover:brightness-95 transition cursor-pointer"
-                    >
-                      <span className="truncate">
-                        Continue as {initialName.trim() || accounts[0]?.username}
-                      </span>
-                      <Icon name="go" size={16} className="shrink-0" />
-                    </button>
-                  )}
+          {/* Real sample question */}
+          <div className="rtc-card p-5 sm:p-6 flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[var(--line)]">
+              <div className="flex items-center gap-2 text-[13px] font-bold text-[var(--ink)]">
+                <span className="text-[var(--gold)]">Try a sample question</span>
+                <span aria-hidden="true" className="text-[var(--dim)]">·</span>
+                <span className="text-[var(--dim)]">{sample.subjectLabel}</span>
+              </div>
+              <LiquidCapsuleBar
+                roleType="group"
+                size="sm"
+                ariaLabel="Sample subject"
+                items={SAMPLE_QUESTIONS.map((sq) => ({
+                  id: sq.id,
+                  label: sq.subjectLabel,
+                }))}
+                value={sample.id}
+                onChange={(pickedId) => {
+                  const idx = SAMPLE_QUESTIONS.findIndex((sq) => sq.id === pickedId);
+                  if (idx >= 0) {
+                    setSampleIdx(idx);
+                    setSamplePicked(null);
+                  }
+                }}
+              />
+            </div>
 
-                  <div className="rtc-auth-field rtc-auth-stagger-2">
-                    <input
-                      id="rtc-login-id"
-                      type="text"
-                      placeholder=" "
-                      autoComplete="username"
-                      value={loginId}
-                      onChange={(e) => {
-                        setLoginId(e.target.value);
-                        if (loginError) setLoginError('');
-                      }}
-                      className="rtc-auth-input"
+            <div
+              className="qt text-[var(--ink)]"
+              dangerouslySetInnerHTML={{ __html: typesetMathHtml(sample.stem, sample.subj) }}
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {sample.options.map((opt, idx) => {
+                const answered = samplePicked !== null;
+                const isRight = idx === sample.correct;
+                const isChosen = samplePicked === idx;
+                let stateCls = '';
+                if (answered) {
+                  if (isRight) stateCls = 'ok';
+                  else if (isChosen) stateCls = 'no';
+                  else stateCls = 'opt-eliminated';
+                }
+                const letter = String.fromCharCode(65 + idx);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    disabled={answered}
+                    onClick={() => setSamplePicked(idx)}
+                    className={`opt-tile ${stateCls}`}
+                  >
+                    <span className="opt-bubble">
+                      <span>{letter}</span>
+                    </span>
+                    <span
+                      className="flex-1"
+                      dangerouslySetInnerHTML={{ __html: typesetMathHtml(opt, sample.subj) }}
                     />
-                    <label htmlFor="rtc-login-id" className="rtc-auth-label">
-                      Username or Email
-                    </label>
-                    <span className="rtc-auth-icon" aria-hidden="true">
-                      <Icon name="user" size={18} />
+                  </button>
+                );
+              })}
+            </div>
+
+            {samplePicked !== null && (
+              <div
+                className={`rounded-[22px] border-2 p-4 flex flex-col gap-2 anim-explain-reveal ${
+                  samplePicked === sample.correct
+                    ? 'bg-[var(--ok-soft)] border-[var(--ok-line)]'
+                    : 'bg-[var(--bad-soft)] border-[var(--bad-line)]'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Icon
+                      name={samplePicked === sample.correct ? 'check' : 'x'}
+                      size={18}
+                      className={
+                        samplePicked === sample.correct
+                          ? 'text-[var(--green)]'
+                          : 'text-[var(--coral-ink)]'
+                      }
+                    />
+                    <span className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
+                      {samplePicked === sample.correct ? 'Spot on!' : 'Not quite — here is why:'}
                     </span>
                   </div>
-
-                  <div className="rtc-auth-field rtc-auth-stagger-3">
-                    <input
-                      id="rtc-login-pass"
-                      type={showLoginPass ? 'text' : 'password'}
-                      placeholder=" "
-                      autoComplete="current-password"
-                      value={loginPass}
-                      onChange={(e) => {
-                        setLoginPass(e.target.value);
-                        if (loginError) setLoginError('');
-                      }}
-                      className="rtc-auth-input"
-                    />
-                    <label htmlFor="rtc-login-pass" className="rtc-auth-label">
-                      Passcode
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowLoginPass((v) => !v)}
-                      aria-label={showLoginPass ? 'Hide passcode' : 'Show passcode'}
-                      className="rtc-auth-icon cursor-pointer hover:text-[var(--gold)]"
-                    >
-                      <Icon name={showLoginPass ? 'eyeOff' : 'eye'} size={18} />
-                    </button>
-                  </div>
-
-                  <div className="rtc-auth-stagger-3 flex items-center justify-end -mt-2">
-                    <button
-                      type="button"
-                      onClick={handleForgotPasscode}
-                      className="text-[12.5px] font-bold text-[var(--dim)] hover:text-[var(--gold)] cursor-pointer"
-                    >
-                      Forgot passcode? Verify via OTP
-                    </button>
-                  </div>
-
-                  {loginError && (
-                    <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
-                      {loginError}
-                    </p>
-                  )}
-
-                  <div className="rtc-auth-stagger-4 flex flex-col gap-3 pt-1">
-                    <button type="submit" className="rtc-auth-pill-cta">
-                      <span>Login</span>
-                      <Icon name="go" size={18} />
-                    </button>
-
-                    <p className="text-center text-[13.5px] text-[var(--dim)]">
-                      Don&apos;t have an account?{' '}
-                      <button
-                        type="button"
-                        onClick={() => switchSplitMode('register')}
-                        className="font-extrabold text-[var(--gold)] hover:underline cursor-pointer"
-                      >
-                        Sign Up
-                      </button>
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSessionUnlocked();
-                        onSkipToDemo();
-                      }}
-                      className="text-center text-[12.5px] font-bold text-[var(--dim)] hover:text-[var(--ink)] py-1 cursor-pointer"
-                    >
-                      Or explore sample workspace right away
-                    </button>
-                  </div>
-                </form>
-              </section>
-
-              {/* RIGHT PANEL: Diagonal Welcome Back Hero */}
-              <aside className="min-[820px]:col-span-6 relative p-6 sm:p-9 flex flex-col justify-between text-white adire-panel min-[820px]:bg-transparent min-[820px]:border-0 min-[820px]:shadow-none">
-                <div className="min-[820px]:hidden">
-                  <AdirePattern />
-                </div>
-                <div className="relative z-10 flex items-center justify-end gap-3 rtc-auth-hero-right">
-                  <div className="text-right">
-                    <div className="font-[var(--display)] font-extrabold text-[20px] leading-tight tracking-[0.05em] text-white">
-                      EYAK
-                    </div>
-                    <div className="text-[12px] font-semibold text-white/80">
-                      National Learning Studio
-                    </div>
-                  </div>
-                  <CrestSvg size={42} />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSampleIdx((i) => (i + 1) % SAMPLE_QUESTIONS.length);
+                      setSamplePicked(null);
+                    }}
+                    className="text-[12.5px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+                  >
+                    Next sample
+                  </button>
                 </div>
 
-                <div className="relative z-10 my-auto min-[820px]:pl-10 min-[820px]:text-right flex flex-col gap-3 rtc-auth-hero-right">
-                  <span className="text-[11px] font-extrabold tracking-widest uppercase text-[#FFD84D]">
-                    SS1 – SS3 Mastery
-                  </span>
-                  <h2 className="font-[var(--display)] font-extrabold text-[32px] leading-[1.08] text-white text-balance">
-                    WELCOME BACK!
-                  </h2>
-                  <p className="text-[14.5px] leading-relaxed text-white/90 min-[820px]:ml-auto max-w-[300px]">
-                    Pick up right where you left off across Mathematics, Further Maths, Sciences, Digital Tech, Data Processing, Geography, Economics, English, and Civic Education.
+                {samplePicked !== sample.correct && sample.whyWrong[samplePicked] && (
+                  <p className="text-[14px] text-[var(--ink)] bg-[var(--card)]/85 rounded-[16px] p-3 border border-[var(--bad-line)]">
+                    {sample.whyWrong[samplePicked]}
                   </p>
-                </div>
+                )}
 
-                <div className="relative z-10 flex items-center min-[820px]:justify-end gap-2 text-[12px] font-semibold text-white/80 rtc-auth-hero-right">
-                  <span>12 Core Subjects</span>
-                  <span aria-hidden="true">·</span>
-                  <span>360 Topics</span>
-                  <span aria-hidden="true">·</span>
-                  <span>AI Voice Mentors</span>
-                </div>
-              </aside>
-            </>
-          ) : (
-            <>
-              {/* LEFT PANEL: Diagonal Welcome Hero (Swept Left!) */}
-              <aside className="min-[820px]:col-span-5 relative p-6 sm:p-8 min-[820px]:pr-10 flex flex-col justify-between text-white adire-panel min-[820px]:bg-transparent min-[820px]:border-0 min-[820px]:shadow-none order-2 min-[820px]:order-1">
-                <div className="min-[820px]:hidden">
-                  <AdirePattern />
-                </div>
-                <div className="relative z-10 flex items-center gap-3 rtc-auth-hero-left">
-                  <CrestSvg size={42} />
-                  <div>
-                    <div className="font-[var(--display)] font-extrabold text-[20px] leading-tight tracking-[0.05em] text-white">
-                      EYAK
-                    </div>
-                    <div className="text-[12px] font-semibold text-white/80">
-                      National Learning Studio
-                    </div>
-                  </div>
-                </div>
+                <p className="text-[14.5px] text-[var(--ink)] leading-relaxed">
+                  {sample.explanation}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
 
-                <div className="relative z-10 my-auto flex flex-col gap-3 rtc-auth-hero-left">
-                  <span className="text-[11px] font-extrabold tracking-widest uppercase text-[#FFD84D]">
-                    New Scholar Account
-                  </span>
-                  <h2 className="font-[var(--display)] font-extrabold text-[30px] leading-[1.08] text-white text-balance">
-                    WELCOME!
-                  </h2>
-                  <p className="text-[13.5px] leading-relaxed text-white/90 max-w-[235px]">
-                    Create your personal study profile, select your class level &amp; subjects, and verify with a 4-digit code.
-                  </p>
-                </div>
+        {/* Right column: Clear Sign in / Create account card */}
+        <section
+          aria-label={mode === 'login' ? 'Sign in' : 'Create account'}
+          className="min-[900px]:col-span-5 rtc-card p-6 sm:p-7 flex flex-col gap-5"
+        >
+          <LiquidCapsuleBar
+            roleType="tablist"
+            size="lg"
+            layoutMode="grid"
+            gridClassName="grid-cols-2 gap-1.5"
+            ariaLabel="Account mode"
+            items={[
+              { id: 'register' as const, label: 'Create account' },
+              { id: 'login' as const, label: 'Sign in' },
+            ]}
+            value={mode}
+            onChange={(nextMode) => {
+              setLoginError('');
+              setRegError('');
+              setMode(nextMode);
+            }}
+          />
 
-                <div className="relative z-10 flex items-center gap-2 text-[12px] font-semibold text-white/80 rtc-auth-hero-left">
-                  <span>Light &amp; Dark Themes</span>
-                  <span aria-hidden="true">·</span>
-                  <span>Offline Ready</span>
-                </div>
-              </aside>
-
-              {/* RIGHT PANEL: Register Form */}
-              <section
-                aria-label="Scholar Registration"
-                className="min-[820px]:col-span-7 p-6 sm:p-8 min-[820px]:pl-11 flex flex-col justify-between order-1 min-[820px]:order-2"
-              >
-                <form
-                  key="register-form"
-                  onSubmit={handleRegisterSubmit}
-                  className="flex flex-col gap-3.5 my-auto"
-                  noValidate
-                >
-                  <div className="rtc-auth-stagger-1">
-                    <span className="eyebrow text-[var(--gold)]">Create Profile</span>
-                    <h1 className="font-[var(--display)] font-extrabold text-[28px] leading-tight text-[var(--ink)]">
-                      Register
-                    </h1>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rtc-auth-stagger-2">
-                    <div className="rtc-auth-field">
-                      <input
-                        id="rtc-reg-name"
-                        type="text"
-                        placeholder=" "
-                        autoComplete="given-name"
-                        value={regName}
-                        onChange={(e) => {
-                          setRegName(e.target.value);
-                          if (regError) setRegError('');
-                        }}
-                        className="rtc-auth-input"
-                      />
-                      <label htmlFor="rtc-reg-name" className="rtc-auth-label">
-                        First Name / Username
-                      </label>
-                      <span className="rtc-auth-icon" aria-hidden="true">
-                        <Icon name="user" size={17} />
-                      </span>
-                    </div>
-
-                    <div className="rtc-auth-field">
-                      <input
-                        id="rtc-reg-email"
-                        type="email"
-                        placeholder=" "
-                        autoComplete="email"
-                        value={regEmail}
-                        onChange={(e) => {
-                          setRegEmail(e.target.value);
-                          if (regError) setRegError('');
-                        }}
-                        className="rtc-auth-input"
-                      />
-                      <label htmlFor="rtc-reg-email" className="rtc-auth-label">
-                        Email Address
-                      </label>
-                      <span className="rtc-auth-icon" aria-hidden="true">
-                        <Icon name="mail" size={17} />
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="rtc-auth-field rtc-auth-stagger-3">
-                    <input
-                      id="rtc-reg-pass"
-                      type={showRegPass ? 'text' : 'password'}
-                      placeholder=" "
-                      autoComplete="new-password"
-                      value={regPass}
-                      onChange={(e) => {
-                        setRegPass(e.target.value);
-                        if (regError) setRegError('');
-                      }}
-                      className="rtc-auth-input"
-                    />
-                    <label htmlFor="rtc-reg-pass" className="rtc-auth-label">
-                      Create Passcode (4+ chars)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowRegPass((v) => !v)}
-                      aria-label={showRegPass ? 'Hide passcode' : 'Show passcode'}
-                      className="rtc-auth-icon cursor-pointer hover:text-[var(--gold)]"
-                    >
-                      <Icon name={showRegPass ? 'eyeOff' : 'eye'} size={17} />
-                    </button>
-                  </div>
-
-                  {/* Compact Class Level Selector */}
-                  <div className="flex flex-col gap-1.5 rtc-auth-stagger-3">
-                    <span className="text-[12px] font-bold text-[var(--dim)]">Class level</span>
-                    <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Select class level">
-                      {CHEM_CLASSES.map((cls) => {
-                        const active = classLevel === cls.id;
-                        return (
-                          <button
-                            key={cls.id}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() => setClassLevel(cls.id)}
-                            className={`min-h-[36px] px-2 rounded-xl border text-[12px] font-bold transition cursor-pointer whitespace-nowrap ${
-                              active
-                                ? 'bg-[var(--gold)] text-[var(--on-acc)] border-[var(--gold)]'
-                                : 'bg-[var(--bg)] text-[var(--dim)] border-[var(--line)] hover:text-[var(--ink)]'
-                            }`}
-                          >
-                            {cls.shortLabel}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Compact 12-Subject Grid */}
-                  <div className="flex flex-col gap-1.5 rtc-auth-stagger-4">
-                    <span className="text-[12px] font-bold text-[var(--dim)]">
-                      Active subjects ({subjs.length}/{SUBJECT_IDS.length})
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5" role="group" aria-label="Select active subjects">
-                      {SUBJECT_IDS.map((sid) => {
-                        const active = subjs.includes(sid);
-                        return (
-                          <button
-                            key={sid}
-                            type="button"
-                            aria-pressed={active}
-                            onClick={() => toggleSubj(sid)}
-                            className={`min-h-[38px] px-2 rounded-xl border text-[12px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap ${
-                              active
-                                ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)]'
-                                : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
-                            }`}
-                          >
-                            <Icon name={SUBJECT_INFO[sid].icon} size={13} className="shrink-0" />
-                            <span>{SUBJECT_INFO[sid].compact}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {regError && (
-                    <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
-                      {regError}
-                    </p>
-                  )}
-
-                  <div className="rtc-auth-stagger-5 flex flex-col gap-2.5 pt-1">
-                    <button type="submit" className="rtc-auth-pill-cta">
-                      <span>Register &amp; Send OTP</span>
-                      <Icon name="go" size={18} />
-                    </button>
-                    <p className="text-center text-[13px] text-[var(--dim)]">
-                      Already have an account?{' '}
-                      <button
-                        type="button"
-                        onClick={() => switchSplitMode('login')}
-                        className="font-extrabold text-[var(--gold)] hover:underline cursor-pointer"
-                      >
-                        Sign In
-                      </button>
-                    </p>
-                  </div>
-                </form>
-              </section>
-            </>
+          {hasReturningStudent && (
+            <button
+              type="button"
+              onClick={handleResumeSavedStudent}
+              className="w-full min-h-[44px] px-4 py-2.5 rounded-[16px] bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] text-[13.5px] font-bold flex items-center justify-between gap-2 cursor-pointer"
+            >
+              <span className="truncate">
+                Continue as {initialName.trim() || accounts[0]?.username}
+              </span>
+              <Icon name="go" size={16} className="shrink-0" />
+            </button>
           )}
-        </div>
+
+          {mode === 'register' ? (
+            <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-4" noValidate>
+              <div>
+                <h2 className="h22 text-[var(--ink)]">Create your account</h2>
+                <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
+                  Includes a 3-day starter trial for basic notes &amp; practice, or subscribe from ₦1,000/month for 100% full access.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="eyak-reg-name" className="text-[13px] font-bold text-[var(--ink)]">
+                  First name
+                </label>
+                <input
+                  id="eyak-reg-name"
+                  type="text"
+                  autoComplete="given-name"
+                  placeholder="e.g. Chinedu or Amina"
+                  value={regName}
+                  onChange={(e) => {
+                    setRegName(e.target.value);
+                    if (regError) setRegError('');
+                  }}
+                  className="min-h-[46px] px-3.5 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="eyak-reg-email" className="text-[13px] font-bold text-[var(--ink)]">
+                  Email address
+                </label>
+                <input
+                  id="eyak-reg-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={regEmail}
+                  onChange={(e) => {
+                    setRegEmail(e.target.value);
+                    if (regError) setRegError('');
+                  }}
+                  className="min-h-[46px] px-3.5 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="eyak-reg-pass" className="text-[13px] font-bold text-[var(--ink)]">
+                  Password
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    id="eyak-reg-pass"
+                    type={showRegPass ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    placeholder="At least 6 characters"
+                    value={regPass}
+                    onChange={(e) => {
+                      setRegPass(e.target.value);
+                      if (regError) setRegError('');
+                    }}
+                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPass((v) => !v)}
+                    aria-label={showRegPass ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 text-[var(--dim)] hover:text-[var(--ink)] cursor-pointer"
+                  >
+                    <Icon name={showRegPass ? 'eyeOff' : 'eye'} size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {regError && (
+                <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
+                  {regError}
+                </p>
+              )}
+
+              <button type="submit" className="btn-tactile indigo w-full">
+                <span>Create account</span>
+                <Icon name="go" size={18} className="ul-arrow" />
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4" noValidate>
+              <div>
+                <h2 className="h22 text-[var(--ink)]">Welcome back</h2>
+                <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
+                  Sign in to pick up your lessons, mock scores and saved notes.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="eyak-login-id" className="text-[13px] font-bold text-[var(--ink)]">
+                  Email or first name
+                </label>
+                <input
+                  id="eyak-login-id"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="you@example.com"
+                  value={loginId}
+                  onChange={(e) => {
+                    setLoginId(e.target.value);
+                    if (loginError) setLoginError('');
+                  }}
+                  className="min-h-[46px] px-3.5 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="eyak-login-pass" className="text-[13px] font-bold text-[var(--ink)]">
+                  Password
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    id="eyak-login-pass"
+                    type={showLoginPass ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    placeholder="Your password"
+                    value={loginPass}
+                    onChange={(e) => {
+                      setLoginPass(e.target.value);
+                      if (loginError) setLoginError('');
+                    }}
+                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPass((v) => !v)}
+                    aria-label={showLoginPass ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 text-[var(--dim)] hover:text-[var(--ink)] cursor-pointer"
+                  >
+                    <Icon name={showLoginPass ? 'eyeOff' : 'eye'} size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {loginError && (
+                <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
+                  {loginError}
+                </p>
+              )}
+
+              <button type="submit" className="btn-tactile indigo w-full">
+                <span>Sign in</span>
+                <Icon name="go" size={18} className="ul-arrow" />
+              </button>
+            </form>
+          )}
+
+          <div className="pt-3 border-t border-[var(--line)] text-[12.5px] text-[var(--dim)] leading-snug">
+            Sign in or create an account to activate your 3-day starter trial or choose a Monthly (₦1,000), 6-Month (₦4,500), Yearly (₦9,000) or Lifetime (₦27,800) pass.
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -879,41 +599,38 @@ export function DxIntroScreen({
   onSkipToHome: () => void;
 }) {
   return (
-    <div className="max-w-[600px] mx-auto py-8 flex flex-col gap-6 anim-rise">
-      <div className="adire-panel rounded-[26px] p-7 sm:p-8 flex flex-col gap-4">
-        <AdirePattern />
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center text-[#FFD84D]">
-            <Icon name="target" size={26} />
+    <div className="max-w-[600px] mx-auto py-8 flex flex-col gap-5 anim-rise">
+      <div className="rtc-eq-plate p-6 sm:p-8 flex flex-col gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="rounded-[18px] bg-[var(--card)] p-1.5 shrink-0">
+            <StudyBuddy mood="happy" size={46} />
           </div>
           <div>
-            <span className="eyebrow text-[#FFD84D]">Quick check</span>
+            <span className="eyebrow text-[#FFE1D1]">Placement check</span>
             <h1 className="h28 text-white">Welcome, {name}</h1>
           </div>
         </div>
-        <p className="relative z-10 text-[16px] leading-relaxed text-white/90">
-          Before you dive in, let’s run a {questionCount}-question {SUBJECT_INFO[subj].name} diagnostic. It takes about 5 minutes and sets your starting mastery baseline across the syllabus.
+        <p className="text-[15.5px] leading-relaxed text-white/90">
+          Answer {questionCount} quick {SUBJECT_INFO[subj].name} questions. It takes about 5 minutes and shows which topics you already know and where to begin.
         </p>
       </div>
 
-      <div className="rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-[0_3px_0_var(--line)] p-5 flex flex-col gap-3">
-        <div className="flex items-start gap-3">
-          <span className="w-8 h-8 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
-            <Icon name="bolt" size={16} />
-          </span>
-          <div className="text-[14px] text-[var(--dim)] leading-relaxed">
-            <strong className="text-[var(--ink)]">No pressure:</strong> If you don’t know one yet, pick your best idea — we’ll queue the missed ones for spaced review and teach them step by step.
-          </div>
-        </div>
+      <div className="rtc-card p-5 flex items-start gap-3">
+        <span className="w-9 h-9 rounded-[14px] bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+          <Icon name="bolt" size={17} />
+        </span>
+        <p className="text-[14.5px] text-[var(--dim)] leading-relaxed">
+          <strong className="text-[var(--ink)]">No pressure:</strong> If a question is new to you, pick your best answer. Any missed ones go into your revision list with clear explanations.
+        </p>
       </div>
 
       <div className="flex flex-col gap-3">
         <button type="button" onClick={onStartDiagnostic} className="btn-tactile indigo w-full">
-          <span>Start {SUBJECT_INFO[subj].name} diagnostic</span>
-          <Icon name="go" size={18} />
+          <span>Start {SUBJECT_INFO[subj].name} placement check</span>
+          <Icon name="go" size={18} className="ul-arrow" />
         </button>
         <button type="button" onClick={onSkipToHome} className="btn-tactile paper w-full">
-          <span>Skip diagnostic and go to Home</span>
+          <span>Skip for now and go to Home</span>
         </button>
       </div>
     </div>

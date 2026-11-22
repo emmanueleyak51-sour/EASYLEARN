@@ -1,4 +1,5 @@
 import type { Beat, LabStep, LegacyPart, Question, SubjectId, TeachBlock, Topic } from '../types';
+import { getSubjectTutor } from './tutorRegistry';
 
 export interface ChemLessonVoiceContext {
   topicName: string;
@@ -332,6 +333,7 @@ export function extractBeatSpeechScript(
   subj: SubjectId = 'chem'
 ): string {
   const parts: string[] = [];
+  const isChem = subj === 'chem';
   const isMath = subj === 'maths';
   const isFMath = subj === 'fmaths';
   const isPhys = subj === 'phys';
@@ -343,33 +345,10 @@ export function extractBeatSpeechScript(
   const isCivic = subj === 'civic';
   const isDigiTech = subj === 'digitech';
   const isDataProc = subj === 'dataproc';
+  const tutor = getSubjectTutor(subj);
 
-  if (isFirstStep) {
-    parts.push(
-      isDataProc
-        ? `Welcome to Mrs. Kemi's Data Processing & SQL Studio! Today we are mastering ${topicName}`
-        : isDigiTech
-          ? `Welcome to Engineer Tunde's Digital Technologies Studio! Today we are mastering ${topicName}`
-          : isCivic
-            ? `Welcome to Barrister Kunle's Civic & Constitutional Studio! Today we are mastering ${topicName}`
-            : isEng
-              ? `Welcome to Miss Adaeze's English Studio! Today we are mastering ${topicName}`
-              : isEcon
-                ? `Welcome to Dr. Ngozi's Economics Studio! Today we are mastering ${topicName}`
-                : isGeog
-                  ? `Welcome to Dr. Ibrahim's Geography & Cartography Studio! Today we are mastering ${topicName}`
-                  : isAgric
-                    ? `Welcome to Dr. Fatima's Agronomy & Farm Science Studio! Today we are mastering ${topicName}`
-                    : isBio
-                      ? `Welcome to Dr. Amaka's Biology Studio! Today we are mastering ${topicName}`
-                      : isPhys
-                        ? `Welcome to Dr. Faraday's Physics Studio! Today we are mastering ${topicName}`
-                        : isFMath
-                          ? `Welcome to Professor Chinedu's Further Mathematics Studio! Today we are mastering ${topicName}`
-                          : isMath
-                            ? `Welcome to Master Chike's Mathematics Studio! Today we are mastering ${topicName}`
-                            : `Welcome to Professor Spark's laboratory! Today we are mastering ${topicName}`
-    );
+  if (isFirstStep && topicName) {
+    parts.push(`Topic focus: ${topicName}`);
   }
 
   if (beat.k === 'teach') {
@@ -442,7 +421,9 @@ export function extractBeatSpeechScript(
                             ? 'Further Mathematics'
                             : isMath
                               ? 'working'
-                              : 'Chemistry'
+                              : isChem
+                                ? 'Chemistry'
+                                : tutor.name
       } trap. Scan each step carefully and tap the exact line where the reasoning went off track!`
     );
   } else if (beat.k === 'check') {
@@ -470,7 +451,9 @@ export function extractBeatSpeechScript(
                             ? 'Your turn at the Calculus board!'
                             : isMath
                               ? 'Your turn at the chalkboard!'
-                              : 'Your turn to test the beaker!'
+                              : isChem
+                                ? 'Your turn to test the beaker!'
+                                : `Your turn in the ${tutor.studioLabel}!`
       } Ask yourself what principle is at work before looking at the options: ${takeCoreSentences(beat.q, 2, 240)}`
     );
   }
@@ -493,15 +476,7 @@ export function extractLabStepSpeechScript(
   const cleanName = labName.replace(/<[^>]+>/g, '').trim();
   const lead =
     stepIdx === 0
-      ? subj === 'chem'
-        ? `Welcome to Professor Spark's lab! Today's investigation is ${cleanName}. Step 1:`
-        : subj === 'agric'
-          ? `Welcome to Dr. Fatima's Agricultural Practicals bench! Today's investigation is ${cleanName}. Step 1:`
-          : subj === 'bio'
-            ? `Welcome to Dr. Amaka's Biology Practicals bench! Today's investigation is ${cleanName}. Step 1:`
-            : subj === 'phys'
-              ? `Welcome to Dr. Faraday's Physics Practicals bench! Today's investigation is ${cleanName}. Step 1:`
-              : `Welcome to the Constructions Lab: ${cleanName}. Step 1:`
+      ? `Investigation: ${cleanName}. Step 1:`
       : `Step ${stepIdx + 1}:`;
 
   const raw = [lead, step.say, isLast && tip ? `Practical tip: ${tip}` : '']
@@ -520,6 +495,7 @@ export function extractMissionSpeechScript(
   trap?: string,
   subj: SubjectId = 'chem'
 ): string {
+  const isChem = subj === 'chem';
   const isMath = subj === 'maths';
   const isFMath = subj === 'fmaths';
   const isPhys = subj === 'phys';
@@ -531,29 +507,8 @@ export function extractMissionSpeechScript(
   const isCivic = subj === 'civic';
   const isDigiTech = subj === 'digitech';
   const isDataProc = subj === 'dataproc';
-  const subjLabel = isDataProc
-    ? 'Data Processing'
-    : isDigiTech
-      ? 'Digital Technologies'
-      : isCivic
-        ? 'Civic Education'
-        : isEng
-          ? 'English Language'
-          : isEcon
-            ? 'Economics'
-            : isGeog
-              ? 'Geography'
-              : isAgric
-                ? 'Agricultural Science'
-                : isBio
-                  ? 'Biology'
-                  : isPhys
-                    ? 'Physics'
-                    : isFMath
-                      ? 'Further Mathematics'
-                      : isMath
-                        ? 'Mathematics'
-                        : 'Chemistry';
+  const tutor = getSubjectTutor(subj);
+  const subjLabel = tutor.name;
   const stageLine =
     stage === 'lesson'
       ? `Jump into the guided lesson on ${topicName} — mastering this unlocks up to plus ${gain} percent on your mastery score.`
@@ -561,31 +516,9 @@ export function extractMissionSpeechScript(
         ? `Tackle 6 progressive ${subjLabel} questions on ${topicName} for up to plus ${gain} percent on your mastery score.`
         : `You're ready for the timed Topic Test on ${topicName} to lock in up to plus ${gain} percent!`;
   const parts = [
-    isDataProc
-      ? `Welcome to Mrs. Kemi's Data Processing Studio! Your Data Processing focus today is ${topicName}.`
-      : isDigiTech
-        ? `Welcome to Engineer Tunde's Digital Tech Studio! Your Digital Technologies focus today is ${topicName}.`
-        : isCivic
-          ? `Welcome to Barrister Kunle's Civic Studio! Your Civic Education focus today is ${topicName}.`
-          : isEng
-            ? `Welcome to Miss Adaeze's English Studio! Your English focus today is ${topicName}.`
-            : isEcon
-              ? `Welcome to Dr. Ngozi's Economics Studio! Your Economics focus today is ${topicName}.`
-              : isGeog
-                ? `Welcome to Dr. Ibrahim's Geography Studio! Your Geography focus today is ${topicName}.`
-                : isAgric
-                  ? `Welcome to Dr. Fatima's Agronomy Studio! Your Agricultural Science focus today is ${topicName}.`
-                  : isBio
-                    ? `Welcome to Dr. Amaka's Biology Studio! Your Biology mission today is ${topicName}.`
-                    : isPhys
-                      ? `Welcome to Dr. Faraday's Physics Studio! Your Physics mission today is ${topicName}.`
-                      : isFMath
-                        ? `Welcome to Professor Chinedu's Further Mathematics Studio! Your Further Maths mission today is ${topicName}.`
-                        : isMath
-                          ? `Welcome to Master Chike's Mathematics Studio! Your Maths mission today is ${topicName}.`
-                          : `Greetings from Professor Spark's lab! Your Chemistry mission today is ${topicName}.`,
+    `Your ${subjLabel} focus today is ${topicName}.`,
     stageLine,
-    trap ? `Before you begin, stay sharp against this classic trap: ${takeCoreSentences(trap, 1, 210)}` : '',
+    trap ? `Stay sharp against this classic trap: ${takeCoreSentences(trap, 1, 210)}` : '',
   ].filter(Boolean);
   return clipSpeechScript(htmlToSpeakableChem(parts.join(' ')), 850);
 }
@@ -781,30 +714,7 @@ export function extractTopicTestIntroSpeechScript(
   totalQs: number,
   subj: SubjectId = 'chem'
 ): string {
-  const subjLabel =
-    subj === 'dataproc'
-      ? 'Data Processing'
-      : subj === 'digitech'
-        ? 'Digital Technologies'
-        : subj === 'civic'
-          ? 'Civic Education'
-          : subj === 'eng'
-            ? 'English Language'
-            : subj === 'econ'
-              ? 'Economics'
-              : subj === 'geog'
-                ? 'Geography'
-                : subj === 'agric'
-                  ? 'Agricultural Science'
-                  : subj === 'bio'
-                    ? 'Biology'
-                    : subj === 'phys'
-                      ? 'Physics'
-                      : subj === 'fmaths'
-                        ? 'Further Mathematics'
-                        : subj === 'maths'
-                          ? 'Mathematics'
-                          : 'Chemistry';
+  const subjLabel = getSubjectTutor(subj).name;
   const raw = [
     `Ready for ${topic.boss}? Score ${targetHits} out of ${totalQs} timed ${subjLabel} questions to master ${topic.name}!`,
     topic.trap ? `Before the clock starts, stay alert for this #1 trap: ${takeCoreSentences(topic.trap, 2, 220)}` : '',
@@ -821,7 +731,7 @@ export function buildMadScientistSystemPrompt(ctx: ChemLessonVoiceContext): stri
   return [
     `You are Professor Spark, an eccentric, theatrical, brilliant Senior Secondary (SS1–SS3 NERDC) Chemistry professor teaching inside a bubbling laboratory on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a master classroom professor — NEVER read notes verbatim! Distill core intuition, use vivid laboratory analogies ("Listen closely before the precipitate settles..."), highlight WHY reactions happen, and warn about classic chemistry traps while keeping every chemical fact, formula, ion charge, and calculation 100% rigorous.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the chemistry!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio or lab at any point — jump straight into teaching the concept or answering the question!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student a quick Socratic check question or invite them to ask anything.`,
     `CURRENT CHEMISTRY LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -844,7 +754,7 @@ export function buildMathCoachSystemPrompt(ctx: ChemLessonVoiceContext): string 
   return [
     `You are Master Chike, an energetic, razor-sharp, encouraging Nigerian Senior Secondary (SS1–SS3 NERDC) Mathematics master coach teaching at a slate chalkboard on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a master classroom coach — NEVER read text verbatim! Unpack the intuition behind the theorem, spotlight the decisive algebraic move ("Watch how cleanly the algebra cancels...", "Spot the triangle right here!"), and pronounce every equation, fraction, exponent, angle, and unit naturally in plain spoken words.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into solving and explaining the mathematics!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into solving and explaining the mathematics!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student one quick mental-check question or invite them to ask anything.`,
     `CURRENT MATHEMATICS LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -867,7 +777,7 @@ export function buildEnglishCoachSystemPrompt(ctx: ChemLessonVoiceContext): stri
   return [
     `You are Miss Adaeze, a warm, poised, articulate female Nigerian Senior Secondary (SS1–SS3 NERDC) English Language master coach teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a master classroom coach — NEVER read text verbatim! Speak with luminous diction, graceful warmth, and crystal-clear phonetic precision ("Listen to the vowel length in 'sheep' versus 'ship'...", "Notice how 'neither...nor' obeys the rule of proximity!").`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the English concept!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the English concept!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 crisp, engaging sentences at a time (around 15–30 seconds), then ask the student a quick oral or grammar check question or invite them to ask anything.`,
     `CURRENT ENGLISH LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -890,7 +800,7 @@ export function buildPhysicsCoachSystemPrompt(ctx: ChemLessonVoiceContext): stri
   return [
     `You are Dr. Faraday, a charismatic, razor-sharp, experimental Nigerian Senior Secondary (SS1–SS3 NERDC) Physics master coach teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a master classroom professor — NEVER read text verbatim! Speak with lucid experimental energy, crisp physical intuition, and vivid apparatus imagery ("Picture the ray bending toward the normal in the glass block...", "Watch how doubling velocity quadruples kinetic energy!").`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into explaining the physics!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into explaining the physics!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student a quick conceptual or numerical check question or invite them to ask anything.`,
     `CURRENT PHYSICS LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -913,7 +823,7 @@ export function buildBiologyCoachSystemPrompt(ctx: ChemLessonVoiceContext): stri
   return [
     `You are Dr. Amaka, a warm, luminous, razor-sharp Nigerian Senior Secondary (SS1–SS3 NERDC) Biology master coach teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a master classroom professor — NEVER read text verbatim! Speak with vivid biological intuition, warm authority, and crystal-clear precision ("Picture the red blood cell swelling in hypotonic water...", "Trace the nephron filtrate right into Henle's loop!").`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into explaining the biology!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into explaining the biology!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student a quick conceptual or genetics check question or invite them to ask anything.`,
     `CURRENT BIOLOGY LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -936,7 +846,7 @@ export function buildAgricCoachSystemPrompt(ctx: ChemLessonVoiceContext): string
   return [
     `You are Dr. Fatima, a warm, authoritative, field-tested Nigerian Senior Secondary (SS1–SS3 NERDC) Agronomist and Farm Scientist teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like an inspiring university agronomy lecturer and research farm mentor — NEVER read notes verbatim! Connect soil horizons, NPK stoichiometry, Pearson Square rations, ruminant digestion, crop rotation, and farm accounting to real Nigerian agro-ecological zones and practical farm intuition.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the agricultural science!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the agricultural science!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student a quick practical farm or agronomic check question or invite them to ask anything.`,
     `CURRENT AGRICULTURAL SCIENCE LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -959,7 +869,7 @@ export function buildEconomicsCoachSystemPrompt(ctx: ChemLessonVoiceContext): st
   return [
     `You are Dr. Ngozi, a poised, incisive, encouraging female Nigerian Senior Secondary (SS1–SS3 NERDC) Economics master professor teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a world-class Economics lecturer — NEVER read notes verbatim! Connect curves, elasticities, Naira market examples, CBN policy, and national income multipliers to vivid everyday Nigerian market intuition while keeping every formula and analytical distinction 100% rigorous.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the economics!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the economics!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student a quick conceptual or numerical check question.`,
     `CURRENT ECONOMICS LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -982,7 +892,7 @@ export function buildCivicCoachSystemPrompt(ctx: ChemLessonVoiceContext): string
   return [
     `You are Barrister Kunle, a resonant, principled, inspiring Nigerian Senior Secondary (SS1–SS3 NERDC) Constitutional Advocate and Civic Education master mentor teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a brilliant constitutional scholar and civic mentor — NEVER read notes verbatim! Bring national values, constitutional rights, separation of powers, federalism, electoral integrity, traffic safety, and public service ethics to life with vivid Nigerian civic case studies while spotlighting subtle conceptual traps.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the civic principle!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the civic principle!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student a quick constitutional or civic reasoning question.`,
     `CURRENT CIVIC EDUCATION LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -1005,7 +915,7 @@ export function buildFMathCoachSystemPrompt(ctx: ChemLessonVoiceContext): string
   return [
     `You are Professor Chinedu, a razor-sharp, inspiring Nigerian Senior Secondary (SS1–SS3 NERDC) Further Mathematics professor teaching calculus, vectors, matrices, mechanics, and probability on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a brilliant university mathematics lecturer — NEVER read notes verbatim! Reveal the geometric and analytical beauty behind derivatives, integrals, 3D vectors, conic sections, projectiles, and distributions, and pronounce every equation, integral, vector dot/cross product, and limit naturally in clear spoken English.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into solving and explaining the further mathematics!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into solving and explaining the further mathematics!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student one quick analytical check question or invite them to ask anything.`,
     `CURRENT FURTHER MATHEMATICS LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -1028,7 +938,7 @@ export function buildGeogCoachSystemPrompt(ctx: ChemLessonVoiceContext): string 
   return [
     `You are Dr. Ibrahim, a charismatic, field-seasoned Nigerian Senior Secondary (SS1–SS3 NERDC) Geographer, Cartographer, and Climatologist teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like an inspiring field geographer — NEVER read notes verbatim! Connect contour gradients, longitude time zones, lapse rates, river stages, karst caves, ITD air masses, Nigerian relief/crop/mineral belts, and ECOWAS/African river basins to vivid real-world Nigerian and global landscapes.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the geography!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the geography!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student one quick mapwork or regional check question or invite them to ask anything.`,
     `CURRENT GEOGRAPHY LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -1051,7 +961,7 @@ export function buildDigiTechCoachSystemPrompt(ctx: ChemLessonVoiceContext): str
   return [
     `You are Engineer Tunde, an energetic, lucid, hands-on Nigerian Senior Secondary (SS1–SS3 NERDC) Computer Systems Architect and Digital Technologies mentor teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like a brilliant embedded-systems and network architect — NEVER read notes verbatim! Connect binary/hexadecimal arithmetic, two's complement, CPU fetch-decode-execute cycles, Boolean logic gates, TCP/IP routing, Python/HTML-CSS-JS fundamentals, cloud computing, and cybersecurity to real modern engineering intuition.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the digital technology concept!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the digital technology concept!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student one quick binary, logic, or networking check question or invite them to ask anything.`,
     `CURRENT DIGITAL TECHNOLOGIES LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,
@@ -1074,7 +984,7 @@ export function buildDataProcCoachSystemPrompt(ctx: ChemLessonVoiceContext): str
   return [
     `You are Mrs. Kemi, a warm, razor-sharp, authoritative Nigerian Senior Secondary (SS1–SS3 NERDC) Lead Database Architect and Data Processing professor teaching on EYAK.`,
     `VOICE & DELIVERY PERSONA: Teach like an inspiring enterprise database and analytics mentor — NEVER read notes verbatim! Bring file organization, ER diagrams, 1NF/2NF/3NF normalization, SQL queries, spreadsheet cell addressing ($A$1 vs A1), validation vs verification,Mod-10 check digits, and disaster-recovery backups to life with real Nigerian school, banking, and JAMB/WAEC registry examples.`,
-    `NO REPEATED INTRODUCTIONS: Introduce yourself ONLY once at the very start of the session. On every follow-up turn or step change, NEVER re-introduce yourself or say hello again — jump straight into teaching the data processing principle!`,
+    `NO SELF-INTRODUCTIONS: NEVER introduce yourself, state your name, or welcome the student to a studio at any point — jump straight into teaching the data processing principle!`,
     `KEEP TURNS CONCISE: Speak 2 to 4 punchy sentences at a time (around 15–30 seconds), then ask the student one quick database, SQL, or spreadsheet check question or invite them to ask anything.`,
     `CURRENT DATA PROCESSING LESSON CONTEXT:`,
     `- Topic: ${ctx.topicName}${ctx.sectionName ? ` (${ctx.sectionName})` : ''}`,

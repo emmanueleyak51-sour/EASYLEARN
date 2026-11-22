@@ -554,8 +554,8 @@ export function typesetMathHtml(rawHtml: string, subj?: SubjectId): string {
   const withCode = convertInlineBackticks(rawHtml);
 
   if (subj === 'eng') {
-    // For English Language, preserve all phonetic slashes (/iː/) and prose; only tidy inline code if any
-    return withCode;
+    // For English Language, preserve all phonetic slashes (/iː/) and prose; sanitize before HTML sink
+    return sanitizeEducationalHtml(withCode);
   }
 
   const { masked, restore } = protectBlocks(withCode);

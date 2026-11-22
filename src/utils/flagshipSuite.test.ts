@@ -57,7 +57,7 @@ test('CBT Engine builds 4-subject JAMB UTME paper and computes 400-scale & weak 
   const progress = makeBlankProgress();
   const map = topicsMap();
   const paper = buildCbtPaper('jamb', 'sprint', ['eng', 'maths', 'chem', 'phys'], progress, map, 'seed-42');
-  assert.equal(paper.length, 42); // 12 Eng + 10 Maths + 10 Chem + 10 Phys
+  assert.equal(paper.length, 45); // 15 Eng + 10 Maths + 10 Chem + 10 Phys
 
   const answers: Record<string, number> = {};
   paper.forEach((item, idx) => {

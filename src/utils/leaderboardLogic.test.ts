@@ -8,13 +8,14 @@ import {
   computeMasteryIndexBreakdown,
   getDivisionForIndex,
   getNationalDivisionBenchmarks,
+  getStandingElementalRank,
   rankLeaderboardEntries,
   sanitizeCampusGoal,
   sanitizeLeaderboardName,
   type LeaderboardStanding,
 } from './leaderboardLogic';
 
-test('computeMasteryIndexBreakdown scales transparently from 0 to 1000 with volume-weighted accuracy', () => {
+test('computeMasteryIndexBreakdown scales smartness-weighted RP from 0 to 1000', () => {
   const zero = computeMasteryIndexBreakdown({
     topicsPassed: 0,
     totalAnswered: 0,
@@ -25,7 +26,7 @@ test('computeMasteryIndexBreakdown scales transparently from 0 to 1000 with volu
   });
   assert.equal(zero.total, 0);
 
-  // 1 lucky correct question should NOT award full 250 accuracy points
+  // 1 lucky correct question should NOT award high accuracy RP
   const lucky = computeMasteryIndexBreakdown({
     topicsPassed: 0,
     totalAnswered: 1,
@@ -34,11 +35,11 @@ test('computeMasteryIndexBreakdown scales transparently from 0 to 1000 with volu
     streakCount: 0,
     duelsCompleted: 0,
   });
-  assert.ok(lucky.accuracyPoints < 15, `Expected volume-damped accuracy, got ${lucky.accuracyPoints}`);
+  assert.ok(lucky.accuracyPoints < 5, `Expected volume-damped accuracy, got ${lucky.accuracyPoints}`);
 
-  // Full mastery caps cleanly at 1000
+  // Full mastery across 90+ topics, 300+ Qs at 100%, 400 CBT caps cleanly at 1000 RP
   const apex = computeMasteryIndexBreakdown({
-    topicsPassed: 40,
+    topicsPassed: 95,
     totalAnswered: 500,
     accuracyPct: 100,
     bestCbtScore: 400,
@@ -46,24 +47,24 @@ test('computeMasteryIndexBreakdown scales transparently from 0 to 1000 with volu
     duelsCompleted: 12,
   });
   assert.equal(apex.total, 1000);
-  assert.equal(apex.topicsPoints, 400);
-  assert.equal(apex.accuracyPoints, 250);
-  assert.equal(apex.cbtPoints, 200);
-  assert.equal(apex.consistencyPoints, 150);
+  assert.equal(apex.topicsPoints, 420);
+  assert.equal(apex.accuracyPoints, 320);
+  assert.equal(apex.cbtPoints, 180);
+  assert.equal(apex.consistencyPoints, 80);
 });
 
-test('getDivisionForIndex maps all 5 Academic Divisions and computes next-tier gaps accurately', () => {
-  assert.equal(getDivisionForIndex(0).current.id, 'rising');
-  assert.equal(getDivisionForIndex(0).pointsToNext, 260);
-  assert.equal(getDivisionForIndex(260).current.id, 'merit');
-  assert.equal(getDivisionForIndex(480).current.id, 'distinction');
-  assert.equal(getDivisionForIndex(680).current.id, 'first-class');
-  assert.equal(getDivisionForIndex(850).current.id, 'chancellor');
-  assert.equal(getDivisionForIndex(950).next, null);
-  assert.equal(getDivisionForIndex(950).tierProgressPct, 100);
+test('getDivisionForIndex and getStandingElementalRank map Elemental Ranks and Heading-To targets', () => {
+  assert.equal(getDivisionForIndex(0).current.id, 'unranked');
+  assert.equal(getDivisionForIndex(80).current.id, 'terra');
+  assert.equal(getDivisionForIndex(190).current.id, 'frost');
+  assert.equal(getDivisionForIndex(320).current.id, 'ember');
+  assert.equal(getDivisionForIndex(620).current.id, 'volt');
+  assert.equal(getDivisionForIndex(965).current.id, 'solar');
+  assert.equal(getDivisionForIndex(980).next, null);
+  assert.equal(getDivisionForIndex(980).tierProgressPct, 100);
 });
 
-test('buildStandingFromProgress constructs Firestore-safe standing across all 12 subjects', () => {
+test('buildStandingFromProgress constructs Firestore-safe standing across all 49 subjects', () => {
   const allTopicsBySubj = Object.fromEntries(
     SUBJECT_IDS.map((sid) => [sid, getTopics(sid)])
   ) as Record<(typeof SUBJECT_IDS)[number], ReturnType<typeof getTopics>>;
@@ -72,7 +73,7 @@ test('buildStandingFromProgress constructs Firestore-safe standing across all 12
   p.name = '  Chinedu Okeke  ';
   p.subj = 'phys';
   p.streak = { d: 20000, n: 8 };
-  p.hist = Array.from({ length: 60 }, (_, i) => [`q-${i}`, i < 48 ? 1 : 0, 20000] as [string, number, number]);
+  p.hist = Array.from({ length: 120 }, (_, i) => [`q-${i}`, i < 96 ? 1 : 0, 20000] as [string, number, number]);
   p.cbtHistory = [
     {
       id: 'cbt-1',
@@ -86,7 +87,7 @@ test('buildStandingFromProgress constructs Firestore-safe standing across all 12
       durationSec: 900,
     },
   ];
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 12; i++) {
     const tid = allTopicsBySubj.phys[i].id;
     p.t[tid] = { att: [[1, 5], [1, 5], [1, 5]], lesson: 1, practice: 1, boss: 1 };
   }
@@ -98,16 +99,18 @@ test('buildStandingFromProgress constructs Firestore-safe standing across all 12
   });
 
   assert.equal(standing.displayName, 'Chinedu Okeke');
-  assert.equal(standing.topicsPassed, 5);
+  assert.equal(standing.topicsPassed, 12);
   assert.equal(standing.accuracyPct, 80);
   assert.equal(standing.bestCbtScore, 312);
   assert.equal(standing.streakCount, 8);
-  assert.equal(Object.keys(standing.subjectMastery).length, 12);
+  assert.equal(Object.keys(standing.subjectMastery).length, 49);
   assert.ok((standing.subjectMastery.phys || 0) > 0);
-  assert.ok(standing.masteryIndex >= 400 && standing.masteryIndex <= 1000);
+  const el = getStandingElementalRank(standing);
+  assert.equal(el.currentRank?.id, 'terra');
+  assert.equal(el.nextLabel, 'Frost I');
 });
 
-test('rankLeaderboardEntries sorts accurately by criterion, subject filter, and preserves global rank under search', () => {
+test('rankLeaderboardEntries attaches Elemental Rank + Heading-To target and sorts accurately', () => {
   const entries: LeaderboardStanding[] = [
     ...getNationalDivisionBenchmarks(),
     {
@@ -116,36 +119,39 @@ test('rankLeaderboardEntries sorts accurately by criterion, subject filter, and 
       campusGoal: 'UNILAG · Medicine',
       primarySubj: 'bio',
       isPublic: true,
-      masteryIndex: 720,
-      topicsPassed: 20,
-      totalAnswered: 260,
-      accuracyPct: 88,
+      masteryIndex: 780,
+      topicsPassed: 68,
+      totalAnswered: 1020,
+      accuracyPct: 89,
       bestCbtScore: 332,
-      streakCount: 16,
-      duelsCompleted: 4,
-      subjectMastery: { bio: 96, maths: 70 },
+      streakCount: 28,
+      duelsCompleted: 6,
+      subjectMastery: { bio: 98, maths: 78 },
     },
   ];
 
-  // Overall sort: Chancellor benchmark (850) > Adaeze (720) > First Class (680)
+  // Overall sort: Solar Gate (970) > Aether Gate (895) > Adaeze (780, Plasma -> Heading to Aether)
   const byIndex = rankLeaderboardEntries(entries, 'masteryIndex', 'all');
-  assert.equal(byIndex[0].entry.uid, 'benchmark-chancellor');
-  assert.equal(byIndex[1].entry.uid, 'u-ada');
-  assert.equal(byIndex[1].rank, 2);
+  assert.equal(byIndex[0].entry.uid, 'benchmark-solar');
+  assert.equal(byIndex[0].elemental.currentLabel, 'Solar');
+  assert.equal(byIndex[0].elemental.nextLabel, null);
+  assert.equal(byIndex[2].entry.uid, 'u-ada');
+  assert.equal(byIndex[2].elemental.currentLabel, 'Plasma');
+  assert.equal(byIndex[2].elemental.nextLabel, 'Aether');
 
-  // Subject filter (Biology): Adaeze (96%) beats Chancellor benchmark (86%)
+  // Subject filter (Biology): Adaeze (98%) beats Solar Gate (93%)
   const byBio = rankLeaderboardEntries(entries, 'masteryIndex', 'bio');
   assert.equal(byBio[0].entry.uid, 'u-ada');
-  assert.equal(byBio[0].scoreValue, 96);
+  assert.equal(byBio[0].scoreValue, 98);
 
-  // Streak sort: Adaeze (16d) beats Chancellor benchmark (14d)
+  // Streak sort: Adaeze (28d) beats Solar Gate (25d)
   const byStreak = rankLeaderboardEntries(entries, 'streakCount', 'all');
   assert.equal(byStreak[0].entry.uid, 'u-ada');
 
-  // Search preserves global rank (#2)
+  // Search by element ("plasma" or "aether") preserves global rank (#3)
   const filtered = rankLeaderboardEntries(entries, 'masteryIndex', 'all', 'unilag');
   assert.equal(filtered.length, 1);
-  assert.equal(filtered[0].rank, 2);
+  assert.equal(filtered[0].rank, 3);
 });
 
 test('sanitizers enforce Firestore blueprint maxLengths and head-to-head deltas are signed correctly', () => {

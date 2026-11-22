@@ -1,17 +1,12 @@
 import React from 'react';
-import type { MasteryThemeId, ThemeAppearanceMode, ThemeLockMode } from '../types';
+import type { MasteryThemeId, ThemeAppearanceMode } from '../types';
 import {
   MASTERY_THEMES,
   getMasteryThemeById,
   getThemePreview,
   type MasteryThemeDef,
 } from '../data/masteryThemes';
-import {
-  isThemeUnlocked,
-  type GoalMasterySnapshot,
-} from '../utils/masteryThemeLogic';
 import { Icon } from './Icons';
-import { SlidingTabs, SmoothProgressBar } from './ULessonMotion';
 
 function ThemeMiniPreview({
   theme,
@@ -24,7 +19,7 @@ function ThemeMiniPreview({
   return (
     <div
       aria-hidden="true"
-      className="w-full h-[66px] rounded-xl p-2 flex flex-col justify-between border overflow-hidden transition-colors"
+      className="w-full h-[56px] rounded-lg p-1.5 flex flex-col justify-between border overflow-hidden transition-colors"
       style={{
         backgroundColor: pal.bg,
         borderColor: pal.line,
@@ -44,8 +39,8 @@ function ThemeMiniPreview({
           />
           <span className="w-10 h-1.5 rounded-full bg-white/80" />
         </div>
-        <span className="text-[9.5px] font-extrabold tracking-wide text-white/90 tabular-nums">
-          {appearanceMode === 'dark' ? 'DARK' : 'LIGHT'}
+        <span className="text-[10px] font-bold text-white/90">
+          {appearanceMode === 'dark' ? 'Dark' : 'Light'}
         </span>
       </div>
 
@@ -75,40 +70,46 @@ function ThemeMiniPreview({
     </div>
   );
 }
-
+function LockedThemeVaultPreview() {
+  return (
+    <div
+      aria-hidden="true"
+      className="w-full h-[56px] rounded-lg p-1.5 flex flex-col items-center justify-center gap-1 border border-dashed border-[var(--line)] bg-[var(--bg)] text-[var(--dim)] select-none"
+    >
+      <span className="w-6 h-6 rounded-full bg-[var(--card)] border border-[var(--line)] flex items-center justify-center text-[var(--dim)]">
+        <Icon name="lock" size={13} />
+      </span>
+      <span className="text-[10px] font-bold tracking-tight">Colour locked</span>
+    </div>
+  );
+}
 export function MasteryThemeGallery({
   effectiveThemeId,
   appearanceMode,
-  lockMode,
-  autoProgress,
-  goalSnapshot,
+  isPremium = false,
   onSelectTheme,
   onChangeAppearanceMode,
-  onChangeLockMode,
-  onToggleAutoProgress,
+  onRequestUnlockPremium,
 }: {
   effectiveThemeId: MasteryThemeId;
   appearanceMode: ThemeAppearanceMode;
-  lockMode: ThemeLockMode;
-  autoProgress: boolean;
-  goalSnapshot: GoalMasterySnapshot;
+  isPremium?: boolean;
   onSelectTheme: (id: MasteryThemeId) => void;
   onChangeAppearanceMode: (mode: ThemeAppearanceMode) => void;
-  onChangeLockMode: (mode: ThemeLockMode) => void;
-  onToggleAutoProgress: (enabled: boolean) => void;
+  onRequestUnlockPremium?: (reason: string) => void;
 }) {
   const activeTheme = getMasteryThemeById(effectiveThemeId);
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Light vs Dark Appearance Selector */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="group" aria-label="Appearance mode">
+    <div className="flex flex-col gap-3.5">
+      {/* Light vs Dark Appearance Selector (Available to all students) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5" role="group" aria-label="Appearance mode">
         {(
           [
             {
               id: 'light' as ThemeAppearanceMode,
-              title: 'Light Theme',
-              desc: 'Crisp daylight paper & clear contrast for bright rooms',
+              title: 'Light theme',
+              desc: 'Crisp daylight paper and clear contrast for bright rooms',
               icon: 'sun',
               sampleBg: activeTheme.lightPreview.bg,
               sampleCard: activeTheme.lightPreview.card,
@@ -118,8 +119,8 @@ export function MasteryThemeGallery({
             },
             {
               id: 'dark' as ThemeAppearanceMode,
-              title: 'Dark Theme',
-              desc: 'Deep nocturnal canvas for low-glare evening study',
+              title: 'Dark theme',
+              desc: 'Deep evening canvas for comfortable low-glare study',
               icon: 'moon',
               sampleBg: activeTheme.darkPreview.bg,
               sampleCard: activeTheme.darkPreview.card,
@@ -136,16 +137,16 @@ export function MasteryThemeGallery({
               type="button"
               aria-pressed={selected}
               onClick={() => onChangeAppearanceMode(opt.id)}
-              className={`study-card rounded-2xl border p-4 text-left flex items-center justify-between gap-3.5 transition cursor-pointer ${
+              className={`study-card rounded-xl border p-3 text-left flex items-center justify-between gap-3 transition cursor-pointer ${
                 selected
                   ? 'bg-[var(--acc-soft)]/55 border-[var(--gold)] ring-1 ring-[var(--gold)]/25'
                   : 'bg-[var(--bg)] border-[var(--line)] hover:border-[var(--acc-line)]'
               }`}
             >
-              <div className="flex items-center gap-3.5 min-w-0">
+              <div className="flex items-center gap-3 min-w-0">
                 <div
                   aria-hidden="true"
-                  className="w-12 h-12 rounded-xl border flex flex-col justify-between p-1.5 shrink-0"
+                  className="w-10 h-10 rounded-lg border flex flex-col justify-between p-1.5 shrink-0"
                   style={{
                     backgroundColor: opt.sampleBg,
                     borderColor: opt.sampleLine,
@@ -153,193 +154,164 @@ export function MasteryThemeGallery({
                 >
                   <div className="flex items-center justify-between">
                     <span
-                      className="w-5 h-5 rounded-md flex items-center justify-center"
+                      className="w-4 h-4 rounded flex items-center justify-center"
                       style={{
                         backgroundColor: opt.sampleCard,
                         color: opt.sampleAcc,
                       }}
                     >
-                      <Icon name={opt.icon} size={13} />
+                      <Icon name={opt.icon} size={11} />
                     </span>
                     <span
-                      className="w-2.5 h-2.5 rounded-full"
+                      className="w-2 h-2 rounded-full"
                       style={{ backgroundColor: opt.sampleAcc }}
                     />
                   </div>
                   <span
-                    className="w-full h-1.5 rounded-full"
+                    className="w-full h-1 rounded-full"
                     style={{ backgroundColor: opt.sampleInk, opacity: 0.45 }}
                   />
                 </div>
                 <div className="min-w-0">
-                  <div className="font-[var(--display)] font-bold text-[15.5px] text-[var(--ink)] flex items-center gap-2">
+                  <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] flex items-center gap-2">
                     <span>{opt.title}</span>
                   </div>
-                  <p className="text-[12.5px] text-[var(--dim)] leading-snug mt-0.5">
+                  <p className="text-[12px] text-[var(--dim)] leading-snug mt-0.5">
                     {opt.desc}
                   </p>
                 </div>
               </div>
               <span
-                className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 ${
+                className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
                   selected
                     ? 'bg-[var(--gold)] border-[var(--gold)] text-[var(--on-acc)]'
                     : 'bg-[var(--card)] border-[var(--line)] text-transparent'
                 }`}
               >
-                <Icon name="check" size={14} />
+                <Icon name="check" size={12} />
               </span>
             </button>
           );
         })}
       </div>
 
-      {/* Goal Progress & Lock Mode Header */}
-      <div className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-4 sm:p-5 flex flex-col gap-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex flex-col gap-1.5 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap text-[12.5px] font-bold">
-              <span className="text-[var(--gold)]">
-                Active: Stage {activeTheme.stage} · {activeTheme.name} ({appearanceMode === 'dark' ? 'Dark' : 'Light'})
-              </span>
-              <span aria-hidden="true" className="text-[var(--dim)]">·</span>
-              <span className="text-[var(--ink)] tabular-nums">
-                Goal progress: {goalSnapshot.goalPct}% of your {goalSnapshot.targetPct}% target
-              </span>
-            </div>
-            <SmoothProgressBar
-              value={goalSnapshot.goalPct}
-              max={100}
-              tone="indigo"
-              heightClass="h-2"
-              trackClass="bg-[var(--deep)]"
-              ariaLabel="Mastery goal progression toward unlocking themes"
-              className="max-w-[420px]"
-            />
-            <div className="text-[12.5px] text-[var(--dim)]">
-              {goalSnapshot.nextTheme ? (
-                <span>
-                  Earned stage: <strong className="text-[var(--ink)]">Stage {goalSnapshot.highestUnlockedStage} ({goalSnapshot.highestUnlockedTheme.name})</strong> · Next unlock at{' '}
-                  <strong className="text-[var(--ink)]">{goalSnapshot.nextTheme.unlockGoalPct}% of goal</strong> ({goalSnapshot.nextTheme.name})
-                </span>
-              ) : (
-                <span className="text-[var(--green)] font-bold">
-                  100% Goal Mastered — All 10 Mastery Themes permanently earned!
-                </span>
+      {/* Active Theme Summary & Premium Collection Header */}
+      <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap text-[12.5px] font-bold">
+          <span className="text-[var(--gold)]">
+            Active theme: {activeTheme.name} ({appearanceMode === 'dark' ? 'Dark' : 'Light'})
+          </span>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap text-[12.5px] font-semibold text-[var(--dim)]">
+          {isPremium ? (
+            <span className="text-[var(--green)] font-bold">
+              Premium active · All 10 colour themes unlocked
+            </span>
+          ) : (
+            <>
+              <span>Extra colour themes below are reserved for Premium students</span>
+              {onRequestUnlockPremium && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onRequestUnlockPremium(
+                      'Unlock all 9 Premium colour themes in Light and Dark mode'
+                    )
+                  }
+                  className="text-[12.5px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+                >
+                  Unlock 9 themes →
+                </button>
               )}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 shrink-0">
-            <SlidingTabs
-              items={[
-                { id: 'unlocked', label: 'Preview All 10 (Test Mode)', icon: 'unlock' },
-                { id: 'goal', label: 'Lock by Goal Progress', icon: 'lock' },
-              ]}
-              value={lockMode}
-              onChange={onChangeLockMode}
-              ariaLabel="Theme unlock mode"
-              variant="indigo"
-              size="sm"
-              roleType="group"
-              className="min-w-[320px] sm:min-w-[380px]"
-            />
-            <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-[var(--dim)] cursor-pointer select-none self-start">
-              <input
-                type="checkbox"
-                checked={autoProgress}
-                onChange={(e) => onToggleAutoProgress(e.target.checked)}
-                className="w-4 h-4 rounded accent-[var(--gold)] cursor-pointer"
-              />
-              <span>Auto-advance theme when my goal passes a new stage</span>
-            </label>
-          </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* 10-Stage Mastery Progression Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* Standard + Premium Colour Themes Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
         {MASTERY_THEMES.map((theme) => {
-          const unlocked = isThemeUnlocked(theme, goalSnapshot.goalPct, lockMode);
-          const earnedByGoal = goalSnapshot.goalPct >= theme.unlockGoalPct;
+          const unlocked = !theme.premiumOnly || isPremium;
           const isActive = effectiveThemeId === theme.id;
 
           let statusText = '';
           if (isActive) {
             statusText = 'Active theme';
-          } else if (!unlocked) {
-            statusText = `Locked · ${theme.unlockGoalPct}% goal`;
-          } else if (earnedByGoal) {
-            statusText = 'Earned';
+          } else if (unlocked) {
+            statusText = 'Use theme';
           } else {
-            statusText = `Test · ${theme.unlockGoalPct}% goal`;
+            statusText = 'Unlock with Premium';
           }
 
           return (
             <button
               key={theme.id}
               type="button"
-              disabled={!unlocked}
               aria-pressed={isActive}
               onClick={() => {
-                if (unlocked) onSelectTheme(theme.id);
+                if (unlocked) {
+                  onSelectTheme(theme.id);
+                } else {
+                  onRequestUnlockPremium?.(
+                    `Unlock ${theme.name} and all 9 Premium colour themes`
+                  );
+                }
               }}
-              className={`study-card text-left rounded-2xl border p-3 flex flex-col justify-between gap-2.5 transition ${
+              className={`study-card text-left rounded-xl border p-2.5 flex flex-col justify-between gap-2 transition cursor-pointer ${
                 isActive
-                  ? 'bg-[var(--acc-soft)]/55 border-[var(--gold)] ring-1 ring-[var(--gold)]/25 cursor-pointer'
+                  ? 'bg-[var(--acc-soft)]/55 border-[var(--gold)] ring-1 ring-[var(--gold)]/25'
                   : unlocked
-                    ? 'rtc-card hover:border-[var(--acc-line)] cursor-pointer'
-                    : 'bg-[var(--bg)]/75 border-[var(--line)] opacity-65 cursor-not-allowed'
+                    ? 'rtc-card hover:border-[var(--acc-line)]'
+                    : 'bg-[var(--bg)]/80 border-[var(--line)] hover:border-[var(--acc-line)] opacity-85'
               }`}
             >
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-1.5 text-[11px] font-bold">
-                  <span className="text-[var(--gold)] tabular-nums whitespace-nowrap">
-                    Stage {theme.stage}
+                  <span className={theme.premiumOnly ? 'text-[var(--dim)]' : 'text-[var(--gold)]'}>
+                    {theme.premiumOnly ? 'Premium' : 'Standard'}
                   </span>
-                  <span className="text-[var(--dim)] tabular-nums whitespace-nowrap">
-                    {theme.unlockGoalPct === 0 ? 'Start (0%)' : `${theme.unlockGoalPct}% goal`}
+                  <span className="text-[var(--dim)]">
+                    {theme.premiumOnly ? (isPremium ? 'Unlocked' : 'Locked') : 'Free'}
                   </span>
                 </div>
 
-                <ThemeMiniPreview theme={theme} appearanceMode={appearanceMode} />
+                {unlocked ? (
+                  <ThemeMiniPreview theme={theme} appearanceMode={appearanceMode} />
+                ) : (
+                  <LockedThemeVaultPreview />
+                )}
 
                 <div>
-                  <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] leading-tight">
+                  <div className="font-[var(--display)] font-bold text-[13.5px] text-[var(--ink)] leading-tight">
                     {theme.name}
                   </div>
-                  <div className="text-[11.5px] font-semibold text-[var(--dim)] mt-0.5">
-                    {theme.tierLabel}
-                  </div>
-                  <p className="text-[11.5px] text-[var(--dim)] leading-snug mt-1 line-clamp-2">
-                    {theme.tagline}
+                  <p className="text-[11px] text-[var(--dim)] leading-snug mt-0.5 line-clamp-2">
+                    {unlocked
+                      ? theme.tagline
+                      : 'Subscribe to any EYAK pass to unlock and view this colour theme.'}
                   </p>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-[var(--line)] flex items-center justify-between gap-1.5 text-[11.5px] font-bold">
+              <div className="pt-1.5 border-t border-[var(--line)] flex items-center justify-between gap-1.5 text-[11px] font-bold">
                 <span
                   className={`truncate ${
                     isActive
                       ? 'text-[var(--gold)]'
-                      : !unlocked
-                        ? 'text-[var(--dim)]'
-                        : earnedByGoal
-                          ? 'text-[var(--green)]'
-                          : 'text-[var(--ink)]'
+                      : unlocked
+                        ? 'text-[var(--ink)]'
+                        : 'text-[var(--dim)]'
                   }`}
                 >
                   {statusText}
                 </span>
                 <Icon
-                  name={isActive ? 'check' : !unlocked ? 'lock' : 'go'}
+                  name={isActive ? 'check' : unlocked ? 'go' : 'lock'}
                   size={14}
                   className={
                     isActive
                       ? 'text-[var(--gold)] shrink-0'
-                      : !unlocked
-                        ? 'text-[var(--dim)] shrink-0'
-                        : 'text-[var(--dim)] shrink-0'
+                      : 'text-[var(--dim)] shrink-0'
                   }
                 />
               </div>

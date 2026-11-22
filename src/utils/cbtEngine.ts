@@ -1,5 +1,7 @@
 import type { Question, SubjectId, Topic, UserProgress } from '../types';
 import { bankForTopic, perm } from './engine';
+import { isWaecOnlySubject } from './examSubjects';
+import { normalizeJambQuartet } from './examTrackLogic';
 
 export type CbtExamMode = 'jamb' | 'waec';
 export type CbtPresetId = 'sprint' | 'half' | 'full';
@@ -7,29 +9,37 @@ export type CbtPresetId = 'sprint' | 'half' | 'full';
 export interface CbtPreset {
   id: CbtPresetId;
   label: string;
+  shortDesc: string;
   durationSec: number;
   jambPerSubj: { eng: number; other: number };
   waecCount: number;
 }
 
+export function isWaecOnlyCbtSubject(sid: SubjectId): boolean {
+  return isWaecOnlySubject(sid);
+}
+
 export const CBT_PRESETS: Record<CbtPresetId, CbtPreset> = {
   sprint: {
     id: 'sprint',
-    label: 'Quick CBT (30 min)',
+    label: 'Quick 30 min',
+    shortDesc: '45 questions (English 15, three subjects 10 each)',
     durationSec: 30 * 60,
-    jambPerSubj: { eng: 12, other: 10 },
+    jambPerSubj: { eng: 15, other: 10 },
     waecCount: 25,
   },
   half: {
     id: 'half',
-    label: 'Half Mock (60 min)',
+    label: 'Half paper 60 min',
+    shortDesc: '90 questions (English 30, three subjects 20 each)',
     durationSec: 60 * 60,
-    jambPerSubj: { eng: 25, other: 20 },
+    jambPerSubj: { eng: 30, other: 20 },
     waecCount: 40,
   },
   full: {
     id: 'full',
-    label: 'Full Exam (120 min)',
+    label: 'Full UTME 120 min',
+    shortDesc: '180 questions (English 60, three subjects 40 each)',
     durationSec: 120 * 60,
     jambPerSubj: { eng: 60, other: 40 },
     waecCount: 50,
@@ -39,6 +49,8 @@ export const CBT_PRESETS: Record<CbtPresetId, CbtPreset> = {
 export interface CbtQuestionItem {
   key: string;
   subj: SubjectId;
+  subjQuestionNo: number;
+  subjQuestionTotal: number;
   topicId: string;
   topicName: string;
   q: Question;
@@ -99,7 +111,11 @@ export function buildCbtPaper(
   const preset = CBT_PRESETS[presetId];
   const chosenSubjs: SubjectId[] =
     mode === 'jamb'
-      ? (['eng', ...subjects.filter((s) => s !== 'eng').slice(0, 3)] as SubjectId[])
+      ? normalizeJambQuartet(
+          subjects.length >= 4
+            ? subjects
+            : [...subjects, ...(progress.jambSubjects || []), ...progress.subjs]
+        )
       : [subjects[0] || 'maths'];
 
   const paper: CbtQuestionItem[] = [];
@@ -113,26 +129,62 @@ export function buildCbtPaper(
           : preset.jambPerSubj.other
         : preset.waecCount;
 
-    const pool: { topic: Topic; q: Question }[] = [];
+    const rawPool: { topic: Topic; q: Question }[] = [];
     for (const topic of topics) {
       for (const q of bankForTopic(progress, topic)) {
-        pool.push({ topic, q });
+        rawPool.push({ topic, q });
       }
     }
 
-    if (!pool.length) continue;
-    const shuffledIdx = perm(`${seedKey}|${sid}|${pool.length}`, pool.length);
-    const take = Math.min(targetCount, pool.length);
+    if (!rawPool.length) continue;
 
-    for (let i = 0; i < take; i++) {
-      const { topic, q } = pool[shuffledIdx[i]];
+    // In JAMB mode, surface higher-difficulty (l >= 3) & look-alike trap questions first before lower-tier items
+    const toughTier =
+      mode === 'jamb'
+        ? rawPool.filter((item) => item.q.l >= 3 || Boolean(item.q.w?.length))
+        : [];
+    const standardTier =
+      mode === 'jamb'
+        ? rawPool.filter((item) => !(item.q.l >= 3 || Boolean(item.q.w?.length)))
+        : rawPool;
+
+    const pickedItems: { topic: Topic; q: Question }[] = [];
+    if (mode === 'jamb' && toughTier.length > 0) {
+      const shuffledTough = perm(`${seedKey}|${sid}|tough|${toughTier.length}`, toughTier.length);
+      for (let i = 0; i < shuffledTough.length && pickedItems.length < targetCount; i++) {
+        pickedItems.push(toughTier[shuffledTough[i]]);
+      }
+      if (pickedItems.length < targetCount && standardTier.length > 0) {
+        const shuffledStd = perm(`${seedKey}|${sid}|std|${standardTier.length}`, standardTier.length);
+        for (let i = 0; i < shuffledStd.length && pickedItems.length < targetCount; i++) {
+          pickedItems.push(standardTier[shuffledStd[i]]);
+        }
+      }
+    }
+
+    // If targetCount exceeds unique pool size, cycle deterministically
+    let round = 0;
+    while (pickedItems.length < targetCount) {
+      const shuffledIdx = perm(`${seedKey}|${sid}|${rawPool.length}|r${round}`, rawPool.length);
+      for (let i = 0; i < shuffledIdx.length && pickedItems.length < targetCount; i++) {
+        pickedItems.push(rawPool[shuffledIdx[i]]);
+      }
+      round++;
+      if (round > 10) break;
+    }
+
+    const totalForSubj = pickedItems.length;
+    for (let i = 0; i < totalForSubj; i++) {
+      const { topic, q } = pickedItems[i];
       paper.push({
         key: `${sid}:${q.id}:${i}`,
         subj: sid,
+        subjQuestionNo: i + 1,
+        subjQuestionTotal: totalForSubj,
         topicId: topic.id,
         topicName: topic.name,
         q,
-        order: perm(`${seedKey}|opt|${sid}|${q.id}`, q.o.length),
+        order: perm(`${seedKey}|opt|${sid}|${q.id}|${i}`, q.o.length),
       });
     }
   }
@@ -196,7 +248,6 @@ export function evaluateCbtSubmission(
   const maxScale = mode === 'jamb' ? bySubject.length * 100 : 100;
   const waecGrade = waecGradeFromPct(accuracyPct);
 
-  // Estimate marks lost per weak topic
   const weakTopics: CbtWeakTopic[] = [];
   for (const rec of topicMap.values()) {
     if (rec.missed <= 0) continue;
@@ -209,17 +260,17 @@ export function evaluateCbtSubmission(
   }
   weakTopics.sort((a, b) => b.marksLost - a.marksLost || b.missed - a.missed);
 
-  let standingLabel = 'Needs targeted revision';
+  let standingLabel = 'Keep practising weak topics';
   if (mode === 'jamb') {
-    if (scaledScore >= 300) standingLabel = 'Merit / First-Choice Competitive';
-    else if (scaledScore >= 250) standingLabel = 'Strong University Cutoff Range';
-    else if (scaledScore >= 200) standingLabel = 'Above General Cutoff — Push Higher';
-    else standingLabel = 'Foundation Recovery Needed';
+    if (scaledScore >= 300) standingLabel = 'Strong score for competitive courses';
+    else if (scaledScore >= 250) standingLabel = 'Solid university cut-off range';
+    else if (scaledScore >= 200) standingLabel = 'Above general cut-off — keep building';
+    else standingLabel = 'Focus on core topics to lift your score';
   } else {
-    if (accuracyPct >= 75) standingLabel = 'A1 Distinction Standard';
-    else if (accuracyPct >= 65) standingLabel = 'Very Good Credit (B2–B3)';
-    else if (accuracyPct >= 50) standingLabel = 'Credit Pass (C4–C6)';
-    else standingLabel = 'Below Credit — Fix Weak Topics';
+    if (accuracyPct >= 75) standingLabel = 'Distinction level (A1)';
+    else if (accuracyPct >= 65) standingLabel = 'Very good credit (B2–B3)';
+    else if (accuracyPct >= 50) standingLabel = 'Credit pass (C4–C6)';
+    else standingLabel = 'Below credit — practise missed topics';
   }
 
   return {

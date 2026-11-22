@@ -1,5 +1,7 @@
 import type { SubjectId } from '../types';
-import { stripPrototypePollution } from './securityPolicy';
+import { ALL_SUBJECT_IDS } from './examSubjects';
+import { sanitizeEducationalHtml, stripPrototypePollution } from './securityPolicy';
+import { SUBJECT_TUTOR_REGISTRY } from './tutorRegistry';
 
 export type BankExamType = 'JAMB' | 'WAEC' | 'NECO';
 export type BankQuestionSource = 'api' | 'ai';
@@ -36,22 +38,21 @@ export interface BankSubjectConfig {
 }
 
 export const BANK_TARGET_PER_SUBJECT = 1000;
-export const BANK_TOTAL_TARGET = 12000;
 
-export const QUESTION_BANK_SUBJECTS: BankSubjectConfig[] = [
-  { id: 'maths', uiName: 'Maths', fullName: 'Mathematics', alocSlug: 'mathematics', requiresLatex: true, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'fmaths', uiName: 'F.Maths', fullName: 'Further Mathematics', alocSlug: null, requiresLatex: true, targetCount: 1000, sourceStrategy: 'gemini-primary' },
-  { id: 'chem', uiName: 'Chem', fullName: 'Chemistry', alocSlug: 'chemistry', requiresLatex: true, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'phys', uiName: 'Phys', fullName: 'Physics', alocSlug: 'physics', requiresLatex: true, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'bio', uiName: 'Bio', fullName: 'Biology', alocSlug: 'biology', requiresLatex: false, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'agric', uiName: 'Agric', fullName: 'Agricultural Science', alocSlug: 'agric', requiresLatex: false, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'geog', uiName: 'Geog', fullName: 'Geography', alocSlug: 'geography', requiresLatex: false, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'econ', uiName: 'Econ', fullName: 'Economics', alocSlug: 'economics', requiresLatex: false, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'eng', uiName: 'Eng', fullName: 'English Language', alocSlug: 'english', requiresLatex: false, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'civic', uiName: 'Civic', fullName: 'Civic Education', alocSlug: 'civic-education', requiresLatex: false, targetCount: 1000, sourceStrategy: 'aloc+gemini' },
-  { id: 'digitech', uiName: 'DigiTech', fullName: 'Digital Technologies', alocSlug: null, requiresLatex: false, targetCount: 1000, sourceStrategy: 'gemini-primary' },
-  { id: 'dataproc', uiName: 'DataProc', fullName: 'Data Processing', alocSlug: null, requiresLatex: false, targetCount: 1000, sourceStrategy: 'gemini-primary' },
-];
+export const QUESTION_BANK_SUBJECTS: BankSubjectConfig[] = ALL_SUBJECT_IDS.map((id) => {
+  const meta = SUBJECT_TUTOR_REGISTRY[id];
+  return {
+    id,
+    uiName: meta.compact,
+    fullName: meta.name,
+    alocSlug: meta.alocSlug,
+    requiresLatex: meta.requiresLatex,
+    targetCount: BANK_TARGET_PER_SUBJECT,
+    sourceStrategy: meta.alocSlug ? 'aloc+gemini' : 'gemini-primary',
+  };
+});
+
+export const BANK_TOTAL_TARGET = QUESTION_BANK_SUBJECTS.length * BANK_TARGET_PER_SUBJECT;
 
 export const BANK_SUBJECT_MAP: Record<SubjectId, BankSubjectConfig> = QUESTION_BANK_SUBJECTS.reduce(
   (acc, item) => {
@@ -65,7 +66,9 @@ export const ALOC_SUPPORTED_SUBJECTS: BankSubjectConfig[] = QUESTION_BANK_SUBJEC
   (s) => s.alocSlug !== null
 );
 
-export const GEMINI_PRIMARY_SUBJECTS: SubjectId[] = ['digitech', 'dataproc', 'fmaths'];
+export const GEMINI_PRIMARY_SUBJECTS: SubjectId[] = QUESTION_BANK_SUBJECTS.filter(
+  (s) => s.sourceStrategy === 'gemini-primary'
+).map((s) => s.id);
 
 /**
  * Normalizes question text for reliable cross-source deduplication.
@@ -454,5 +457,5 @@ export function renderInlineLatexToHtml(raw: string): string {
   if (lastIndex < input.length) {
     parts.push(escapeHtml(input.slice(lastIndex)));
   }
-  return parts.join('');
+  return sanitizeEducationalHtml(parts.join(''));
 }

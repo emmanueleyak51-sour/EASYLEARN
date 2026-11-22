@@ -63,21 +63,11 @@ test('buildRegisteredAccount & authenticateAccount round-trip by username or ema
   assert.equal(wrongPass.ok, false);
 });
 
-test('12-subject matrix: Civic, Further Maths, Geography, DigiTech & DataProc have 30 SS1-SS3 topics and ZERO labs', () => {
-  assert.deepEqual(SUBJECT_IDS, [
-    'maths',
-    'fmaths',
-    'chem',
-    'phys',
-    'bio',
-    'agric',
-    'geog',
-    'econ',
-    'eng',
-    'civic',
-    'digitech',
-    'dataproc',
-  ]);
+test('49-subject matrix: Civic, Further Maths, Geography, DigiTech & DataProc have 30 SS1-SS3 topics and ZERO labs', () => {
+  assert.equal(SUBJECT_IDS.length, 49);
+  for (const sid of ['maths', 'fmaths', 'chem', 'phys', 'bio', 'agric', 'geog', 'econ', 'eng', 'civic', 'digitech', 'dataproc'] as const) {
+    assert.ok(SUBJECT_IDS.includes(sid), `Missing ${sid} in SUBJECT_IDS`);
+  }
 
   const civic = SUBJECTS.civic;
   assert.equal(civic.topics.length, 30);

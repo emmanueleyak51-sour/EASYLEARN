@@ -17,8 +17,10 @@ import { formatLabTrialRow, getLabSimulationSpec } from './advancedLabSimulation
 
 const FORBIDDEN_EXAM_RE = /\b(WAEC|JAMB|JAAMB|NECO|UTME|WASSCE|SSCE)\b|exam\s+trap|exam\s+watchout/i;
 
-test('all 12 core subjects exist with complete SS1-SS3 topics, questions, and interactive lessons', () => {
-  assert.deepEqual(SUBJECT_IDS, [
+test('all 12 core SS1-SS3 subjects exist inside the 49-subject catalogue with complete topics, questions, and interactive lessons', () => {
+  assert.equal(SUBJECT_IDS.length, 49);
+  const core12 = [
+    'eng',
     'maths',
     'fmaths',
     'chem',
@@ -27,12 +29,12 @@ test('all 12 core subjects exist with complete SS1-SS3 topics, questions, and in
     'agric',
     'geog',
     'econ',
-    'eng',
     'civic',
     'digitech',
     'dataproc',
-  ]);
-  for (const sid of SUBJECT_IDS) {
+  ] as const;
+  for (const sid of core12) {
+    assert.ok(SUBJECT_IDS.includes(sid), `Missing ${sid}`);
     const topics = getTopics(sid);
     assert.ok(topics.length >= 26, `${sid} should have at least 26 topics, got ${topics.length}`);
     for (const t of topics) {

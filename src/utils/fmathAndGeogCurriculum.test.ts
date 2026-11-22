@@ -18,11 +18,12 @@ import {
 } from './geogFormulaLogic';
 
 test('All 12 Nigerian SS1-SS3 faculties load with >=30 topics, interactive lessons, and 4-option MCQs', () => {
-  assert.equal(SUBJECT_IDS.length, 12);
+  assert.equal(SUBJECT_IDS.length, 49);
+  const nerdc12 = ['eng', 'maths', 'fmaths', 'chem', 'phys', 'bio', 'agric', 'geog', 'econ', 'civic', 'digitech', 'dataproc'] as const;
   let grandTotalTopics = 0;
   let grandTotalMcqs = 0;
 
-  for (const sid of SUBJECT_IDS) {
+  for (const sid of nerdc12) {
     const subj = SUBJECTS[sid];
     assert.ok(subj, `Subject ${sid} must exist`);
     assert.ok(subj.topics.length >= 30, `${sid} must have at least 30 topics`);

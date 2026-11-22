@@ -31,10 +31,10 @@ import {
   buildDataProcCoachSystemPrompt,
 } from './chemVoiceLogic';
 
-test('12-faculty symmetry, blank progress defaults, mentor voices, and math typesetter slash protection', () => {
-  assert.equal(SUBJECT_IDS.length, 12);
+test('49-subject symmetry, blank progress defaults, mentor voices, and math typesetter slash protection', () => {
+  assert.equal(SUBJECT_IDS.length, 49);
   const blank = makeBlankProgress();
-  assert.equal(blank.subjs.length, 12);
+  assert.deepEqual(blank.subjs, ['eng', 'maths']);
   assert.equal(getTopicsForProgress({ ...blank, subj: 'digitech' }).length, 30);
   assert.equal(getTopicsForProgress({ ...blank, subj: 'dataproc' }).length, 30);
 

@@ -8,6 +8,8 @@ import { GoogleGenAI, Modality, Type, type LiveServerMessage, type Session } fro
 import {
   buildHardenedTutorSystemPrompt,
   buildSecurityHeaders,
+  extractTrustedClientIp,
+  isAllowedApiMutationRequest,
   isAllowedWebSocketOrigin,
   isValidAlocApiKey,
   isValidAlocCursor,
@@ -16,15 +18,42 @@ import {
   sanitizePromptSnippet,
   SlidingWindowRateLimiter,
 } from './src/utils/securityPolicy.ts';
+import crypto from 'node:crypto';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import { requireAuth, requireVerifiedAuth, type AuthRequest } from './src/middleware/auth.ts';
+import { adminAuth } from './src/lib/firebase-admin.ts';
 import {
   getCloudSyncState,
+  listDailyCbtStandings,
   listDuelEntriesByDuelId,
   listPublicLeaderboard,
   publishDuelAndScoreEntry,
   saveCloudSyncBundle,
+  upsertDailyCbtStanding,
   upsertLeaderboardStanding,
 } from './src/db/repository.ts';
+import {
+  BillingUserError,
+  completeVerifiedPaystackTransaction,
+  createAdminVoucherBatch,
+  createPendingPaystackTransaction,
+  deriveAuthoritativeDeviceKey,
+  getActiveSubscriptionReceipt,
+  getAdminBillingOverview,
+  getEntitlementPublicKeyJwk,
+  getOrCreateTrialReceipt,
+  redeemAccessVoucher,
+} from './src/db/billingRepository.ts';
+import {
+  PREMIUM_PLANS,
+  getPremiumPlanById,
+  isValidDeviceSecretToken,
+  isValidEmailAddress,
+  isValidPaystackReference,
+} from './src/utils/paywallLogic.ts';
+import { SUBJECT_TUTOR_REGISTRY } from './src/utils/tutorRegistry.ts';
+import { cleanBibleVerseText, validateBibleQuery, validateQuranSurah } from './src/utils/studioCalculators.ts';
+import type { SubjectId } from './src/types.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,20 +112,22 @@ const DATAPROC_COACH_STYLE =
   'A warm, razor-sharp, authoritative female Nigerian Database Architect and Data Processing professor teaching relational databases, normalization, SQL, spreadsheets, and data integrity live — NEVER sounding like a flat textbook reader. ' +
   'Speaks with poised classroom warmth, crystal-clear logic on primary/foreign keys and SQL clauses, and sharp emphasis on exam watchouts.';
 
-type VoiceProfile =
-  | 'chem'
-  | 'math'
-  | 'fmath'
-  | 'mathLab'
-  | 'phys'
-  | 'bio'
-  | 'agric'
-  | 'geog'
-  | 'econ'
-  | 'eng'
-  | 'civic'
-  | 'digitech'
-  | 'dataproc';
+type VoiceProfile = SubjectId | 'math' | 'fmath' | 'mathLab';
+
+function resolveVoiceProfile(raw: unknown): VoiceProfile {
+  if (typeof raw !== 'string') return 'eng';
+  if (raw === 'math' || raw === 'fmath' || raw === 'mathLab') return raw;
+  if (Object.prototype.hasOwnProperty.call(SUBJECT_TUTOR_REGISTRY, raw)) {
+    return raw as SubjectId;
+  }
+  return 'eng';
+}
+
+function voiceProfileToSubjectId(profile: VoiceProfile): SubjectId {
+  if (profile === 'math' || profile === 'mathLab') return 'maths';
+  if (profile === 'fmath') return 'fmaths';
+  return profile;
+}
 
 function createAiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -155,69 +186,39 @@ async function generateStudioTtsWav(scriptText: string, profile: VoiceProfile = 
 
   const ai = createAiClient();
   const isMathLab = profile === 'mathLab';
-  const isMath = profile === 'math';
-  const isFMath = profile === 'fmath';
-  const isPhys = profile === 'phys';
-  const isBio = profile === 'bio';
-  const isAgric = profile === 'agric';
-  const isGeog = profile === 'geog';
-  const isEcon = profile === 'econ';
-  const isEng = profile === 'eng';
-  const isCivic = profile === 'civic';
-  const isDigiTech = profile === 'digitech';
-  const isDataProc = profile === 'dataproc';
-  const voiceName = isDataProc
-    ? 'Aoede'
-    : isDigiTech
-      ? 'Puck'
-      : isCivic
-        ? 'Orus'
-        : isEng
-          ? 'Kore'
-          : isEcon
-            ? 'Leda'
-            : isGeog
-              ? 'Charon'
-              : isAgric
-                ? 'Zephyr'
-                : isBio
-                  ? 'Aoede'
-                  : isPhys
-                    ? 'Charon'
-                    : isFMath
-                      ? 'Orus'
-                      : isMathLab || isMath
-                        ? 'Puck'
-                        : 'Fenrir';
-  const stylePrompt = isDataProc
-    ? DATAPROC_COACH_STYLE
-    : isDigiTech
-      ? DIGITECH_COACH_STYLE
-      : isCivic
-        ? CIVIC_COACH_STYLE
-        : isEng
-          ? ENG_COACH_STYLE
-          : isEcon
-            ? ECON_COACH_STYLE
-            : isGeog
-              ? GEOG_COACH_STYLE
-              : isAgric
-                ? AGRIC_COACH_STYLE
-                : isBio
-                  ? BIO_COACH_STYLE
-                  : isPhys
-                    ? PHYS_COACH_STYLE
-                    : isFMath
-                      ? FMATH_COACH_STYLE
-                      : isMathLab
-                        ? MATH_LAB_STYLE
-                        : isMath
-                          ? MATH_COACH_STYLE
-                          : MAD_SCIENTIST_STYLE;
+  const subjId = voiceProfileToSubjectId(profile);
+  const meta = SUBJECT_TUTOR_REGISTRY[subjId];
+  const voiceName = isMathLab ? 'Puck' : meta.geminiVoice;
+  const stylePrompt =
+    subjId === 'dataproc'
+      ? DATAPROC_COACH_STYLE
+      : subjId === 'digitech'
+        ? DIGITECH_COACH_STYLE
+        : subjId === 'civic'
+          ? CIVIC_COACH_STYLE
+          : subjId === 'eng'
+            ? ENG_COACH_STYLE
+            : subjId === 'econ'
+              ? ECON_COACH_STYLE
+              : subjId === 'geog'
+                ? GEOG_COACH_STYLE
+                : subjId === 'agric'
+                  ? AGRIC_COACH_STYLE
+                  : subjId === 'bio'
+                    ? BIO_COACH_STYLE
+                    : subjId === 'phys'
+                      ? PHYS_COACH_STYLE
+                      : subjId === 'fmaths'
+                        ? FMATH_COACH_STYLE
+                        : isMathLab
+                          ? MATH_LAB_STYLE
+                          : subjId === 'maths'
+                            ? MATH_COACH_STYLE
+                            : subjId === 'chem'
+                              ? MAD_SCIENTIST_STYLE
+                              : meta.voiceStyle;
 
-  const modelsToTry = isMathLab
-    ? ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts']
-    : ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'];
+  const modelsToTry = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'];
   let lastErr: unknown = null;
 
   for (const modelName of modelsToTry) {
@@ -261,11 +262,58 @@ async function generateStudioTtsWav(scriptText: string, profile: VoiceProfile = 
 }
 
 function getClientIp(req: http.IncomingMessage): string {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.trim()) {
-    return fwd.split(',')[0].trim().slice(0, 64);
+  const expressReq = req as Partial<express.Request>;
+  return extractTrustedClientIp({
+    expressIp: typeof expressReq.ip === 'string' ? expressReq.ip : undefined,
+    forwardedForHeader: req.headers['x-forwarded-for'],
+    remoteAddress: req.socket?.remoteAddress,
+  });
+}
+
+const DEFAULT_OWNER_EMAIL = 'emmanueleyak51@gmail.com';
+
+function isAdminDecodedUser(decoded?: DecodedIdToken | null): boolean {
+  if (!decoded?.email_verified || typeof decoded.email !== 'string') return false;
+  const configured = (process.env.ADMIN_EMAIL || DEFAULT_OWNER_EMAIL).trim().toLowerCase();
+  return Boolean(configured) && decoded.email.trim().toLowerCase() === configured;
+}
+
+async function tryDecodeBearerToken(req: express.Request): Promise<DecodedIdToken | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token || token.length > 8192) return null;
+  try {
+    return await adminAuth.verifyIdToken(token);
+  } catch {
+    return null;
   }
-  return (req.socket?.remoteAddress || 'unknown').slice(0, 64);
+}
+
+function buildSafeBillingCallbackUrl(req: express.Request, reference: string): string {
+  const configuredAppUrl = process.env.APP_URL?.trim();
+  if (configuredAppUrl) {
+    try {
+      const parsed = new URL(configuredAppUrl);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        parsed.searchParams.set('paystack_ref', reference);
+        return parsed.toString();
+      }
+    } catch {
+      /* fallback to request host */
+    }
+  }
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000')
+    .split(',')[0]
+    .trim();
+  const safeHost = /^[a-zA-Z0-9.:-]{1,120}$/.test(rawHost) ? rawHost : 'localhost:3000';
+  const isHttps =
+    req.secure ||
+    String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https' ||
+    IS_PROD;
+  const url = new URL(`${isHttps ? 'https' : 'http'}://${safeHost}/`);
+  url.searchParams.set('paystack_ref', reference);
+  return url.toString();
 }
 
 async function startServer() {
@@ -291,11 +339,37 @@ async function startServer() {
 
   app.use(express.json({ limit: '512kb' }));
 
+  // Block cross-site state-changing API requests (CSRF / cross-origin quota abuse)
+  app.use('/api', (req, res, next) => {
+    const allowed = isAllowedApiMutationRequest({
+      method: req.method,
+      originHeader: typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
+      hostHeader: typeof req.headers.host === 'string' ? req.headers.host : undefined,
+      forwardedHost:
+        typeof req.headers['x-forwarded-host'] === 'string'
+          ? req.headers['x-forwarded-host']
+          : undefined,
+      secFetchSite:
+        typeof req.headers['sec-fetch-site'] === 'string'
+          ? req.headers['sec-fetch-site']
+          : undefined,
+      extraAllowedOrigins: [process.env.APP_URL || '', process.env.SHARED_APP_URL || ''],
+    });
+    if (!allowed) {
+      res.status(403).json({ error: 'Cross-site API requests are not permitted.' });
+      return;
+    }
+    next();
+  });
+
   const ttsLimiter = new SlidingWindowRateLimiter({ maxRequests: 40, windowMs: 60_000 });
   const alocLimiter = new SlidingWindowRateLimiter({ maxRequests: 60, windowMs: 60_000 });
-  const genLimiter = new SlidingWindowRateLimiter({ maxRequests: 20, windowMs: 60_000 });
+  const genLimiter = new SlidingWindowRateLimiter({ maxRequests: 10, windowMs: 60_000 });
   const cloudDbLimiter = new SlidingWindowRateLimiter({ maxRequests: 120, windowMs: 60_000 });
   const wsUpgradeLimiter = new SlidingWindowRateLimiter({ maxRequests: 30, windowMs: 60_000 });
+  const refLimiter = new SlidingWindowRateLimiter({ maxRequests: 60, windowMs: 60_000 });
+  const billingLimiter = new SlidingWindowRateLimiter({ maxRequests: 40, windowMs: 60_000 });
+  const redeemLimiter = new SlidingWindowRateLimiter({ maxRequests: 12, windowMs: 60_000 });
 
   const enforceRateLimit =
     (limiter: SlidingWindowRateLimiter): express.RequestHandler =>
@@ -322,33 +396,7 @@ async function startServer() {
         res.status(400).json({ error: 'Lesson script text is required.' });
         return;
       }
-      const rawProfile = req.body?.voiceProfile;
-      const profile: VoiceProfile =
-        rawProfile === 'mathLab'
-          ? 'mathLab'
-          : rawProfile === 'fmath'
-            ? 'fmath'
-            : rawProfile === 'math'
-              ? 'math'
-              : rawProfile === 'phys'
-                ? 'phys'
-                : rawProfile === 'bio'
-                  ? 'bio'
-                  : rawProfile === 'agric'
-                    ? 'agric'
-                    : rawProfile === 'geog'
-                      ? 'geog'
-                      : rawProfile === 'econ'
-                        ? 'econ'
-                        : rawProfile === 'eng'
-                          ? 'eng'
-                          : rawProfile === 'civic'
-                            ? 'civic'
-                            : rawProfile === 'digitech'
-                              ? 'digitech'
-                              : rawProfile === 'dataproc'
-                                ? 'dataproc'
-                                : 'chem';
+      const profile: VoiceProfile = resolveVoiceProfile(req.body?.voiceProfile);
       const boundedText = text.slice(0, 2800);
       const audioBase64 = await generateStudioTtsWav(boundedText, profile);
       res.json({ audioBase64, mimeType: 'audio/wav' });
@@ -472,9 +520,13 @@ async function startServer() {
         : 'Use crisp, unambiguous academic Nigerian SSCE/UTME phrasing with accurate technical terminology (e.g., SQL clauses, normalization forms 1NF-3NF, binary/hex values, Nigerian constitutional clauses, or agronomic/economic terms as appropriate).';
 
       const examInstruction =
-        examMode === 'MIXED'
-          ? 'Distribute examType authentically across "JAMB", "WAEC", and "NECO" with realistic recent exam years between 2014 and 2025.'
-          : `Set examType strictly to "${examMode}" for every question with realistic exam years between 2014 and 2025.`;
+        examMode === 'JAMB'
+          ? 'Set examType strictly to "JAMB" (years 2015–2025). TOUGH JAMB CALIBRATION: Every question must demand deep conceptual understanding rather than surface recall, and options A, B, C, D MUST include tricky look-alike distractors (options that look very similar on the surface—such as near-miss signs, powers, concord/exception rules, or transposed ratios—that trap hasty candidates).'
+          : examMode === 'WAEC'
+            ? 'Set examType strictly to "WAEC" (years 2015–2025). WAEC MARKING-SCHEME CALIBRATION: Mirror authentic WASSCE Paper 1 & Paper 2 precision and explicitly test the common mistakes candidates make (omitted SI units, incomplete definitions, sign slips, and misread qualifiers).'
+            : examMode === 'MIXED'
+              ? 'Distribute examType authentically across "JAMB" (with tricky look-alike options requiring deep conceptual understanding), "WAEC", and "NECO" with realistic recent exam years between 2014 and 2025.'
+              : `Set examType strictly to "${examMode}" for every question with realistic exam years between 2014 and 2025.`;
 
       const topicInstruction =
         topics.length > 0
@@ -493,9 +545,9 @@ async function startServer() {
         topicInstruction,
         latexInstruction,
         `Requirements for EVERY question:`,
-        `1. Exactly 4 distinct options labeled A, B, C, D with plausible exam distractors (no "All of the above" laziness).`,
+        `1. Exactly 4 distinct options labeled A, B, C, D with plausible look-alike exam distractors (no "All of the above" laziness).`,
         `2. "answer" must be strictly one of "A", "B", "C", or "D" matching the true mathematically/factually verified option.`,
-        `3. "explanation" must give a concise, step-by-step worked solution or syllabus justification (2–3 sentences max).`,
+        `3. "explanation" must give a concise, step-by-step worked solution and highlight the common trap to avoid (2–3 sentences max).`,
         `4. Self-contained questions only (never reference "the diagram above" or "passage below" unless the full data/table/excerpt is included inside the question text).`,
         avoidInstruction,
       ].join('\n\n');
@@ -797,6 +849,543 @@ async function startServer() {
     }
   });
 
+  // ── Same-Day National CBT Cohort Standings (Ranks every student who wrote CBT today in WAT) ──
+  const resolveCbtParticipantKey = async (req: express.Request): Promise<string | null> => {
+    const decoded = await tryDecodeBearerToken(req);
+    if (decoded?.uid) {
+      const cleanUid = decoded.uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100);
+      if (cleanUid) return `uid_${cleanUid}`;
+    }
+    const rawDeviceToken =
+      typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : null;
+    const { deviceKey } = deriveAuthoritativeDeviceKey(rawDeviceToken);
+    return deviceKey;
+  };
+
+  app.get('/api/cloud/cbt-daily', enforceRateLimit(cloudDbLimiter), async (req, res) => {
+    try {
+      const watDayNumber = Math.floor((Date.now() + 3_600_000) / 86_400_000);
+      const mode = String(req.query.mode || 'jamb').toLowerCase() === 'waec' ? 'waec' : 'jamb';
+      const [myParticipantKey, entries] = await Promise.all([
+        resolveCbtParticipantKey(req),
+        listDailyCbtStandings(watDayNumber, mode, 150),
+      ]);
+      res.json({
+        dayNumber: watDayNumber,
+        mode,
+        myParticipantKey,
+        totalParticipants: entries.length,
+        entries,
+      });
+    } catch (err) {
+      console.error('Failed to load daily CBT standings:', err);
+      res.status(500).json({ error: 'Unable to load today’s CBT cohort standings right now.' });
+    }
+  });
+
+  app.post('/api/cloud/cbt-daily', enforceRateLimit(cloudDbLimiter), async (req, res) => {
+    try {
+      const myParticipantKey = await resolveCbtParticipantKey(req);
+      if (!myParticipantKey) {
+        res.status(401).json({ error: 'Valid student session or device token required to rank CBT.' });
+        return;
+      }
+      const watDayNumber = Math.floor((Date.now() + 3_600_000) / 86_400_000);
+      const body = (req.body || {}) as Record<string, unknown>;
+      const mode = String(body.mode || 'jamb').toLowerCase() === 'waec' ? 'waec' : 'jamb';
+      const entries = await upsertDailyCbtStanding({
+        dayNumber: watDayNumber,
+        mode,
+        participantKey: myParticipantKey,
+        displayName: sanitizePromptSnippet(body.displayName || 'Scholar', 60) || 'Scholar',
+        campusGoal: sanitizePromptSnippet(body.campusGoal || 'National Scholar', 48) || 'National Scholar',
+        scaledScore: Number(body.scaledScore ?? 0),
+        maxScale: mode === 'waec' ? 100 : 400,
+        rawCorrect: Number(body.rawCorrect ?? 0),
+        totalQuestions: Number(body.totalQuestions ?? 40),
+        accuracyPct: Number(body.accuracyPct ?? 0),
+        durationSec: Number(body.durationSec ?? 600),
+      });
+      res.json({
+        ok: true,
+        dayNumber: watDayNumber,
+        mode,
+        myParticipantKey,
+        totalParticipants: entries.length,
+        entries,
+      });
+    } catch (err) {
+      console.error('Failed to record daily CBT standing:', err);
+      res.status(500).json({ error: 'Unable to publish today’s CBT score right now.' });
+    }
+  });
+
+  // ── EYAK Premium Pass, Voucher Activation & Paystack Checkout Endpoints ──
+  app.get('/api/billing/status', enforceRateLimit(billingLimiter), async (req, res) => {
+    try {
+      const decoded = await tryDecodeBearerToken(req);
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : null;
+      const [pro, trial, entitlementPublicKey] = await Promise.all([
+        getActiveSubscriptionReceipt({
+          uid: decoded?.uid || null,
+          deviceToken: rawDeviceToken,
+          email: decoded?.email || null,
+        }),
+        getOrCreateTrialReceipt({
+          uid: decoded?.uid || null,
+          deviceToken: rawDeviceToken,
+        }),
+        getEntitlementPublicKeyJwk(),
+      ]);
+      res.json({
+        plans: PREMIUM_PLANS,
+        paystackEnabled: Boolean(process.env.PAYSTACK_SECRET_KEY?.trim()),
+        isAdmin: isAdminDecodedUser(decoded),
+        entitlementPublicKey,
+        pro,
+        trial,
+      });
+    } catch (err) {
+      console.error('Failed to check billing status:', err);
+      res.status(500).json({ error: 'Unable to check subscription status right now.' });
+    }
+  });
+
+  app.post('/api/billing/redeem', enforceRateLimit(redeemLimiter), async (req, res) => {
+    try {
+      const decoded = await tryDecodeBearerToken(req);
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : null;
+      const [result, entitlementPublicKey] = await Promise.all([
+        redeemAccessVoucher({
+          rawCode: req.body?.code,
+          deviceToken: rawDeviceToken,
+          uid: decoded?.uid || null,
+          email: decoded?.email || null,
+        }),
+        getEntitlementPublicKeyJwk(),
+      ]);
+      res.json({ ok: true, entitlementPublicKey, ...result });
+    } catch (err) {
+      if (err instanceof BillingUserError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      console.error('Failed to redeem Pass PIN:', err);
+      res.status(500).json({ error: 'Unable to verify Pass PIN right now. Please retry.' });
+    }
+  });
+
+  app.post('/api/billing/paystack/initialize', enforceRateLimit(billingLimiter), async (req, res) => {
+    try {
+      const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+      if (!secretKey) {
+        res.status(503).json({
+          error:
+            'Online card and bank-transfer checkout is not enabled yet. Switch to Enter Pass PIN to activate immediately.',
+        });
+        return;
+      }
+
+      const plan = getPremiumPlanById(typeof req.body?.planId === 'string' ? req.body.planId : '');
+      if (!plan) {
+        res.status(400).json({ error: 'Choose a valid EYAK Premium plan.' });
+        return;
+      }
+      if (!isValidEmailAddress(req.body?.email)) {
+        res.status(400).json({ error: 'Enter a valid email address for your payment receipt.' });
+        return;
+      }
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      if (!isValidDeviceSecretToken(rawDeviceToken)) {
+        res.status(400).json({ error: 'A valid secure device session is required. Refresh and retry.' });
+        return;
+      }
+
+      const decoded = await tryDecodeBearerToken(req);
+      const safeEmail = String(req.body.email).trim().toLowerCase();
+      const { deviceKey } = deriveAuthoritativeDeviceKey(rawDeviceToken);
+      const reference = `eyak_${plan.id}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const callbackUrl = buildSafeBillingCallbackUrl(req, reference);
+
+      const upstream = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        redirect: 'error',
+        signal: AbortSignal.timeout(12_000),
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          email: safeEmail,
+          amount: plan.priceKobo,
+          currency: 'NGN',
+          reference,
+          callback_url: callbackUrl,
+          metadata: {
+            planId: plan.id,
+            deviceId: deviceKey || '',
+            uid: decoded?.uid || '',
+          },
+        }),
+      });
+
+      const payload = (await upstream.json().catch(() => null)) as {
+        status?: boolean;
+        message?: string;
+        data?: { authorization_url?: string; reference?: string };
+      } | null;
+
+      const authUrl = payload?.data?.authorization_url || '';
+      const isTrustedPaystackCheckout =
+        authUrl.startsWith('https://checkout.paystack.com/') ||
+        authUrl.startsWith('https://standard.paystack.co/');
+
+      if (!upstream.ok || !payload?.status || !isTrustedPaystackCheckout) {
+        res.status(502).json({
+          error: 'Could not start Paystack checkout right now. Please try again or use a Pass PIN.',
+        });
+        return;
+      }
+
+      const finalRef =
+        typeof payload?.data?.reference === 'string' && isValidPaystackReference(payload.data.reference)
+          ? payload.data.reference.trim()
+          : reference;
+
+      await createPendingPaystackTransaction({
+        reference: finalRef,
+        planId: plan.id,
+        amountKobo: plan.priceKobo,
+        email: safeEmail,
+        uid: decoded?.uid || null,
+        deviceToken: rawDeviceToken,
+      });
+
+      res.json({
+        ok: true,
+        authorizationUrl: authUrl,
+        reference: finalRef,
+      });
+    } catch (err) {
+      console.error('Failed to initialize Paystack transaction:', err);
+      res.status(502).json({ error: 'Unable to reach Paystack right now. Please retry shortly.' });
+    }
+  });
+
+  app.post('/api/billing/paystack/verify', enforceRateLimit(billingLimiter), async (req, res) => {
+    try {
+      const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+      if (!secretKey) {
+        res.status(503).json({ error: 'Online payment verification is not configured.' });
+        return;
+      }
+
+      const rawRef = typeof req.body?.reference === 'string' ? req.body.reference.trim() : '';
+      if (!isValidPaystackReference(rawRef)) {
+        res.status(400).json({ error: 'A valid payment reference is required.' });
+        return;
+      }
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      if (!isValidDeviceSecretToken(rawDeviceToken)) {
+        res.status(400).json({ error: 'A valid secure device session is required. Refresh and retry.' });
+        return;
+      }
+
+      const decoded = await tryDecodeBearerToken(req);
+      const upstream = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(rawRef)}`,
+        {
+          method: 'GET',
+          redirect: 'error',
+          signal: AbortSignal.timeout(12_000),
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            Accept: 'application/json',
+          },
+        }
+      );
+
+      const payload = (await upstream.json().catch(() => null)) as {
+        status?: boolean;
+        data?: {
+          status?: string;
+          amount?: number;
+          currency?: string;
+          customer?: { email?: string };
+          metadata?: { planId?: string };
+        };
+      } | null;
+
+      if (!upstream.ok || !payload?.status || !payload.data) {
+        res.status(502).json({ error: 'Could not verify transaction with Paystack right now.' });
+        return;
+      }
+
+      if (payload.data.status !== 'success') {
+        res.status(402).json({
+          error:
+            'Payment is not marked complete yet. Finish checkout on Paystack, then tap Verify payment status.',
+        });
+        return;
+      }
+
+      const planMeta = getPremiumPlanById(payload.data.metadata?.planId || null);
+      const [completed, entitlementPublicKey] = await Promise.all([
+        completeVerifiedPaystackTransaction({
+          reference: rawRef,
+          verifiedPlanId: planMeta?.id || null,
+          paidAmountKobo: Number(payload.data.amount || 0),
+          currency: String(payload.data.currency || 'NGN'),
+          customerEmail: String(payload.data.customer?.email || decoded?.email || 'student@eyak.ng'),
+          deviceToken: rawDeviceToken,
+          uid: decoded?.uid || null,
+        }),
+        getEntitlementPublicKeyJwk(),
+      ]);
+
+      res.json({ ok: true, entitlementPublicKey, ...completed });
+    } catch (err) {
+      if (err instanceof BillingUserError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      console.error('Failed to verify Paystack transaction:', err);
+      res.status(502).json({ error: 'Unable to verify payment right now. Please retry shortly.' });
+    }
+  });
+
+  // ── Owner / Admin Pass PIN Studio Endpoints ──
+  app.get(
+    '/api/admin/billing/overview',
+    enforceRateLimit(billingLimiter),
+    requireVerifiedAuth,
+    async (req: AuthRequest, res) => {
+      if (!isAdminDecodedUser(req.user)) {
+        res.status(403).json({ error: 'Forbidden: Owner account required.' });
+        return;
+      }
+      try {
+        const overview = await getAdminBillingOverview();
+        res.json(overview);
+      } catch (err) {
+        console.error('Failed to load admin billing overview:', err);
+        res.status(500).json({ error: 'Unable to load voucher overview right now.' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/billing/vouchers',
+    enforceRateLimit(billingLimiter),
+    requireVerifiedAuth,
+    async (req: AuthRequest, res) => {
+      if (!isAdminDecodedUser(req.user)) {
+        res.status(403).json({ error: 'Forbidden: Owner account required.' });
+        return;
+      }
+      try {
+        const batch = await createAdminVoucherBatch({
+          planId: typeof req.body?.planId === 'string' ? req.body.planId : '',
+          count: Number(req.body?.count ?? 1),
+          note: typeof req.body?.note === 'string' ? req.body.note : '',
+          adminEmail: req.user!.email!,
+        });
+        res.json({ ok: true, batch });
+      } catch (err) {
+        if (err instanceof BillingUserError) {
+          res.status(err.statusCode).json({ error: err.message });
+          return;
+        }
+        console.error('Failed to generate admin voucher batch:', err);
+        res.status(500).json({ error: 'Unable to generate Pass PINs right now.' });
+      }
+    }
+  );
+
+  // Allowlisted, bounded-cache scripture reference proxies (CRS 5-version Bible & IRS 5-edition Qur'an)
+  const bibleCache = new Map<string, Record<string, unknown>>();
+  const quranCache = new Map<number, Record<string, unknown>>();
+
+  const BOLLS_BIBLE_VERSIONS = new Set(['rsv', 'nkjv', 'gnt', 'nlt', 'amp', 'esv', 'msg', 'nasb', 'erv']);
+  const BIBLE_VERSION_LABELS: Record<string, string> = {
+    rsv: 'Revised Standard Version',
+    kjv: 'King James Version',
+    nkjv: 'New King James Version',
+    gnt: 'Good News Translation',
+    nlt: 'New Living Translation',
+    amp: 'Amplified Bible',
+    esv: 'English Standard Version',
+    msg: 'The Message',
+    nasb: 'New American Standard Bible',
+    erv: 'Easy-to-Read Version',
+    web: 'World English Bible',
+    bbe: 'Bible in Basic English',
+  };
+
+  app.get('/api/reference/bible', enforceRateLimit(refLimiter), async (req, res) => {
+    const check = validateBibleQuery(req.query.book, req.query.chapter, req.query.version);
+    if (!check.ok) {
+      res.status(400).json({ error: check.error });
+      return;
+    }
+    const cacheKey = `${check.book}|${check.chapter}|${check.version}`;
+    const cached = bibleCache.get(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+    try {
+      let verses: Array<{ verse: number; text: string }> = [];
+      let reference = `${check.book} ${check.chapter}`;
+      let versionName = BIBLE_VERSION_LABELS[check.version] || check.version.toUpperCase();
+
+      if (BOLLS_BIBLE_VERSIONS.has(check.version)) {
+        const bollsCode = check.version.toUpperCase();
+        const upstreamUrl = `https://bolls.life/get-text/${encodeURIComponent(bollsCode)}/${check.bookNumber}/${check.chapter}/`;
+        const upstream = await fetch(upstreamUrl, {
+          signal: AbortSignal.timeout(8000),
+          headers: { Accept: 'application/json', 'User-Agent': 'EYAK-Study-Reader/1.0' },
+        });
+        if (!upstream.ok) {
+          res.status(502).json({ error: 'Could not reach the online Bible library right now.' });
+          return;
+        }
+        const rawText = await upstream.text();
+        if (rawText.length > 500_000) {
+          res.status(502).json({ error: 'Chapter response was too large.' });
+          return;
+        }
+        const list = JSON.parse(rawText) as Array<{ verse?: number; text?: string }>;
+        verses = Array.isArray(list)
+          ? list
+              .filter((v) => typeof v?.verse === 'number' && typeof v?.text === 'string')
+              .map((v) => ({ verse: Number(v.verse), text: cleanBibleVerseText(String(v.text)) }))
+              .filter((v) => v.text.length > 0)
+          : [];
+      } else {
+        const upstreamUrl = `https://bible-api.com/${encodeURIComponent(`${check.book} ${check.chapter}`)}?translation=${encodeURIComponent(check.version)}`;
+        const upstream = await fetch(upstreamUrl, {
+          signal: AbortSignal.timeout(8000),
+          headers: { Accept: 'application/json', 'User-Agent': 'EYAK-Study-Reader/1.0' },
+        });
+        if (!upstream.ok) {
+          res.status(502).json({ error: 'Could not reach the online Bible library right now.' });
+          return;
+        }
+        const rawText = await upstream.text();
+        if (rawText.length > 400_000) {
+          res.status(502).json({ error: 'Chapter response was too large.' });
+          return;
+        }
+        const data = JSON.parse(rawText) as {
+          reference?: string;
+          translation_name?: string;
+          verses?: Array<{ verse?: number; text?: string }>;
+        };
+        if (typeof data.reference === 'string') reference = data.reference;
+        if (typeof data.translation_name === 'string') versionName = data.translation_name;
+        verses = Array.isArray(data.verses)
+          ? data.verses
+              .filter((v) => typeof v?.verse === 'number' && typeof v?.text === 'string')
+              .map((v) => ({ verse: Number(v.verse), text: cleanBibleVerseText(String(v.text)) }))
+              .filter((v) => v.text.length > 0)
+          : [];
+      }
+
+      if (!verses.length) {
+        res.status(404).json({ error: 'No verses were found for that chapter.' });
+        return;
+      }
+      const payload = {
+        book: check.book,
+        chapter: check.chapter,
+        version: check.version,
+        versionName,
+        reference,
+        verses,
+        source: 'live',
+      };
+      if (bibleCache.size >= 400) {
+        const oldest = bibleCache.keys().next().value;
+        if (oldest) bibleCache.delete(oldest);
+      }
+      bibleCache.set(cacheKey, payload);
+      res.json(payload);
+    } catch {
+      res.status(502).json({ error: 'Online Bible service is temporarily unreachable.' });
+    }
+  });
+
+  app.get('/api/reference/quran', enforceRateLimit(refLimiter), async (req, res) => {
+    const check = validateQuranSurah(req.query.surah);
+    if (!check.ok) {
+      res.status(400).json({ error: check.error });
+      return;
+    }
+    const cached = quranCache.get(check.surah);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+    try {
+      const upstreamUrl = `https://api.alquran.cloud/v1/surah/${check.surah}/editions/quran-uthmani,en.transliteration,en.sahih,en.yusufali,en.pickthall`;
+      const upstream = await fetch(upstreamUrl, {
+        signal: AbortSignal.timeout(8000),
+        headers: { Accept: 'application/json', 'User-Agent': 'EYAK-Study-Reader/1.0' },
+      });
+      if (!upstream.ok) {
+        res.status(502).json({ error: 'Could not reach the online Qur’an library right now.' });
+        return;
+      }
+      const rawText = await upstream.text();
+      if (rawText.length > 1_200_000) {
+        res.status(502).json({ error: 'Surah response was too large.' });
+        return;
+      }
+      const parsed = JSON.parse(rawText) as {
+        data?: Array<{
+          englishName?: string;
+          name?: string;
+          ayahs?: Array<{ numberInSurah?: number; text?: string }>;
+        }>;
+      };
+      const editions = Array.isArray(parsed.data) ? parsed.data : [];
+      if (editions.length < 5 || !Array.isArray(editions[0]?.ayahs)) {
+        res.status(502).json({ error: 'Incomplete Surah data received.' });
+        return;
+      }
+      const baseAyahs = editions[0].ayahs;
+      const ayahs = baseAyahs.map((a, idx) => ({
+        numberInSurah: Number(a.numberInSurah || idx + 1),
+        arabic: String(a.text || '').trim(),
+        transliteration: String(editions[1]?.ayahs?.[idx]?.text || '').trim(),
+        sahih: String(editions[2]?.ayahs?.[idx]?.text || '').trim(),
+        yusufali: String(editions[3]?.ayahs?.[idx]?.text || '').trim(),
+        pickthall: String(editions[4]?.ayahs?.[idx]?.text || '').trim(),
+      }));
+      const payload = {
+        surah: check.surah,
+        name: String(editions[0].name || ''),
+        englishName: String(editions[0].englishName || `Surah ${check.surah}`),
+        ayahs,
+        source: 'live',
+      };
+      if (quranCache.size >= 120) {
+        const oldest = quranCache.keys().next().value;
+        if (oldest !== undefined) quranCache.delete(oldest);
+      }
+      quranCache.set(check.surah, payload);
+      res.json(payload);
+    } catch {
+      res.status(502).json({ error: 'Online Qur’an service is temporarily unreachable.' });
+    }
+  });
+
   const server = http.createServer(app);
 
   // WebSocket Server for Real-Time Gemini Live Tutor (bounded payload, CSWSH Origin guard, session caps)
@@ -822,7 +1411,9 @@ async function startServer() {
       const forwardedHost =
         typeof request.headers['x-forwarded-host'] === 'string'
           ? request.headers['x-forwarded-host']
-          : undefined;
+          : typeof request.headers['x-original-host'] === 'string'
+            ? request.headers['x-original-host']
+            : undefined;
       const secFetchSite =
         typeof request.headers['sec-fetch-site'] === 'string'
           ? request.headers['sec-fetch-site']
@@ -906,30 +1497,7 @@ async function startServer() {
     ) => {
       try {
         const ai = createAiClient();
-        const voiceName =
-          liveProfile === 'dataproc'
-            ? 'Aoede'
-            : liveProfile === 'digitech'
-              ? 'Puck'
-              : liveProfile === 'civic'
-                ? 'Orus'
-                : liveProfile === 'eng'
-                  ? 'Kore'
-                  : liveProfile === 'econ'
-                    ? 'Leda'
-                    : liveProfile === 'geog'
-                      ? 'Charon'
-                      : liveProfile === 'agric'
-                        ? 'Zephyr'
-                        : liveProfile === 'bio'
-                          ? 'Aoede'
-                          : liveProfile === 'phys'
-                            ? 'Charon'
-                            : liveProfile === 'fmath'
-                              ? 'Orus'
-                              : liveProfile === 'math'
-                                ? 'Puck'
-                                : 'Fenrir';
+        const voiceName = SUBJECT_TUTOR_REGISTRY[voiceProfileToSubjectId(liveProfile)].geminiVoice;
         const p = ai.live.connect({
           model: 'gemini-3.8-live',
           config: {
@@ -1011,54 +1579,9 @@ async function startServer() {
         if (rawStr.length > 200_000) return;
         const msg = JSON.parse(rawStr);
         if (msg.type === 'init' && !sessionPromise) {
-          const liveProfile: VoiceProfile =
-            msg.voiceProfile === 'dataproc'
-              ? 'dataproc'
-              : msg.voiceProfile === 'digitech'
-                ? 'digitech'
-                : msg.voiceProfile === 'civic'
-                  ? 'civic'
-                  : msg.voiceProfile === 'eng'
-                    ? 'eng'
-                    : msg.voiceProfile === 'econ'
-                      ? 'econ'
-                      : msg.voiceProfile === 'geog'
-                        ? 'geog'
-                        : msg.voiceProfile === 'agric'
-                          ? 'agric'
-                          : msg.voiceProfile === 'bio'
-                            ? 'bio'
-                            : msg.voiceProfile === 'phys'
-                              ? 'phys'
-                              : msg.voiceProfile === 'fmath'
-                                ? 'fmath'
-                                : msg.voiceProfile === 'math'
-                                  ? 'math'
-                                  : 'chem';
-          const defaultPersona =
-            liveProfile === 'dataproc'
-              ? 'You are Mrs. Kemi, a warm, razor-sharp Nigerian SS1–SS3 Lead Database Architect and Data Processing professor.'
-              : liveProfile === 'digitech'
-                ? 'You are Engineer Tunde, an energetic Nigerian SS1–SS3 Computer Systems Architect and Digital Technologies mentor.'
-                : liveProfile === 'civic'
-                  ? 'You are Barrister Kunle, a principled, inspiring Nigerian SS1–SS3 Civic Education and Constitutional Advocate mentor.'
-                  : liveProfile === 'eng'
-                    ? 'You are Miss Adaeze, a warm, articulate Nigerian SS1–SS3 English Language and diction coach.'
-                    : liveProfile === 'econ'
-                      ? 'You are Dr. Ngozi, a poised Nigerian SS1–SS3 Economics professor.'
-                      : liveProfile === 'geog'
-                        ? 'You are Dr. Ibrahim, a charismatic Nigerian SS1–SS3 Geographer and Cartographer.'
-                        : liveProfile === 'agric'
-                          ? 'You are Dr. Fatima, a warm Nigerian SS1–SS3 Agronomist and Farm Science mentor.'
-                          : liveProfile === 'bio'
-                            ? 'You are Dr. Amaka, a warm, authoritative Nigerian SS1–SS3 Biology professor.'
-                            : liveProfile === 'phys'
-                              ? 'You are Dr. Faraday, a charismatic Nigerian SS1–SS3 Physics professor.'
-                              : liveProfile === 'fmath'
-                                ? 'You are Professor Chinedu, a razor-sharp Nigerian SS1–SS3 Further Mathematics professor.'
-                                : liveProfile === 'math'
-                                  ? 'You are Master Chike, an energetic Nigerian SS1–SS3 Mathematics coach.'
-                                  : 'You are Professor Spark, an eccentric mad scientist teaching SS1–SS3 Chemistry.';
+          const liveProfile: VoiceProfile = resolveVoiceProfile(msg.voiceProfile);
+          const meta = SUBJECT_TUTOR_REGISTRY[voiceProfileToSubjectId(liveProfile)];
+          const defaultPersona = `You are an experienced Nigerian ${meta.name} (${meta.roleTitle}) mentoring a secondary school student preparing for JAMB UTME and WAEC/NECO. CRITICAL: Never introduce yourself by name, title, or welcome the student to a studio or lab; jump straight into teaching or answering.`;
           // Always anchor with non-overridable server-side safety directive
           const sys = buildHardenedTutorSystemPrompt(defaultPersona, msg.systemInstruction);
           const greet =
@@ -1175,12 +1698,24 @@ export class ErrorOverlay extends HTMLElement {}
 `);
     });
 
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false, ws: false, watch: null },
-      appType: 'spa',
+    const viteReadyPromise = import('vite').then(({ createServer: createViteServer }) =>
+      createViteServer({
+        server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+        appType: 'spa',
+      })
+    );
+    viteReadyPromise.catch((err) => {
+      console.error('Failed to initialize Vite dev middleware:', err);
     });
-    app.use(vite.middlewares);
+
+    app.use(async (req, res, next) => {
+      try {
+        const vite = await viteReadyPromise;
+        vite.middlewares(req, res, next);
+      } catch (err) {
+        next(err);
+      }
+    });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));

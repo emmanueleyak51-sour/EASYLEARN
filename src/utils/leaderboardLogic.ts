@@ -1,6 +1,13 @@
 import type { SubjectId, Topic, UserProgress } from '../types';
 import { SUBJECT_IDS } from '../data/curriculum';
 import { mpct, tstate } from './engine';
+import {
+  ELEMENTAL_RANKS,
+  computeElementalRpBreakdown,
+  evaluateElementalRank,
+  type ElementalRankId,
+  type ElementalRankStanding,
+} from './elementalRankLogic';
 
 export type LeaderboardCriterion =
   | 'masteryIndex'
@@ -9,12 +16,7 @@ export type LeaderboardCriterion =
   | 'bestCbtScore'
   | 'streakCount';
 
-export type LeaderboardDivisionId =
-  | 'rising'
-  | 'merit'
-  | 'distinction'
-  | 'first-class'
-  | 'chancellor';
+export type LeaderboardDivisionId = 'unranked' | ElementalRankId;
 
 export interface LeaderboardDivision {
   id: LeaderboardDivisionId;
@@ -24,42 +26,36 @@ export interface LeaderboardDivision {
   accentTone: 'slate' | 'sky' | 'emerald' | 'indigo' | 'amber';
 }
 
+const UNRANKED_DIVISION: LeaderboardDivision = {
+  id: 'unranked',
+  title: 'Unranked',
+  minIndex: 0,
+  tagline: '60%+ acc · 4 topics · 60 Qs for Terra I',
+  accentTone: 'slate',
+};
+
+const TONE_MAP: Record<ElementalRankId, LeaderboardDivision['accentTone']> = {
+  terra: 'amber',
+  frost: 'sky',
+  ember: 'amber',
+  tempest: 'emerald',
+  volt: 'sky',
+  plasma: 'indigo',
+  aether: 'indigo',
+  solar: 'amber',
+};
+
 export const LEADERBOARD_DIVISIONS: LeaderboardDivision[] = [
-  {
-    id: 'rising',
-    title: 'Rising Scholar',
-    minIndex: 0,
-    tagline: 'Building daily rhythm across core syllabus topics',
-    accentTone: 'slate',
-  },
-  {
-    id: 'merit',
-    title: 'Merit Division',
-    minIndex: 260,
-    tagline: 'Consistent mastery & disciplined accuracy',
-    accentTone: 'sky',
-  },
-  {
-    id: 'distinction',
-    title: 'Distinction League',
-    minIndex: 480,
-    tagline: 'Exam-ready WAEC & JAMB pace across faculties',
-    accentTone: 'emerald',
-  },
-  {
-    id: 'first-class',
-    title: 'First Class Honours',
-    minIndex: 680,
-    tagline: 'Elite top-tier command of syllabus & timed CBTs',
-    accentTone: 'indigo',
-  },
-  {
-    id: 'chancellor',
-    title: "Chancellor's List",
-    minIndex: 850,
-    tagline: 'National apex performance across subjects',
-    accentTone: 'amber',
-  },
+  UNRANKED_DIVISION,
+  ...ELEMENTAL_RANKS.map((r) => ({
+    id: r.id as LeaderboardDivisionId,
+    title: r.element,
+    minIndex: r.minRp,
+    tagline: `${r.minAccuracyPct}%+ acc · ${r.minTopicsPassed} topics${
+      r.minCbtScore > 0 ? ` · ${r.minCbtScore}+ mock` : ''
+    }`,
+    accentTone: TONE_MAP[r.id],
+  })),
 ];
 
 export const CAMPUS_GOAL_PRESETS = [
@@ -118,11 +114,11 @@ export function sanitizeCampusGoal(raw: string): string {
 }
 
 /**
- * Pure, transparent 0-1,000 Academic Mastery Index (ZERO XP):
- *  - Topics Passed:      up to 400 pts (16 pts per passed topic, capped at 25 passed topics for full 400)
- *  - Weighted Accuracy:  up to 250 pts (accuracyPct * volume confidence up to 60 answered questions)
- *  - Best CBT Score:     up to 200 pts (normalized to JAMB /400 scale)
- *  - Consistency:        up to 150 pts (streak days * 6 up to 90 + duels/theory completions up to 60)
+ * Smartness-Weighted 0–1,000 Rank Points (RP) breakdown:
+ *  - Syllabus Topics Passed: up to 420 RP (90 Topic Tests for full 420)
+ *  - Squared Accuracy Curve: up to 320 RP (accuracy^2 * volume confidence up to 300+ answered)
+ *  - Best JAMB/WAEC CBT:     up to 180 RP (scaled out of 400)
+ *  - Consistency & Duels:    up to 80 RP
  */
 export function computeMasteryIndexBreakdown(input: {
   topicsPassed: number;
@@ -133,24 +129,22 @@ export function computeMasteryIndexBreakdown(input: {
   duelsCompleted: number;
   theoryCount?: number;
 }): MasteryIndexBreakdown {
-  const safeTopics = Math.max(0, Math.floor(input.topicsPassed || 0));
-  const safeAnswered = Math.max(0, Math.floor(input.totalAnswered || 0));
-  const safeAcc = Math.min(100, Math.max(0, Math.round(input.accuracyPct || 0)));
-  const safeCbt = Math.min(400, Math.max(0, Math.round(input.bestCbtScore || 0)));
-  const safeStreak = Math.max(0, Math.floor(input.streakCount || 0));
-  const safeDuels = Math.max(0, Math.floor(input.duelsCompleted || 0));
-  const safeTheory = Math.max(0, Math.floor(input.theoryCount || 0));
+  return computeElementalRpBreakdown(input);
+}
 
-  const topicsPoints = Math.min(400, Math.round((Math.min(safeTopics, 25) / 25) * 400));
-  const volumeWeight = Math.min(1, safeAnswered / 60);
-  const accuracyPoints = Math.min(250, Math.round((safeAcc / 100) * volumeWeight * 250));
-  const cbtPoints = Math.min(200, Math.round((safeCbt / 400) * 200));
-  const streakPts = Math.min(90, safeStreak * 6);
-  const challengePts = Math.min(60, (safeDuels + safeTheory) * 10);
-  const consistencyPoints = Math.min(150, streakPts + challengePts);
-
-  const total = Math.min(1000, topicsPoints + accuracyPoints + cbtPoints + consistencyPoints);
-  return { total, topicsPoints, accuracyPoints, cbtPoints, consistencyPoints };
+/**
+ * Evaluates a scholar's exact Elemental Rank + sub-division (I / II / III) + "Heading to" target
+ * from their full smartness metrics (RP, Accuracy %, Topics, Answered Qs, Best Mock).
+ */
+export function getStandingElementalRank(entry: LeaderboardStanding): ElementalRankStanding {
+  return evaluateElementalRank({
+    rp: entry.masteryIndex,
+    topicsPassed: entry.topicsPassed,
+    totalAnswered: entry.totalAnswered,
+    accuracyPct: entry.accuracyPct,
+    bestCbtScore: entry.bestCbtScore,
+    streakCount: entry.streakCount,
+  });
 }
 
 export function getDivisionForIndex(masteryIndex: number): {
@@ -206,7 +200,8 @@ export function buildStandingFromProgress(
 
   const totalAnswered = Math.min(100000, Math.max(0, progress.hist.length));
   const rightAns = progress.hist.filter((h) => h[1] === 1).length;
-  const accuracyPct = totalAnswered > 0 ? Math.min(100, Math.round((rightAns / totalAnswered) * 100)) : 0;
+  const accuracyPct =
+    totalAnswered > 0 ? Math.min(100, Math.round((rightAns / totalAnswered) * 100)) : 0;
 
   let bestCbtScore = 0;
   for (const c of progress.cbtHistory || []) {
@@ -250,84 +245,102 @@ export function buildStandingFromProgress(
 }
 
 /**
- * National Examination Benchmark Standards (transparent academic targets, NOT fake users).
- * Used when comparing personal progress against national division cut-offs.
+ * Elemental Rank Cut-Off Standards (transparent smartness targets across the climb).
  */
 export function getNationalDivisionBenchmarks(): LeaderboardStanding[] {
   return [
     {
-      uid: 'benchmark-chancellor',
-      displayName: "Chancellor's Cut-Off",
-      campusGoal: 'National Top 1% Standard',
+      uid: 'benchmark-solar',
+      displayName: 'Solar Gate',
+      campusGoal: '95%+ Acc · 370+ Mock',
       primarySubj: 'maths',
       isPublic: true,
-      masteryIndex: 850,
-      topicsPassed: 24,
-      totalAnswered: 320,
-      accuracyPct: 92,
-      bestCbtScore: 348,
-      streakCount: 14,
-      duelsCompleted: 5,
+      masteryIndex: 970,
+      topicsPassed: 112,
+      totalAnswered: 1800,
+      accuracyPct: 96,
+      bestCbtScore: 374,
+      streakCount: 25,
+      duelsCompleted: 10,
       subjectMastery: {
-        maths: 90, fmaths: 88, chem: 88, phys: 89, bio: 86, agric: 85,
-        geog: 84, econ: 86, eng: 91, civic: 88, digitech: 87, dataproc: 89,
+        maths: 96, fmaths: 94, chem: 95, phys: 95, bio: 93, agric: 92,
+        geog: 91, econ: 93, eng: 96, civic: 94, digitech: 93, dataproc: 94,
       },
       isBenchmark: true,
     },
     {
-      uid: 'benchmark-first-class',
-      displayName: 'First Class Cut-Off',
-      campusGoal: 'Competitive Merit Admission',
+      uid: 'benchmark-aether',
+      displayName: 'Aether Gate',
+      campusGoal: '92%+ Acc · 345+ Mock',
       primarySubj: 'phys',
       isPublic: true,
-      masteryIndex: 680,
-      topicsPassed: 18,
-      totalAnswered: 210,
-      accuracyPct: 84,
-      bestCbtScore: 304,
-      streakCount: 10,
-      duelsCompleted: 3,
+      masteryIndex: 895,
+      topicsPassed: 88,
+      totalAnswered: 1350,
+      accuracyPct: 92,
+      bestCbtScore: 348,
+      streakCount: 18,
+      duelsCompleted: 7,
       subjectMastery: {
-        maths: 78, fmaths: 74, chem: 76, phys: 77, bio: 75, agric: 74,
-        geog: 73, econ: 75, eng: 80, civic: 76, digitech: 75, dataproc: 77,
+        maths: 89, fmaths: 86, chem: 88, phys: 90, bio: 86, agric: 85,
+        geog: 84, econ: 86, eng: 90, civic: 88, digitech: 86, dataproc: 88,
       },
       isBenchmark: true,
     },
     {
-      uid: 'benchmark-distinction',
-      displayName: 'Distinction Cut-Off',
-      campusGoal: 'WAEC A1 / JAMB 270+ Pace',
+      uid: 'benchmark-volt',
+      displayName: 'Volt Gate',
+      campusGoal: '83%+ Acc · 285+ Mock',
       primarySubj: 'chem',
       isPublic: true,
-      masteryIndex: 480,
-      topicsPassed: 12,
-      totalAnswered: 120,
-      accuracyPct: 76,
-      bestCbtScore: 270,
+      masteryIndex: 660,
+      topicsPassed: 50,
+      totalAnswered: 720,
+      accuracyPct: 84,
+      bestCbtScore: 292,
+      streakCount: 12,
+      duelsCompleted: 4,
+      subjectMastery: {
+        maths: 76, fmaths: 72, chem: 78, phys: 76, bio: 74, agric: 72,
+        geog: 71, econ: 74, eng: 79, civic: 75, digitech: 73, dataproc: 75,
+      },
+      isBenchmark: true,
+    },
+    {
+      uid: 'benchmark-ember',
+      displayName: 'Ember Gate',
+      campusGoal: '72%+ Acc · 210+ Mock',
+      primarySubj: 'bio',
+      isPublic: true,
+      masteryIndex: 365,
+      topicsPassed: 20,
+      totalAnswered: 310,
+      accuracyPct: 74,
+      bestCbtScore: 224,
       streakCount: 7,
       duelsCompleted: 2,
       subjectMastery: {
-        maths: 65, fmaths: 60, chem: 64, phys: 63, bio: 64, agric: 62,
-        geog: 61, econ: 63, eng: 68, civic: 65, digitech: 62, dataproc: 64,
+        maths: 56, fmaths: 50, chem: 55, phys: 54, bio: 58, agric: 53,
+        geog: 52, econ: 54, eng: 60, civic: 56, digitech: 53, dataproc: 55,
       },
       isBenchmark: true,
     },
     {
-      uid: 'benchmark-merit',
-      displayName: 'Merit Division Cut-Off',
-      campusGoal: 'Credit Pass Foundation',
+      uid: 'benchmark-terra',
+      displayName: 'Terra Gate',
+      campusGoal: '60%+ Acc · 4 Topics',
       primarySubj: 'eng',
       isPublic: true,
-      masteryIndex: 260,
-      topicsPassed: 6,
-      totalAnswered: 60,
-      accuracyPct: 68,
-      bestCbtScore: 220,
-      streakCount: 4,
+      masteryIndex: 105,
+      topicsPassed: 5,
+      totalAnswered: 75,
+      accuracyPct: 62,
+      bestCbtScore: 0,
+      streakCount: 3,
       duelsCompleted: 1,
       subjectMastery: {
-        maths: 45, fmaths: 40, chem: 44, phys: 43, bio: 44, agric: 42,
-        geog: 41, econ: 43, eng: 48, civic: 45, digitech: 42, dataproc: 44,
+        maths: 28, fmaths: 22, chem: 26, phys: 25, bio: 27, agric: 24,
+        geog: 24, econ: 25, eng: 32, civic: 28, digitech: 25, dataproc: 26,
       },
       isBenchmark: true,
     },
@@ -362,6 +375,7 @@ export interface RankedLeaderboardRow {
   entry: LeaderboardStanding;
   scoreValue: number;
   division: LeaderboardDivision;
+  elemental: ElementalRankStanding;
 }
 
 export function rankLeaderboardEntries(
@@ -392,12 +406,19 @@ export function rankLeaderboardEntries(
     return a.displayName.localeCompare(b.displayName);
   });
 
-  const rankedAll: RankedLeaderboardRow[] = sorted.map((entry, idx) => ({
-    rank: idx + 1,
-    entry,
-    scoreValue: getCriterionValue(entry, criterion, subjectFilter),
-    division: getDivisionForIndex(entry.masteryIndex).current,
-  }));
+  const rankedAll: RankedLeaderboardRow[] = sorted.map((entry, idx) => {
+    const elemental = getStandingElementalRank(entry);
+    const divId: LeaderboardDivisionId = elemental.currentRank ? elemental.currentRank.id : 'unranked';
+    const division =
+      LEADERBOARD_DIVISIONS.find((d) => d.id === divId) || UNRANKED_DIVISION;
+    return {
+      rank: idx + 1,
+      entry,
+      scoreValue: getCriterionValue(entry, criterion, subjectFilter),
+      division,
+      elemental,
+    };
+  });
 
   if (!q) return rankedAll;
 
@@ -405,7 +426,8 @@ export function rankLeaderboardEntries(
     (row) =>
       row.entry.displayName.toLowerCase().includes(q) ||
       row.entry.campusGoal.toLowerCase().includes(q) ||
-      row.division.title.toLowerCase().includes(q)
+      row.elemental.currentLabel.toLowerCase().includes(q) ||
+      (row.elemental.nextLabel || '').toLowerCase().includes(q)
   );
 }
 
@@ -415,14 +437,14 @@ export function computeHeadToHead(
 ): HeadToHeadDelta[] {
   return [
     {
-      metric: 'Mastery Index',
+      metric: 'Rank Points',
       selfVal: self.masteryIndex,
       rivalVal: rival.masteryIndex,
-      unit: '/1000',
+      unit: 'RP',
       delta: self.masteryIndex - rival.masteryIndex,
     },
     {
-      metric: 'Topics Mastered',
+      metric: 'Topics Passed',
       selfVal: self.topicsPassed,
       rivalVal: rival.topicsPassed,
       unit: 'topics',
@@ -436,17 +458,17 @@ export function computeHeadToHead(
       delta: self.accuracyPct - rival.accuracyPct,
     },
     {
-      metric: 'Best CBT',
+      metric: 'Best Mock',
       selfVal: self.bestCbtScore,
       rivalVal: rival.bestCbtScore,
       unit: '/400',
       delta: self.bestCbtScore - rival.bestCbtScore,
     },
     {
-      metric: 'Study Streak',
+      metric: 'Streak',
       selfVal: self.streakCount,
       rivalVal: rival.streakCount,
-      unit: 'days',
+      unit: 'd',
       delta: self.streakCount - rival.streakCount,
     },
   ];

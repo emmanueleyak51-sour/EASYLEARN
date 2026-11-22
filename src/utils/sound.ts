@@ -123,8 +123,63 @@ function shapedNoise(c: AudioContext, o: FilteredNoiseOpts, dest: AudioNode | nu
   src.stop(t + o.d + 0.03);
 }
 
+export function bell(
+  c: AudioContext,
+  f: number,
+  at = 0,
+  dur = 0.34,
+  gain = 0.12,
+  dest: AudioNode | null = masterOut
+) {
+  // Clear glass bell: pure sine fundamental + shimmering harmonic partials
+  voice(c, { type: 'sine', f, d: dur, g: gain, at }, dest);
+  voice(c, { type: 'sine', f: f * 2, d: dur * 0.58, g: gain * 0.28, at }, dest);
+  voice(c, { type: 'sine', f: f * 3.01, d: dur * 0.32, g: gain * 0.12, at: at + 0.002 }, dest);
+}
+
+export function bubble(
+  c: AudioContext,
+  f = 420,
+  at = 0,
+  gain = 0.065,
+  dest: AudioNode | null = masterOut
+) {
+  // Soft upward pitch-chirp bubble pop
+  voice(c, { type: 'sine', f, f2: f * 1.82, d: 0.046, g: gain, at, lp: 2400 }, dest);
+}
+
+export function knock(
+  c: AudioContext,
+  f = 780,
+  at = 0,
+  gain = 0.075,
+  dest: AudioNode | null = masterOut
+) {
+  // Warm resonant woodblock knock
+  voice(c, { type: 'triangle', f, f2: f * 0.72, d: 0.048, g: gain, at, lp: 2200 }, dest);
+  shapedNoise(
+    c,
+    { d: 0.012, filterType: 'bandpass', f: f * 2.1, q: 3.4, g: gain * 0.35, at, attack: 0.001, decayPower: 3.8 },
+    dest
+  );
+}
+
+export function sparkle(
+  c: AudioContext,
+  baseFreq = 1046.5,
+  at = 0,
+  gain = 0.055,
+  dest: AudioNode | null = masterOut
+) {
+  // Light ascending glass sparkle arpeggio
+  const ratios = [1, 1.25, 1.5, 2];
+  ratios.forEach((r, idx) => {
+    const start = at + idx * 0.04;
+    voice(c, { type: 'sine', f: baseFreq * r, d: 0.22, g: gain * (1 - idx * 0.12), at: start }, dest);
+  });
+}
+
 function marimbaNote(c: AudioContext, f: number, at: number, gain = 0.13, dest: AudioNode | null = masterOut) {
-  // Warm acoustic marimba/celesta strike: fundamental + 4x overtone + crisp mallet transient
   voice(c, { type: 'sine', f, d: 0.34, g: gain, at }, dest);
   voice(c, { type: 'triangle', f: f * 2, d: 0.18, g: gain * 0.28, at, lp: 3600 }, dest);
   voice(c, { type: 'sine', f: f * 3.98, d: 0.065, g: gain * 0.12, at }, dest);
@@ -145,85 +200,217 @@ export type SoundEffectName =
   | 'done'
   | 'shimmer'
   | 'win'
-  | 'fanfare';
+  | 'fanfare'
+  | 'callConnect'
+  | 'callEnd';
 
-/**
- * Purpose-driven studio soundscape: zero generic button-click or step-navigation noise.
- * Every audible cue exists strictly for physical Lab experiments, discrete simulations,
- * concept-check diagnostics, or learning milestones.
- */
+let lastTapAtMs = -Infinity;
+export const TAP_MIN_INTERVAL_MS = 90;
+
 export function sfx(name: SoundEffectName, muted = false, n?: number) {
-  if (name === 'tap' || name === 'step') {
+  if (muted) return;
+
+  if (name === 'tap') {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - lastTapAtMs < TAP_MIN_INTERVAL_MS) return;
+    lastTapAtMs = now;
+    const c = ac(muted);
+    if (!c) return;
+    bubble(c, 430, 0, 0.055);
     return;
   }
+
   const c = ac(muted);
   if (!c) return;
   const pentatonic = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21];
 
-  if (name === 'chalk') {
-    // Subtle chalk-on-slate mark for discrete construction actions
+  if (name === 'step') {
+    // Soft air swish plus a bubble pop
+    shapedNoise(c, {
+      d: 0.09,
+      filterType: 'bandpass',
+      f: 920,
+      f2: 1680,
+      q: 1.8,
+      g: 0.036,
+      attack: 0.012,
+      decayPower: 1.5,
+    });
+    bubble(c, 470, 0.035, 0.055);
+  } else if (name === 'chalk') {
     shapedNoise(c, { d: 0.028, filterType: 'bandpass', f: 3100, q: 2.8, g: 0.045, attack: 0.002, decayPower: 2.6 });
   } else if (name === 'draw') {
-    // Crisp glass-marble clink inside the probability bag simulation
     const count = Math.min(4, Math.max(1, n || 1));
     for (let i = 0; i < count; i++) {
       const f = 1480 + i * 210;
       voice(c, { type: 'sine', f, f2: f * 0.88, d: 0.055, g: 0.065, at: i * 0.045 });
     }
-  } else if (name === 'right') {
-    const semi = pentatonic[Math.min(Math.max(0, (n || 1) - 1), 9)];
-    const root = 523.25 * Math.pow(2, semi / 12); // C5 ascending with streak
-    marimbaNote(c, root, 0, 0.125);
-    marimbaNote(c, root * 1.25, 0.055, 0.11); // Major third
-    marimbaNote(c, root * 1.5, 0.11, 0.135); // Perfect fifth
+  } else if (name === 'right' || name === 'hit') {
+    const streak = Math.max(1, n || 1);
+    const semi = pentatonic[Math.min(streak - 1, pentatonic.length - 1)];
+    const root = 523.25 * Math.pow(2, semi / 12);
+    bell(c, root, 0, 0.3, 0.11);
+    bell(c, root * 1.5, 0.075, 0.36, 0.125);
+    if (streak >= 3) {
+      sparkle(c, root * 2, 0.12, 0.05);
+    }
   } else if (name === 'wrong') {
-    // Gentle, muted wooden marimba minor interval (no booming bass drum "tubum")
-    voice(c, { type: 'triangle', f: 349.23, d: 0.12, g: 0.095, at: 0, lp: 950 });
-    voice(c, { type: 'triangle', f: 293.66, d: 0.18, g: 0.095, at: 0.085, lp: 820 });
-    shapedNoise(c, { d: 0.018, filterType: 'bandpass', f: 1200, q: 2, g: 0.03, at: 0, decayPower: 3 });
-  } else if (name === 'hit') {
-    marimbaNote(c, 659.25, 0, 0.13);
-    marimbaNote(c, 987.77, 0.05, 0.14);
-    voice(c, { type: 'sine', f: 1318.5, d: 0.24, g: 0.07, at: 0.08 });
+    // Soft triangle-wave "bwop-bwop", never harsh
+    voice(c, { type: 'triangle', f: 310, f2: 262, d: 0.12, g: 0.085, at: 0, lp: 780 });
+    voice(c, { type: 'triangle', f: 262, f2: 208, d: 0.16, g: 0.085, at: 0.105, lp: 680 });
   } else if (name === 'slam') {
-    // Focused studio bell chord to start timed Topic Test
-    marimbaNote(c, 523.25, 0, 0.12);
-    marimbaNote(c, 783.99, 0.04, 0.12);
-    marimbaNote(c, 1046.5, 0.09, 0.11);
+    bell(c, 523.25, 0, 0.28, 0.1);
+    bell(c, 783.99, 0.055, 0.34, 0.11);
   } else if (name === 'tick') {
-    shapedNoise(c, { d: 0.01, filterType: 'bandpass', f: 3400, q: 4, g: 0.035, attack: 0.001, decayPower: 4 });
+    // Woodblock knock that gets more urgent in the last 10 seconds
+    const remaining = typeof n === 'number' ? n : 30;
+    if (remaining <= 10) {
+      const urgency = Math.max(0, Math.min(1, (10 - remaining) / 10));
+      const baseFreq = 860 + urgency * 240;
+      knock(c, baseFreq, 0, 0.085 + urgency * 0.025);
+      if (remaining <= 5) {
+        knock(c, baseFreq * 1.12, 0.11, 0.055);
+      }
+    } else {
+      knock(c, 760, 0, 0.06);
+    }
   } else if (name === 'lose') {
-    [440, 392, 329.63].forEach((f, i) => {
-      voice(c, { type: 'triangle', f, d: 0.22, g: 0.09, at: i * 0.11, lp: 1100 });
+    [392, 349.23, 293.66].forEach((f, i) => {
+      voice(c, { type: 'triangle', f, d: 0.2, g: 0.08, at: i * 0.1, lp: 920 });
     });
   } else if (name === 'done') {
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      marimbaNote(c, f, i * 0.075, 0.12);
+      bell(c, f, i * 0.07, 0.3, 0.1);
     });
   } else if (name === 'shimmer') {
-    [783.99, 987.77, 1174.66, 1567.98, 1975.53].forEach((f, i) => {
-      voice(c, { type: 'sine', f, d: 0.42, g: 0.07, at: i * 0.055 });
-      voice(c, { type: 'sine', f: f * 2, d: 0.2, g: 0.025, at: i * 0.055 + 0.01 });
+    [659.25, 783.99, 987.77, 1318.51].forEach((f, i) => {
+      bell(c, f, i * 0.055, 0.34, 0.085);
     });
+    sparkle(c, 1318.51, 0.18, 0.045);
   } else if (name === 'win') {
-    const notes = [523.25, 659.25, 783.99, 1046.5, 987.77, 1046.5, 1318.51];
-    const times = [0, 0.08, 0.16, 0.25, 0.38, 0.48, 0.6];
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51];
+    const times = [0, 0.075, 0.15, 0.23, 0.33];
     notes.forEach((f, i) => {
-      marimbaNote(c, f, times[i], i === notes.length - 1 ? 0.16 : 0.12);
+      bell(c, f, times[i], i === notes.length - 1 ? 0.44 : 0.28, i === notes.length - 1 ? 0.13 : 0.1);
     });
   } else if (name === 'fanfare') {
-    // Triumphant brass-marimba & celesta crest fanfare for hard-earned badge unlocks
-    const fanfareNotes = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98];
-    const fanfareTimes = [0, 0.07, 0.14, 0.22, 0.34, 0.46];
-    fanfareNotes.forEach((f, i) => {
-      marimbaNote(c, f, fanfareTimes[i], i >= 4 ? 0.15 : 0.12);
-      voice(c, { type: 'sine', f: f * 2, d: 0.36, g: 0.032, at: fanfareTimes[i] + 0.015 });
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98];
+    const times = [0, 0.065, 0.13, 0.2, 0.29, 0.4];
+    notes.forEach((f, i) => {
+      bell(c, f, times[i], i === notes.length - 1 ? 0.48 : 0.3, i >= 4 ? 0.125 : 0.1);
     });
-    // Warm resolving major triad sustain
-    [523.25, 659.25, 783.99].forEach((f) => {
-      voice(c, { type: 'triangle', f, d: 0.68, g: 0.045, at: 0.46, lp: 2800 });
+    sparkle(c, 1046.5, 0.4, 0.05);
+  } else if (name === 'callConnect') {
+    // Warm two-note handset pickup chime when the teacher answers
+    voice(c, { type: 'sine', f: 587.33, d: 0.11, g: 0.095, at: 0 });
+    voice(c, { type: 'sine', f: 880, d: 0.18, g: 0.11, at: 0.085 });
+  } else if (name === 'callEnd') {
+    // Classic crisp 3-tone descending phone hang-up sound ("beep-boop-bop") + handset click
+    const notes = [493.88, 369.99, 277.18];
+    notes.forEach((f, idx) => {
+      const start = idx * 0.105;
+      voice(c, { type: 'sine', f, d: 0.1, g: 0.145, at: start });
+      voice(c, { type: 'triangle', f: f * 2, d: 0.08, g: 0.04, at: start, lp: 1800 });
     });
+    knock(c, 520, 0.31, 0.05);
   }
+}
+
+function scheduleDoubleRingBurst(c: AudioContext, dest: GainNode) {
+  // Dual-frequency ITU/UK/NG phone ringback (400 Hz + 450 Hz) in a "ring-ring" cadence
+  const bursts = [0.04, 0.58];
+  for (const offset of bursts) {
+    const start = c.currentTime + offset;
+    const dur = 0.38;
+
+    const oscA = c.createOscillator();
+    const oscB = c.createOscillator();
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    const ringGain = c.createGain();
+    const lp = c.createBiquadFilter();
+
+    oscA.type = 'sine';
+    oscB.type = 'sine';
+    oscA.frequency.setValueAtTime(400, start);
+    oscB.frequency.setValueAtTime(450, start);
+
+    // Subtle 20 Hz telephone cadence shimmer
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(20, start);
+    lfoGain.gain.setValueAtTime(0.025, start);
+
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(1600, start);
+
+    ringGain.gain.setValueAtTime(0.0001, start);
+    ringGain.gain.linearRampToValueAtTime(0.115, start + 0.02);
+    ringGain.gain.setValueAtTime(0.115, start + dur - 0.035);
+    ringGain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(ringGain.gain);
+
+    oscA.connect(lp);
+    oscB.connect(lp);
+    lp.connect(ringGain);
+    ringGain.connect(dest);
+
+    oscA.start(start);
+    oscB.start(start);
+    lfo.start(start);
+
+    oscA.stop(start + dur + 0.03);
+    oscB.stop(start + dur + 0.03);
+    lfo.stop(start + dur + 0.03);
+  }
+}
+
+/**
+ * Starts an authentic telephone calling ringback tone ("ring-ring ... ring-ring")
+ * when calling the Live Tutor, returning an instant stop/cleanup function.
+ */
+export function startTeacherCallRing(muted = false): () => void {
+  const c = ac(muted);
+  if (!c || !masterOut) return () => {};
+
+  const callBus = c.createGain();
+  callBus.gain.value = 1;
+  callBus.connect(masterOut);
+
+  // Brief keypad dial touch + immediate first double-ring
+  voice(c, { type: 'sine', f: 697, d: 0.055, g: 0.06, at: 0 }, callBus);
+  voice(c, { type: 'sine', f: 1209, d: 0.055, g: 0.05, at: 0 }, callBus);
+  scheduleDoubleRingBurst(c, callBus);
+
+  const intervalId = window.setInterval(() => {
+    if (c.state === 'suspended') {
+      c.resume().catch(() => {});
+    }
+    scheduleDoubleRingBurst(c, callBus);
+  }, 2500);
+
+  let stopped = false;
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    window.clearInterval(intervalId);
+    try {
+      const now = c.currentTime;
+      callBus.gain.cancelScheduledValues(now);
+      callBus.gain.setValueAtTime(callBus.gain.value, now);
+      callBus.gain.linearRampToValueAtTime(0.0001, now + 0.03);
+      window.setTimeout(() => {
+        try {
+          callBus.disconnect();
+        } catch {
+          /* ignore */
+        }
+      }, 50);
+    } catch {
+      /* ignore */
+    }
+  };
 }
 
 function triggerSingleFoleyCue(c: AudioContext, kind: LabFoleyKind, dur: number, accent = 0.5, dest: GainNode) {

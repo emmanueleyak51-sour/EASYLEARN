@@ -1,4 +1,21 @@
 import type { Question, SubjectId, Topic, TopicProgress, UserProgress } from '../types';
+import {
+  FREE_STARTER_TOPIC_COUNT,
+  PREMIUM_PLANS,
+  generateDeviceSecretToken,
+  generateSecureDisplayDevId,
+  hasActivePremium,
+  isTopicPaywalled,
+} from './paywallLogic';
+import { SUBJECT_TUTOR_REGISTRY } from './tutorRegistry';
+import {
+  ELEMENTAL_RANKS,
+  computeGateCompletionPct,
+  extractSmartnessMetricsFromProgress,
+  meetsElementalRankGate,
+  type ElementalRankId,
+} from './elementalRankLogic';
+import { isToughJambModeForSubject, resolveExamTrack } from './examTrackLogic';
 
 export const STORAGE_KEY = 'rtc_v0';
 export const PRACTICE_LEN = 6;
@@ -8,26 +25,22 @@ export const B32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export const CONFIG = {
   VERSION: '1.0',
-  PAYWALL: false,
-  FREE: ['bases', 'indices', 'surds'],
+  PAYWALL: true,
+  FREE_COUNT_PER_SUBJECT: FREE_STARTER_TOPIC_COUNT,
   SEASON_END: [2027, 6, 30] as [number, number, number],
-  PLANS: [
-    { id: 'W', name: 'Weekly Pass', price: 500, days: 7, blurb: '7 days of everything. Good for a test drive.' },
-    { id: 'S', name: 'Season Pass', price: 2500, best: true, blurb: 'Everything until the end of the 2027 academic year.' },
-  ],
+  PLANS: PREMIUM_PLANS,
   APP_URL: '',
-  OWNER_HASH: 4545178415675152,
-  SECRET: 'G5Rxm5CCItxoA8A9',
 };
 
 export const RANKS: [number, string][] = [
-  [0, 'Fresh Starter'],
-  [300, 'Serious Learner'],
-  [900, 'Focused Scholar'],
-  [2000, 'Sharp Shooter'],
-  [4000, 'Honours Ready'],
-  [7000, 'Distinction Material'],
-  [11000, 'National Laureate'],
+  [0, 'Terra'],
+  [400, 'Frost'],
+  [1100, 'Ember'],
+  [2200, 'Tempest'],
+  [3800, 'Volt'],
+  [6000, 'Plasma'],
+  [9000, 'Aether'],
+  [13000, 'Solar'],
 ];
 
 export interface RankProgressInfo {
@@ -131,31 +144,18 @@ export function mkR(seed: string): Rng {
 }
 
 export function makeBlankProgress(): UserProgress {
-  let dev = '';
-  for (let i = 0; i < 8; i++) dev += B32[Math.floor(Math.random() * 32)];
+  const dev = generateSecureDisplayDevId();
+  const devToken = generateDeviceSecretToken();
   return {
     name: '',
     target: 70,
     dx: 0,
-    subj: 'maths',
-    subjs: [
-      'maths',
-      'fmaths',
-      'chem',
-      'phys',
-      'bio',
-      'agric',
-      'geog',
-      'econ',
-      'eng',
-      'civic',
-      'digitech',
-      'dataproc',
-    ],
+    subj: 'eng',
+    subjs: ['eng', 'maths'],
     themeId: 'stage-1-adire',
     themeMode: 'light',
-    themeLockMode: 'unlocked',
-    themeAutoProgress: true,
+    themeLockMode: 'goal',
+    themeAutoProgress: false,
     clockFormat: '12h',
     sx: {},
     t: {},
@@ -171,10 +171,12 @@ export function makeBlankProgress(): UserProgress {
     run: 0,
     revok: 0,
     pro: null,
+    trial: null,
     owner: 0,
     sales: [],
     ob: 0,
     dev,
+    devToken,
   };
 }
 
@@ -198,6 +200,36 @@ export const pct = (x: number): number => Math.round(x * 100);
 
 export function mpct(p: UserProgress, id: string): number {
   return tstate(p, id).att.length ? pct(mastery(p, id)) : 0;
+}
+
+export function computeRatioPct(doneCount: number, totalCount: number): number {
+  if (totalCount <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((Math.max(0, doneCount) / totalCount) * 100)));
+}
+
+export function computeTopicsProgressPct(
+  p: UserProgress,
+  items: readonly { id: string }[]
+): number {
+  if (!items.length) return 0;
+  let sum = 0;
+  for (const item of items) {
+    const st = tstate(p, item.id);
+    const ringPct = mpct(p, item.id);
+    const topicPct = st.att.length
+      ? st.boss
+        ? Math.max(ringPct, 70)
+        : ringPct
+      : st.boss
+        ? 100
+        : st.practice
+          ? 65
+          : st.lesson
+            ? 30
+            : 0;
+    sum += topicPct;
+  }
+  return Math.max(0, Math.min(100, Math.round(sum / items.length)));
 }
 
 export function predicted(p: UserProgress, topics: Topic[]): number {
@@ -224,15 +256,28 @@ export function tstatus(p: UserProgress, id: string): string {
 }
 
 export function isPro(p: UserProgress, d = today()): boolean {
-  return !CONFIG.PAYWALL || !!(p.owner || (p.pro && p.pro.until >= d));
+  return hasActivePremium(p, d);
 }
 
-export function isTopicLocked(p: UserProgress, tid: string, d = today()): boolean {
-  return !isPro(p, d) && !CONFIG.FREE.includes(tid);
+export function isTopicLocked(
+  p: UserProgress,
+  tid: string,
+  subjectTopics: readonly { id: string }[] = [],
+  d = today()
+): boolean {
+  if (!CONFIG.PAYWALL) return false;
+  return isTopicPaywalled(p, tid, subjectTopics, d);
 }
 
-export function nextMission(p: UserProgress, topics: Topic[]) {
-  const open = topics.filter((t) => !tstate(p, t.id).boss && !isTopicLocked(p, t.id));
+export function nextMission(
+  p: UserProgress,
+  topics: Topic[],
+  allSubjectTopics: Topic[] = topics,
+  d = today()
+) {
+  const open = topics.filter(
+    (t) => !tstate(p, t.id).boss && !isTopicLocked(p, t.id, allSubjectTopics, d)
+  );
   if (!open.length) return null;
   const started = (t: Topic) => {
     const s = tstate(p, t.id);
@@ -250,10 +295,18 @@ export function nextMission(p: UserProgress, topics: Topic[]) {
   return { t, stage, gain };
 }
 
-export function homeTopics(p: UserProgress, topics: Topic[]): Topic[] {
+export function homeTopics(
+  p: UserProgress,
+  topics: Topic[],
+  allSubjectTopics: Topic[] = topics,
+  d = today()
+): Topic[] {
   const rank = (t: Topic) => {
+    const locked = isTopicLocked(p, t.id, allSubjectTopics, d);
     const st = tstate(p, t.id);
-    return st.boss ? 2 : st.lesson || st.practice ? 0 : 1;
+    if (st.boss) return 3;
+    if (locked) return 2;
+    return st.lesson || st.practice ? 0 : 1;
   };
   return topics
     .slice()
@@ -293,25 +346,38 @@ export function pickPractice(
 ): Question | null {
   const qs = bankForTopic(p, t).filter((q) => !seen.includes(q.id));
   if (!qs.length) return null;
+  const toughJamb = isToughJambModeForSubject(resolveExamTrack(p), p.subj, p.jambSubjects);
+  const targetLvl = toughJamb ? Math.max(3, lvl) : lvl;
   qs.sort(
-    (a, b) => Math.abs(a.l - lvl) - Math.abs(b.l - lvl) || hstat(p, a.id).n - hstat(p, b.id).n
+    (a, b) =>
+      Math.abs(a.l - targetLvl) - Math.abs(b.l - targetLvl) ||
+      (toughJamb ? (b.w?.length ? 1 : 0) - (a.w?.length ? 1 : 0) : 0) ||
+      hstat(p, a.id).n - hstat(p, b.id).n
   );
   return qs[0];
 }
 
 export function bossList(p: UserProgress, t: Topic): string[] {
   const qs = bankForTopic(p, t);
-  const by = (l: number) => qs.filter((q) => q.l === l);
+  const toughJamb = isToughJambModeForSubject(resolveExamTrack(p), p.subj, p.jambSubjects);
+  const targetPoolSize = toughJamb ? 9 : BOSS_HP + 2;
+  const by = (l: number) =>
+    qs
+      .filter((q) => q.l === l)
+      .sort((x, y) => (toughJamb ? (y.w?.length ? 1 : 0) - (x.w?.length ? 1 : 0) : 0));
   const a = by(3);
   const b = by(4);
   const c = by(5);
-  let list = [a[0], a[1], b[0], b[1], c[0], c[1], a[2]].filter(Boolean);
-  if (list.length < BOSS_HP + 2) {
+  let list = (toughJamb
+    ? [c[0], b[0], c[1], b[1], a[0], b[2], c[2], a[1], a[2]]
+    : [a[0], a[1], b[0], b[1], c[0], c[1], a[2]]
+  ).filter(Boolean);
+  if (list.length < targetPoolSize) {
     list = list.concat(
       qs
         .filter((q) => !list.includes(q))
         .sort((x, y) => y.l - x.l)
-        .slice(0, BOSS_HP + 2 - list.length)
+        .slice(0, targetPoolSize - list.length)
     );
   }
   return list.map((q) => q.id);
@@ -414,6 +480,7 @@ export interface BadgeDef {
   icon: string;
   tier: BadgeTier;
   xpBonus: number;
+  elementId?: ElementalRankId;
   ok: (
     p: UserProgress,
     topics: Topic[],
@@ -426,361 +493,48 @@ export interface BadgeDef {
   ) => BadgeProgressSnapshot;
 }
 
-const countFlagsPrefix = (p: UserProgress, prefix: string): number =>
-  Object.keys(p.flags || {}).filter((k) => k.startsWith(prefix) && p.flags[k] > 0).length;
-
-const countTotalBossesPassed = (p: UserProgress): number =>
-  Object.values(p.t || {}).filter((st) => st && st.boss > 0).length;
-
-const countTotalLessonsDone = (p: UserProgress): number =>
-  Object.values(p.t || {}).filter((st) => st && st.lesson > 0).length;
-
-const accuracyPercent = (p: UserProgress): number => {
-  if (!p.hist.length) return 0;
-  const right = p.hist.reduce((s, h) => s + (h[1] === 1 ? 1 : 0), 0);
-  return Math.round((right / p.hist.length) * 100);
+const ELEMENTAL_ICON_MAP: Record<ElementalRankId, string> = {
+  terra: 'shield',
+  frost: 'star',
+  ember: 'flame',
+  tempest: 'bolt',
+  volt: 'bolt',
+  plasma: 'atom',
+  aether: 'award',
+  solar: 'crown',
 };
 
-export const BADGES: BadgeDef[] = [
-  // ── BRONZE TIER (Foundational Discipline — 6 Badges) ──
-  {
-    id: 'first',
-    name: 'First Step',
-    desc: 'Calibrate your baseline by finishing a diagnostic test',
-    icon: 'target',
-    tier: 'bronze',
-    xpBonus: 40,
-    ok: (p) => !!(p.dx && p.hist.length > 0),
-    progress: (p) => ({ cur: p.dx && p.hist.length > 0 ? 1 : 0, max: 1, unit: 'diagnostic' }),
+/**
+ * 8 Hard-Earned Elemental Rank Badges (Terra -> Solar).
+ * Requires BOTH steep Smartness-Weighted Rank Points (RP) AND strict Accuracy / Syllabus / Mock gates
+ * in ascending Elemental order.
+ */
+export const BADGES: BadgeDef[] = ELEMENTAL_RANKS.map((rank, idx) => ({
+  id: `rank-${rank.id}`,
+  name: rank.element,
+  desc: `${rank.minAccuracyPct}%+ acc · ${rank.minTopicsPassed} topics${
+    rank.minCbtScore > 0 ? ` · ${rank.minCbtScore}+ mock` : ''
+  }`,
+  icon: ELEMENTAL_ICON_MAP[rank.id],
+  tier: rank.tierGroup,
+  xpBonus: rank.xpBonus,
+  elementId: rank.id,
+  ok: (p, _ts, allBySubj) => {
+    const metrics = extractSmartnessMetricsFromProgress(p, allBySubj);
+    for (let i = 0; i <= idx; i++) {
+      if (!meetsElementalRankGate(ELEMENTAL_RANKS[i], metrics)) return false;
+    }
+    return true;
   },
-  {
-    id: 'lesson5',
-    name: 'Dedicated Reader',
-    desc: 'Complete 5 full interactive lessons across your subjects',
-    icon: 'book',
-    tier: 'bronze',
-    xpBonus: 60,
-    ok: (p) => countTotalLessonsDone(p) >= 5,
-    progress: (p) => ({ cur: Math.min(5, countTotalLessonsDone(p)), max: 5, unit: 'lessons' }),
+  progress: (p, _ts, allBySubj) => {
+    const metrics = extractSmartnessMetricsFromProgress(p, allBySubj);
+    return {
+      cur: computeGateCompletionPct(rank, metrics),
+      max: 100,
+      unit: '%',
+    };
   },
-  {
-    id: 'boss3',
-    name: 'Triple Crown',
-    desc: 'Conquer 3 timed Topic Tests with poise',
-    icon: 'shield',
-    tier: 'bronze',
-    xpBonus: 75,
-    ok: (p) => countTotalBossesPassed(p) >= 3,
-    progress: (p) => ({ cur: Math.min(3, countTotalBossesPassed(p)), max: 3, unit: 'tests' }),
-  },
-  {
-    id: 'streak3',
-    name: 'Ignited Streak',
-    desc: 'Study and answer questions for 3 consecutive days',
-    icon: 'flame',
-    tier: 'bronze',
-    xpBonus: 60,
-    ok: (p) => p.streak.n >= 3,
-    progress: (p) => ({ cur: Math.min(3, p.streak.n), max: 3, unit: 'days' }),
-  },
-  {
-    id: 'combo5',
-    name: 'Clean Five',
-    desc: 'Land 5 consecutive right answers inside a timed Topic Test',
-    icon: 'bolt',
-    tier: 'bronze',
-    xpBonus: 70,
-    ok: (p) => !!p.badges.combo5,
-    progress: (p) => ({ cur: p.badges.combo5 ? 5 : 0, max: 5, unit: 'in a row' }),
-  },
-  {
-    id: 'notes12',
-    name: 'Deep Annotator',
-    desc: 'Read and mark 12 Textbook Study Note chapters complete',
-    icon: 'books',
-    tier: 'bronze',
-    xpBonus: 80,
-    ok: (p) => countFlagsPrefix(p, 'note:') >= 12,
-    progress: (p) => ({ cur: Math.min(12, countFlagsPrefix(p, 'note:')), max: 12, unit: 'chapters' }),
-  },
-
-  // ── SILVER TIER (Rigorous Consistency & Precision — 8 Badges) ──
-  {
-    id: 'streak7',
-    name: 'Week Warrior',
-    desc: 'Maintain an unbroken 7-day study streak',
-    icon: 'flame',
-    tier: 'silver',
-    xpBonus: 120,
-    ok: (p) => p.streak.n >= 7,
-    progress: (p) => ({ cur: Math.min(7, p.streak.n), max: 7, unit: 'days' }),
-  },
-  {
-    id: 'run10',
-    name: 'Sharpshooter',
-    desc: 'Hit 10 consecutive correct answers without a single slip',
-    icon: 'target',
-    tier: 'silver',
-    xpBonus: 110,
-    ok: (p) => p.run >= 10,
-    progress: (p) => ({ cur: Math.min(10, p.run), max: 10, unit: 'run' }),
-  },
-  {
-    id: 'run15',
-    name: 'Laser Focus',
-    desc: 'Chain 15 consecutive right answers in one unbroken streak',
-    icon: 'bolt',
-    tier: 'silver',
-    xpBonus: 160,
-    ok: (p) => p.run >= 15,
-    progress: (p) => ({ cur: Math.min(15, p.run), max: 15, unit: 'run' }),
-  },
-  {
-    id: 'rev10',
-    name: 'Comeback Kid',
-    desc: 'Redeem 10 previously missed questions in Spaced Review',
-    icon: 'rev',
-    tier: 'silver',
-    xpBonus: 120,
-    ok: (p) => p.revok >= 10,
-    progress: (p) => ({ cur: Math.min(10, p.revok), max: 10, unit: 'fixed' }),
-  },
-  {
-    id: 'q100',
-    name: 'Centurion',
-    desc: 'Answer 100 curriculum mastery questions',
-    icon: 'check',
-    tier: 'silver',
-    xpBonus: 130,
-    ok: (p) => p.hist.length >= 100,
-    progress: (p) => ({ cur: Math.min(100, p.hist.length), max: 100, unit: 'Qs' }),
-  },
-  {
-    id: 'lab10',
-    name: 'Practical Bench Pro',
-    desc: 'Complete 10 full virtual laboratory practicals or constructions',
-    icon: 'flask',
-    tier: 'silver',
-    xpBonus: 150,
-    ok: (p) => countFlagsPrefix(p, 'lab:') >= 10,
-    progress: (p) => ({ cur: Math.min(10, countFlagsPrefix(p, 'lab:')), max: 10, unit: 'practicals' }),
-  },
-  {
-    id: 'formula15',
-    name: 'Formula Architect',
-    desc: 'Master 15 formulas or grammar rules in Formula Studio drills',
-    icon: 'sigma',
-    tier: 'silver',
-    xpBonus: 150,
-    ok: (p) => countFlagsPrefix(p, 'fmaster:') >= 15,
-    progress: (p) => ({ cur: Math.min(15, countFlagsPrefix(p, 'fmaster:')), max: 15, unit: 'mastered' }),
-  },
-  {
-    id: 'flawless1',
-    name: 'Untouchable',
-    desc: 'Pass a timed Topic Test with a flawless 7/7 score and zero mistakes',
-    icon: 'medal',
-    tier: 'silver',
-    xpBonus: 175,
-    ok: (p) => (p.flags?.flawless_boss || 0) >= 1,
-    progress: (p) => ({ cur: Math.min(1, p.flags?.flawless_boss || 0), max: 1, unit: 'flawless test' }),
-  },
-
-  // ── GOLD TIER (Elite Exam Mastery — 8 Badges) ──
-  {
-    id: 'streak14',
-    name: 'Fortnight Titan',
-    desc: 'Hold a relentless 14-day study streak',
-    icon: 'flame',
-    tier: 'gold',
-    xpBonus: 260,
-    ok: (p) => p.streak.n >= 14,
-    progress: (p) => ({ cur: Math.min(14, p.streak.n), max: 14, unit: 'days' }),
-  },
-  {
-    id: 'run25',
-    name: 'Sniper Elite',
-    desc: 'Answer 25 questions right in a row without missing once',
-    icon: 'target',
-    tier: 'gold',
-    xpBonus: 300,
-    ok: (p) => p.run >= 25,
-    progress: (p) => ({ cur: Math.min(25, p.run), max: 25, unit: 'run' }),
-  },
-  {
-    id: 'rev25',
-    name: 'Redemption Master',
-    desc: 'Master and clear 25 tough missed questions in Spaced Review',
-    icon: 'rev',
-    tier: 'gold',
-    xpBonus: 240,
-    ok: (p) => p.revok >= 25,
-    progress: (p) => ({ cur: Math.min(25, p.revok), max: 25, unit: 'fixed' }),
-  },
-  {
-    id: 'q250_acc',
-    name: 'Precision 250',
-    desc: 'Answer 250+ questions while holding at least 75% overall accuracy',
-    icon: 'award',
-    tier: 'gold',
-    xpBonus: 280,
-    ok: (p) => p.hist.length >= 250 && accuracyPercent(p) >= 75,
-    progress: (p) => ({ cur: Math.min(250, p.hist.length), max: 250, unit: `Qs (${accuracyPercent(p)}% acc)` }),
-  },
-  {
-    id: 'half',
-    name: 'Halfway Conquerer',
-    desc: 'Pass Topic Tests for at least half of all topics in an active subject',
-    icon: 'map',
-    tier: 'gold',
-    xpBonus: 250,
-    ok: (p, ts) => ts.length > 0 && ts.filter((t) => tstate(p, t.id).boss).length >= Math.ceil(ts.length / 2),
-    progress: (p, ts) => ({
-      cur: ts.filter((t) => tstate(p, t.id).boss).length,
-      max: Math.max(1, Math.ceil(ts.length / 2)),
-      unit: 'topics',
-    }),
-  },
-  {
-    id: 'target',
-    name: 'Target Locked',
-    desc: 'Drive your subject mastery score up to your personal goal',
-    icon: 'target',
-    tier: 'gold',
-    xpBonus: 260,
-    ok: (p, ts) => !!(p.dx && ts.length > 0 && predicted(p, ts) >= subjTarget(p)),
-    progress: (p, ts) => ({ cur: Math.min(subjTarget(p), predicted(p, ts)), max: subjTarget(p), unit: '%' }),
-  },
-  {
-    id: 'lab25',
-    name: 'Chief Experimentalist',
-    desc: 'Complete 25 virtual laboratory practicals across Maths, Chem, Physics, Biology & Agric',
-    icon: 'atom',
-    tier: 'gold',
-    xpBonus: 280,
-    ok: (p) => countFlagsPrefix(p, 'lab:') >= 25,
-    progress: (p) => ({ cur: Math.min(25, countFlagsPrefix(p, 'lab:')), max: 25, unit: 'practicals' }),
-  },
-  {
-    id: 'xp4000',
-    name: 'Campus Ready',
-    desc: 'Answer 250 questions through sustained study, drills and tests',
-    icon: 'star',
-    tier: 'gold',
-    xpBonus: 300,
-    ok: (p) => p.hist.length >= 250 || p.xp >= 4000,
-    progress: (p) => ({ cur: Math.min(250, p.hist.length), max: 250, unit: 'questions' }),
-  },
-
-  // ── MYTHIC TIER (Hard-Earned Chancellor Honours — 6 Badges) ──
-  {
-    id: 'streak30',
-    name: 'Iron Discipline',
-    desc: 'Study every single day for 30 consecutive days without breaking streak',
-    icon: 'flame',
-    tier: 'mythic',
-    xpBonus: 550,
-    ok: (p) => p.streak.n >= 30,
-    progress: (p) => ({ cur: Math.min(30, p.streak.n), max: 30, unit: 'days' }),
-  },
-  {
-    id: 'flawless5',
-    name: 'Grandmaster 7/7',
-    desc: 'Achieve 5 separate flawless 7/7 timed Topic Test victories',
-    icon: 'medal',
-    tier: 'mythic',
-    xpBonus: 500,
-    ok: (p) => (p.flags?.flawless_boss || 0) >= 5,
-    progress: (p) => ({ cur: Math.min(5, p.flags?.flawless_boss || 0), max: 5, unit: 'flawless tests' }),
-  },
-  {
-    id: 'q500_acc',
-    name: 'Distinction 500',
-    desc: 'Answer 500+ questions while maintaining 80%+ overall accuracy',
-    icon: 'award',
-    tier: 'mythic',
-    xpBonus: 600,
-    ok: (p) => p.hist.length >= 500 && accuracyPercent(p) >= 80,
-    progress: (p) => ({ cur: Math.min(500, p.hist.length), max: 500, unit: `Qs (${accuracyPercent(p)}% acc)` }),
-  },
-  {
-    id: 'formula40',
-    name: 'GrandPolymath',
-    desc: 'Master 40 distinct formulas & rules across Maths, Further Maths, Chem, Physics, Geography, Economics, English, DigiTech & Data Processing',
-    icon: 'sigma',
-    tier: 'mythic',
-    xpBonus: 500,
-    ok: (p) => countFlagsPrefix(p, 'fmaster:') >= 40,
-    progress: (p) => ({ cur: Math.min(40, countFlagsPrefix(p, 'fmaster:')), max: 40, unit: 'mastered' }),
-  },
-  {
-    id: 'quad_scholar',
-    name: 'Twelve-Faculty Scholar',
-    desc: 'Pass at least 5 Topic Tests in EACH of all 12 faculties (Maths, F.Maths, Chem, Physics, Bio, Agric, Geog, Econ, English, Civic, DigiTech & DataProc)',
-    icon: 'crown',
-    tier: 'mythic',
-    xpBonus: 650,
-    ok: (p, _ts, allBySubj) => {
-      if (!allBySubj) return false;
-      const req: SubjectId[] = [
-        'maths',
-        'fmaths',
-        'chem',
-        'phys',
-        'bio',
-        'agric',
-        'geog',
-        'econ',
-        'eng',
-        'civic',
-        'digitech',
-        'dataproc',
-      ];
-      return req.every((sid) => {
-        const list = allBySubj[sid] || [];
-        return list.filter((t) => tstate(p, t.id).boss).length >= 5;
-      });
-    },
-    progress: (p, _ts, allBySubj) => {
-      const req: SubjectId[] = [
-        'maths',
-        'fmaths',
-        'chem',
-        'phys',
-        'bio',
-        'agric',
-        'geog',
-        'econ',
-        'eng',
-        'civic',
-        'digitech',
-        'dataproc',
-      ];
-      if (!allBySubj) {
-        return { cur: Math.min(60, countTotalBossesPassed(p)), max: 60, unit: 'tests' };
-      }
-      const cur = req.reduce((sum, sid) => {
-        const list = allBySubj[sid] || [];
-        return sum + Math.min(5, list.filter((t) => tstate(p, t.id).boss).length);
-      }, 0);
-      return { cur, max: 60, unit: 'cross-subject tests' };
-    },
-  },
-  {
-    id: 'all',
-    name: 'Chancellor’s Laureate',
-    desc: 'Complete and pass every single Topic Test in an entire subject syllabus',
-    icon: 'crown',
-    tier: 'mythic',
-    xpBonus: 800,
-    ok: (p, ts) => ts.length > 0 && ts.filter((t) => tstate(p, t.id).boss).length === ts.length,
-    progress: (p, ts) => ({
-      cur: ts.filter((t) => tstate(p, t.id).boss).length,
-      max: Math.max(1, ts.length),
-      unit: 'topics',
-    }),
-  },
-];
+}));
 
 export function evaluateNewBadges(
   p: UserProgress,
@@ -819,40 +573,23 @@ export const fmtDev = (d: string): string => d.slice(0, 4) + '-' + d.slice(4);
 
 export const cleanCode = (s: string): string => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-const enc = (n: number, len: number): string => {
-  let s = '';
-  for (let i = 0; i < len; i++) {
-    s = B32[n % 32] + s;
-    n = Math.floor(n / 32);
-  }
-  return s;
-};
-
-const sig = (dev: string, pid: string, day: number): string =>
-  enc(h53(`${CONFIG.SECRET}|${dev}|${pid}|${day}`), 6);
-
-export function makeCode(dev: string, pid: string, day = today()): string {
-  const c = pid + enc(day, 3) + sig(dev, pid, day);
-  return c.slice(0, 5) + '-' + c.slice(5);
-}
-
 export const SUBJECT_INFO: Record<
   SubjectId,
   { id: SubjectId; name: string; short: string; compact: string; icon: string }
-> = {
-  maths: { id: 'maths', name: 'Mathematics', short: 'Maths', compact: 'Maths', icon: 'sigma' },
-  fmaths: { id: 'fmaths', name: 'Further Mathematics', short: 'F.Maths', compact: 'F.Maths', icon: 'integral' },
-  chem: { id: 'chem', name: 'Chemistry', short: 'Chemistry', compact: 'Chem', icon: 'flask' },
-  phys: { id: 'phys', name: 'Physics', short: 'Physics', compact: 'Phys', icon: 'atom' },
-  bio: { id: 'bio', name: 'Biology', short: 'Biology', compact: 'Bio', icon: 'dna' },
-  agric: { id: 'agric', name: 'Agricultural Science', short: 'Agric', compact: 'Agric', icon: 'leaf' },
-  geog: { id: 'geog', name: 'Geography', short: 'Geog', compact: 'Geog', icon: 'globe' },
-  econ: { id: 'econ', name: 'Economics', short: 'Economics', compact: 'Econ', icon: 'chart' },
-  eng: { id: 'eng', name: 'English Language', short: 'English', compact: 'Eng', icon: 'book' },
-  civic: { id: 'civic', name: 'Civic Education', short: 'Civic', compact: 'Civic', icon: 'scales' },
-  digitech: { id: 'digitech', name: 'Digital Technologies', short: 'DigiTech', compact: 'DigiTech', icon: 'cpu' },
-  dataproc: { id: 'dataproc', name: 'Data Processing', short: 'DataProc', compact: 'DataProc', icon: 'database' },
-};
+> = (Object.keys(SUBJECT_TUTOR_REGISTRY) as SubjectId[]).reduce(
+  (acc, id) => {
+    const meta = SUBJECT_TUTOR_REGISTRY[id];
+    acc[id] = {
+      id,
+      name: meta.name,
+      short: meta.short,
+      compact: meta.compact,
+      icon: meta.icon,
+    };
+    return acc;
+  },
+  {} as Record<SubjectId, { id: SubjectId; name: string; short: string; compact: string; icon: string }>
+);
 
 export const ONBOARDING_SLIDES = [
   {

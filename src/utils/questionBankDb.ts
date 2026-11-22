@@ -17,20 +17,11 @@ export const QBANK_CHANGED_EVENT = 'rtc:qbank-changed';
 export type SubjectCountMap = Record<SubjectId, number>;
 
 export function createEmptySubjectCounts(): SubjectCountMap {
-  return {
-    maths: 0,
-    fmaths: 0,
-    chem: 0,
-    phys: 0,
-    bio: 0,
-    agric: 0,
-    geog: 0,
-    econ: 0,
-    eng: 0,
-    civic: 0,
-    digitech: 0,
-    dataproc: 0,
-  };
+  const counts = {} as SubjectCountMap;
+  for (const cfg of QUESTION_BANK_SUBJECTS) {
+    counts[cfg.id] = 0;
+  }
+  return counts;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;

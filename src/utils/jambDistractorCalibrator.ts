@@ -130,10 +130,10 @@ function detectOptionShape(plain: string): OptionShape {
   return 'nounPhrase';
 }
 
-const DOMAIN_TAILS: Record<
+const DOMAIN_TAILS: Partial<Record<
   SubjectId,
   Record<OptionShape, readonly string[]>
-> = {
+>> = {
   phys: {
     infinitive: [
       'at constant ambient pressure',
@@ -667,7 +667,7 @@ const DOMAIN_TAILS: Record<
   },
 };
 
-const NEGATIVE_STEM_TAILS: Record<SubjectId, Record<OptionShape, readonly string[]>> = {
+const NEGATIVE_STEM_TAILS: Partial<Record<SubjectId, Record<OptionShape, readonly string[]>>> = {
   phys: {
     infinitive: [
       'at standard room temperature',
@@ -1100,7 +1100,9 @@ export function calibrateQuestionItem(
 
   const qPlain = stripHtml(questionHtml);
   const negStem = isNegativeStem(qPlain);
-  const bankByShape = negStem ? NEGATIVE_STEM_TAILS[subj] : DOMAIN_TAILS[subj];
+  const bankByShape =
+    (negStem ? NEGATIVE_STEM_TAILS[subj] : DOMAIN_TAILS[subj]) ||
+    (negStem ? NEGATIVE_STEM_TAILS.eng! : DOMAIN_TAILS.eng!);
 
   // For rank 0 (outlength candidate), pick a distractor that can surpass rightLen cleanly without ballooning;
   // sort shortest-first so shorter distractors get enriched first and already-balanced ones stay concise.

@@ -37,9 +37,26 @@ export function PeerDuelScreen({
   const { user, publishDuelAndScore, loadDuelEntries, signInWithGoogle } = useCloudSync();
 
   const [selectedSubj, setSelectedSubj] = useState<SubjectId>(progress.subj);
+  const [subjectSearch, setSubjectSearch] = useState('');
   const [joinCodeInput, setJoinCodeInput] = useState<string>(initialDuelCode || '');
   const [joinError, setJoinError] = useState<string | null>(null);
   const [copiedMsg, setCopiedMsg] = useState<string | null>(null);
+
+  const visibleDuelSubjects = useMemo(() => {
+    const q = subjectSearch.trim().toLowerCase();
+    const list = SUBJECT_IDS.filter((sid) => {
+      if (!q) return true;
+      return (
+        SUBJECT_INFO[sid].name.toLowerCase().includes(q) ||
+        SUBJECT_INFO[sid].short.toLowerCase().includes(q)
+      );
+    });
+    return [...list].sort((a, b) => {
+      const aRank = a === selectedSubj ? 0 : progress.subjs.includes(a) ? 1 : 2;
+      const bRank = b === selectedSubj ? 0 : progress.subjs.includes(b) ? 1 : 2;
+      return aRank - bRank;
+    });
+  }, [subjectSearch, selectedSubj, progress.subjs]);
 
   const [activeSpec, setActiveSpec] = useState<PeerDuelSpec | null>(() =>
     initialDuelCode ? parseDuelCode(initialDuelCode) : null
@@ -206,11 +223,11 @@ export function PeerDuelScreen({
   return (
     <div className="flex flex-col gap-5 anim-rise">
       <SubscreenTopBar
-        title="Peer Study Duels"
+        title="Duels"
         subtitle={
           phase === 'active' && activeSpec
             ? `${activeSpec.code} · Question ${idx + 1} of ${duelQuestions.length}`
-            : 'Deterministic 10-question timed sprints you can challenge friends on'
+            : '10-question timed race you can share with friends'
         }
         onBack={() => {
           if (phase === 'active') setPhase('lobby');
@@ -225,7 +242,7 @@ export function PeerDuelScreen({
                 className="min-h-[34px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[12px] font-bold text-[var(--ink)] flex items-center gap-1.5 cursor-pointer"
               >
                 <Icon name="sigma" size={14} className="text-[var(--gold)]" />
-                <span>Calc &amp; Pad</span>
+                <span>Calculator</span>
               </button>
               <span
                 className={`px-3 py-1 rounded-full border text-[13px] font-extrabold mono ${
@@ -247,42 +264,52 @@ export function PeerDuelScreen({
           {/* Create or Join Challenge */}
           <section className="min-[860px]:col-span-7 rtc-card rounded-2xl p-5 sm:p-6 flex flex-col gap-5">
             <div>
-              <span className="eyebrow text-[var(--gold)]">Create a 10-Question Timed Challenge</span>
-              <h2 className="h20 text-[var(--ink)]">Pick a Faculty &amp; Generate Duel Code</h2>
+              <span className="eyebrow text-[var(--gold)]">10-question timed duel</span>
+              <h2 className="h20 text-[var(--ink)]">Pick a subject and create a duel code</h2>
               <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
-                Every friend who enters your code gets the exact same 10 questions in the exact same order — fair head-to-head benchmarking.
+                Every friend who enters your code gets the exact same 10 questions in the same order.
               </p>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {SUBJECT_IDS.map((sid) => {
-                const active = selectedSubj === sid;
-                return (
-                  <button
-                    key={sid}
-                    type="button"
-                    onClick={() => setSelectedSubj(sid)}
-                    className={`min-h-[38px] px-2.5 rounded-xl border text-[12.5px] font-bold flex items-center gap-1.5 cursor-pointer transition ${
-                      active
-                        ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--ink)]'
-                        : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    <Icon name={SUBJECT_INFO[sid].icon} size={14} className="text-[var(--gold)] shrink-0" />
-                    <span className="truncate">{SUBJECT_INFO[sid].compact}</span>
-                  </button>
-                );
-              })}
+            <div className="flex flex-col gap-2">
+              <input
+                type="search"
+                value={subjectSearch}
+                onChange={(e) => setSubjectSearch(e.target.value)}
+                aria-label="Search duel subjects"
+                placeholder="Find any of 49 subjects..."
+                className="w-full min-h-[38px] px-3.5 rounded-xl bg-[var(--bg)] border border-[var(--line)] focus:border-[var(--gold)] text-[13.5px] font-medium text-[var(--ink)] outline-none"
+              />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-0.5">
+                {visibleDuelSubjects.map((sid) => {
+                  const active = selectedSubj === sid;
+                  return (
+                    <button
+                      key={sid}
+                      type="button"
+                      onClick={() => setSelectedSubj(sid)}
+                      className={`min-h-[38px] px-2.5 rounded-xl border text-[12.5px] font-bold flex items-center gap-1.5 cursor-pointer transition ${
+                        active
+                          ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--ink)]'
+                          : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
+                      }`}
+                    >
+                      <Icon name={SUBJECT_INFO[sid].icon} size={14} className="text-[var(--gold)] shrink-0" />
+                      <span className="truncate">{SUBJECT_INFO[sid].compact}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <button type="button" onClick={handleCreateDuel} className="btn-tactile indigo w-full">
               <Icon name="bolt" size={17} />
-              <span>Generate {SUBJECT_INFO[selectedSubj].short} Duel Code</span>
+              <span>Create {SUBJECT_INFO[selectedSubj].short} duel code</span>
             </button>
 
             <div className="pt-4 border-t border-[var(--line)] flex flex-col gap-2.5">
               <label htmlFor="duel-code-input" className="text-[13px] font-bold text-[var(--ink)]">
-                Or join a friend’s challenge code
+                Or enter a friend’s duel code
               </label>
               <div className="flex gap-2">
                 <input
@@ -294,7 +321,7 @@ export function PeerDuelScreen({
                   className="flex-1 rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3.5 py-2.5 mono text-[14px] font-bold text-[var(--ink)] focus:outline-none focus:border-[var(--gold)]"
                 />
                 <button type="button" onClick={handleJoinCode} className="btn-tactile paper whitespace-nowrap">
-                  Load Code
+                  Open code
                 </button>
               </div>
               {joinError && <p className="text-[12.5px] font-semibold text-[var(--coral-ink)]">{joinError}</p>}
@@ -304,16 +331,16 @@ export function PeerDuelScreen({
           {/* Ready Challenge Room + Local History */}
           <div className="min-[860px]:col-span-5 flex flex-col gap-4">
             <section className="rtc-card rounded-2xl p-5 flex flex-col gap-4">
-              <span className="eyebrow text-[var(--gold)]">Active Duel Room</span>
+              <span className="eyebrow text-[var(--gold)]">Active duel</span>
               {activeSpec ? (
                 <>
-                  <div className="rtc-eq-plate rounded-xl p-4 flex flex-col gap-1">
-                    <div className="text-[11.5px] text-slate-400 font-semibold">{activeSpec.title}</div>
-                    <div className="mono font-extrabold text-[22px] text-amber-300 tracking-wide">
+                  <div className="rtc-eq-plate rounded-2xl p-4 flex flex-col gap-1 text-white">
+                    <div className="text-[11.5px] text-white/80 font-semibold">{activeSpec.title}</div>
+                    <div className="mono font-bold text-[22px] text-white tracking-wide">
                       {activeSpec.code}
                     </div>
-                    <div className="text-[12px] text-slate-300">
-                      {duelQuestions.length} deterministic questions · 5:00 timer
+                    <div className="text-[12px] text-white/85">
+                      {duelQuestions.length} questions · 5:00 timer
                     </div>
                   </div>
 
@@ -323,26 +350,26 @@ export function PeerDuelScreen({
                       onClick={() => void handleCopyShare('link')}
                       className="flex-1 min-h-[38px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[12.5px] font-bold text-[var(--ink)] cursor-pointer"
                     >
-                      Copy Share Link
+                      Copy invite link
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleCopyShare('code')}
                       className="flex-1 min-h-[38px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[12.5px] font-bold text-[var(--ink)] cursor-pointer"
                     >
-                      Copy Code
+                      Copy code
                     </button>
                   </div>
                   {copiedMsg && <div className="text-[12px] font-bold text-[var(--green)]">{copiedMsg}</div>}
 
                   <button type="button" onClick={startDuelSprint} className="btn-tactile indigo w-full">
-                    <span>Start 10-Question Sprint</span>
+                    <span>Start 10-question duel</span>
                     <Icon name="go" size={17} />
                   </button>
                 </>
               ) : (
                 <p className="text-[13.5px] text-[var(--dim)] leading-relaxed">
-                  Pick a subject on the left and click <strong>Generate Duel Code</strong>, or paste a friend’s code to load their exact paper.
+                  Pick a subject on the left and tap <strong>Create duel code</strong>, or paste a friend’s code to open their paper.
                 </p>
               )}
             </section>
@@ -350,7 +377,7 @@ export function PeerDuelScreen({
             {/* Recent Duels */}
             {(progress.duelHistory?.length || 0) > 0 && (
               <section className="rtc-card rounded-2xl p-4 flex flex-col gap-2.5">
-                <div className="text-[13px] font-bold text-[var(--ink)]">Recent Duels</div>
+                <div className="text-[13px] font-bold text-[var(--ink)]">Recent duels</div>
                 {(progress.duelHistory || []).slice(-4).reverse().map((h, i) => (
                   <div
                     key={`${h.code}-${i}`}
@@ -394,27 +421,26 @@ export function PeerDuelScreen({
               const isPicked = picked === origIdx;
               const isRight = origIdx === currentItem.q.a;
               const letter = String.fromCharCode(65 + dispIdx);
+              const stateCls = answered
+                ? isRight
+                  ? 'ok'
+                  : isPicked
+                    ? 'no anim-shake'
+                    : 'opt-eliminated'
+                : '';
               return (
                 <button
                   key={origIdx}
                   type="button"
                   disabled={answered}
                   onClick={() => handlePickOption(origIdx)}
-                  className={`w-full text-left rounded-xl border p-3.5 flex items-start gap-3 transition cursor-pointer ${
-                    answered
-                      ? isRight
-                        ? 'bg-[var(--ok-soft)] border-[var(--green)] text-[var(--ink)]'
-                        : isPicked
-                          ? 'bg-[var(--bad-soft)] border-[var(--coral)] text-[var(--ink)]'
-                          : 'bg-[var(--bg)] border-[var(--line)] opacity-60'
-                      : 'bg-[var(--bg)] border-[var(--line)] hover:border-[var(--gold)]'
-                  }`}
+                  className={`opt-tile ${stateCls}`}
                 >
-                  <span className="w-7 h-7 rounded-lg bg-[var(--card)] border border-[var(--line)] flex items-center justify-center mono text-[12.5px] font-extrabold shrink-0">
-                    {letter}
+                  <span className="opt-bubble">
+                    <span>{letter}</span>
                   </span>
                   <span
-                    className="text-[15px] leading-snug pt-0.5"
+                    className="flex-1 text-[15px] leading-snug"
                     dangerouslySetInnerHTML={{ __html: typesetMathHtml(currentItem.q.o[origIdx], activeSpec.subj) }}
                   />
                 </button>
@@ -423,13 +449,13 @@ export function PeerDuelScreen({
           </div>
 
           {picked !== null && (
-            <div className="pt-2 flex flex-col gap-3">
+            <div className="pt-2 flex flex-col gap-3 anim-explain-reveal">
               <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5 text-[13.5px] text-[var(--ink)]">
                 <strong>Explanation:</strong>{' '}
                 <span dangerouslySetInnerHTML={{ __html: typesetMathHtml(currentItem.q.e, activeSpec.subj) }} />
               </div>
               <button type="button" onClick={handleNext} className="btn-tactile indigo w-full">
-                <span>{idx + 1 >= duelQuestions.length ? 'Finish & View Scoreboard' : 'Next Question'}</span>
+                <span>{idx + 1 >= duelQuestions.length ? 'Finish and see scoreboard' : 'Next question'}</span>
                 <Icon name="go" size={17} />
               </button>
             </div>
@@ -437,19 +463,19 @@ export function PeerDuelScreen({
         </section>
       )}
 
-      {/* ═══════════════════ RESULT & CLOUD SCOREBOARD ═══════════════════ */}
+      {/* ═══════════════════ RESULT & SCOREBOARD ═══════════════════ */}
       {phase === 'result' && activeSpec && (
         <div className="grid grid-cols-1 min-[820px]:grid-cols-12 gap-5">
           <section className="min-[820px]:col-span-6 rtc-card rounded-2xl p-6 flex flex-col gap-4">
-            <span className="eyebrow text-[var(--gold)]">Sprint Complete · {activeSpec.code}</span>
+            <span className="eyebrow text-[var(--gold)]">Duel complete · {activeSpec.code}</span>
             <h2 className="h26 text-[var(--ink)]">
               You scored {score} / {duelQuestions.length}
             </h2>
             <p className="text-[14px] text-[var(--dim)]">
-              Completed in <strong className="text-[var(--ink)]">{mmss(elapsedSec)}</strong>.{' '}
+              Finished in <strong className="text-[var(--ink)]">{mmss(elapsedSec)}</strong>.{' '}
               {missedList.length > 0
-                ? `${missedList.length} missed question${missedList.length === 1 ? '' : 's'} automatically sent to your Mistake Vault.`
-                : 'Flawless sprint — zero mistakes!'}
+                ? `${missedList.length} missed question${missedList.length === 1 ? '' : 's'} added to Mistakes to fix.`
+                : 'Every question right — zero mistakes!'}
             </p>
             <div className="flex flex-wrap gap-2.5 pt-2">
               <button
@@ -457,14 +483,14 @@ export function PeerDuelScreen({
                 onClick={() => void handleCopyShare('link')}
                 className="btn-tactile indigo flex-1"
               >
-                <span>Share Link to Challenge Friends</span>
+                <span>Share link to challenge friends</span>
               </button>
               <button
                 type="button"
                 onClick={() => setPhase('lobby')}
                 className="btn-tactile paper"
               >
-                New Duel
+                New duel
               </button>
             </div>
             {copiedMsg && <div className="text-[12.5px] font-bold text-[var(--green)]">{copiedMsg}</div>}
@@ -473,8 +499,8 @@ export function PeerDuelScreen({
           <section className="min-[820px]:col-span-6 rtc-card rounded-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <span className="eyebrow text-[var(--gold)]">Cloud Duel Scoreboard</span>
-                <h3 className="h20 text-[var(--ink)]">Head-to-Head Standings</h3>
+                <span className="eyebrow text-[var(--gold)]">Duel scoreboard</span>
+                <h3 className="h20 text-[var(--ink)]">Head-to-head scores</h3>
               </div>
               <Icon name="trophy" size={20} className="text-[var(--gold)]" />
             </div>

@@ -263,8 +263,8 @@ export function AgricNoteVisuals({ topicId }: { topicId: string }) {
   return (
     <figure className="fig anim-rise">
       <div className="flex items-center justify-between gap-2 px-1 pb-1">
-        <span className="text-[11.5px] font-extrabold tracking-wider uppercase text-[#FFC531]">
-          Agronomic Field Diagram · {spec.title}
+        <span className="text-[12px] font-bold text-[#FFC531]">
+          Farm diagram · {spec.title}
         </span>
       </div>
       {spec.render()}

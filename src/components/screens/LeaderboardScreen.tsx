@@ -8,25 +8,30 @@ import {
   CAMPUS_GOAL_PRESETS,
   computeHeadToHead,
   computeMasteryIndexBreakdown,
-  getDivisionForIndex,
   getNationalDivisionBenchmarks,
-  LEADERBOARD_DIVISIONS,
+  getStandingElementalRank,
   rankLeaderboardEntries,
   sanitizeCampusGoal,
   type LeaderboardCriterion,
   type LeaderboardStanding,
 } from '../../utils/leaderboardLogic';
 import { AnimatedNumber } from '../AnimatedNumber';
-import { AdirePattern, Icon } from '../Icons';
+import {
+  ElementalClimbSpine,
+  ElementalEmblem,
+  ElementalHeadingIndicator,
+} from '../ElementalRankVisuals';
+import { Icon } from '../Icons';
 import { SubscreenTopBar } from '../AppShell';
-import { SmoothProgressBar } from '../ULessonMotion';
+import { getVisibleEnrolledSubjects } from '../../utils/examTrackLogic';
+import { LiquidCapsuleBar, SmoothCollapse, SmoothProgressBar, SmoothViewSwitch } from '../ULessonMotion';
 
 const CRITERIA_TABS: { id: LeaderboardCriterion; label: string; short: string; unit: string }[] = [
-  { id: 'masteryIndex', label: 'Mastery Index', short: 'Index', unit: '/1000' },
-  { id: 'topicsPassed', label: 'Topics Mastered', short: 'Topics', unit: 'topics' },
+  { id: 'masteryIndex', label: 'Rank points', short: 'RP', unit: 'RP' },
+  { id: 'topicsPassed', label: 'Topics passed', short: 'Topics', unit: 'topics' },
   { id: 'accuracyPct', label: 'Accuracy', short: 'Accuracy', unit: '%' },
-  { id: 'bestCbtScore', label: 'Best CBT', short: 'CBT', unit: '/400' },
-  { id: 'streakCount', label: 'Study Streak', short: 'Streak', unit: 'd' },
+  { id: 'bestCbtScore', label: 'Best mock', short: 'Mock', unit: '/400' },
+  { id: 'streakCount', label: 'Streak', short: 'Streak', unit: 'd' },
 ];
 
 export function LeaderboardScreen({
@@ -102,9 +107,9 @@ export function LeaderboardScreen({
     [progress.theoryScores, selfStanding]
   );
 
-  const divisionInfo = useMemo(
-    () => getDivisionForIndex(selfStanding.masteryIndex),
-    [selfStanding.masteryIndex]
+  const selfElemental = useMemo(
+    () => getStandingElementalRank(selfStanding),
+    [selfStanding]
   );
 
   useEffect(() => {
@@ -129,7 +134,6 @@ export function LeaderboardScreen({
     return unsub;
   }, [authReady, subscribeToLeaderboard, user]);
 
-  // Combine real live Firestore scholars + your own freshest standing + optional National Division Cut-Offs
   const combinedEntries = useMemo(() => {
     const base: LeaderboardStanding[] = [];
     for (const row of liveEntries) {
@@ -159,11 +163,6 @@ export function LeaderboardScreen({
     [fullUnfilteredRows, selfStanding.uid]
   );
 
-  const nextRivalAbove = useMemo(() => {
-    if (!selfRow || selfRow.rank <= 1) return null;
-    return fullUnfilteredRows.find((r) => r.rank === selfRow.rank - 1) || null;
-  }, [fullUnfilteredRows, selfRow]);
-
   const activeCompareEntry = useMemo(() => {
     if (!compareUid) return null;
     return combinedEntries.find((e) => e.uid === compareUid) || null;
@@ -191,7 +190,7 @@ export function LeaderboardScreen({
     onUpdateLeaderboardPrefs({ campusGoal: cleanGoal, isPublic: nextPublic });
 
     if (!user) {
-      setSyncNotice('Campus goal saved locally. Sign in with Google to publish live.');
+      setSyncNotice('Saved on this phone. Sign in to appear on live standings.');
       return;
     }
     setSyncBusy(true);
@@ -204,15 +203,17 @@ export function LeaderboardScreen({
     setSyncNotice(
       ok
         ? nextPublic
-          ? 'Live standing synced to the National Leaderboard.'
-          : 'Profile set to private (hidden from public standings).'
-        : 'Could not reach cloud right now. Local standing is saved.'
+          ? 'Your rank standing is live.'
+          : 'Profile set to private.'
+        : 'Saved locally — server sync will retry.'
     );
   };
 
   const handleCopyInvite = () => {
     const url = typeof window !== 'undefined' ? window.location.origin : '';
-    const msg = `Compete with me on the EYAK National Scholars Leaderboard! My current Mastery Index is ${selfStanding.masteryIndex}/1000 (${divisionInfo.current.title}). Join here: ${url}`;
+    const msg = `Climb EYAK Elemental Ranks with me! Current rank: ${selfElemental.currentLabel}${
+      selfElemental.nextLabel ? ` → Heading to ${selfElemental.nextLabel}` : ''
+    } (${selfStanding.masteryIndex} RP). Join here: ${url}`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(msg).catch(() => {});
     }
@@ -228,7 +229,7 @@ export function LeaderboardScreen({
     if (criterion === 'streakCount') return `${val}d`;
     if (criterion === 'bestCbtScore') return `${val}/400`;
     if (criterion === 'topicsPassed') return `${val}`;
-    return `${val}`;
+    return `${val} RP`;
   };
 
   const scoreColumnLabel =
@@ -237,13 +238,13 @@ export function LeaderboardScreen({
       : activeCriterionMeta.label;
 
   return (
-    <div className="flex flex-col gap-6 anim-rise">
+    <div className="flex flex-col gap-5 anim-rise">
       <SubscreenTopBar
-        title="National Scholars Leaderboard"
+        title="Leaderboard"
         subtitle={
           user
-            ? `Live Cloud Standings · ${liveScholarCount} active scholar${liveScholarCount === 1 ? '' : 's'}`
-            : 'Academic Mastery Standings · Sign in to compete live'
+            ? `Elemental standings · ${liveScholarCount} active student${liveScholarCount === 1 ? '' : 's'}`
+            : 'Elemental rank climb · Sign in to compete live'
         }
         onBack={onBack}
         right={
@@ -254,152 +255,151 @@ export function LeaderboardScreen({
           >
             <Icon name={copiedInvite ? 'check' : 'trophy'} size={15} />
             <span className="hidden sm:inline">
-              {copiedInvite ? 'Invite Copied' : 'Invite Friends'}
+              {copiedInvite ? 'Invite copied' : 'Invite friends'}
             </span>
             <span className="sm:hidden">{copiedInvite ? 'Copied' : 'Invite'}</span>
           </button>
         }
       />
 
-      {/* 1. FOCAL HERO: YOUR LIVE STANDING & COMPETITOR PROFILE */}
-      <section className="adire-panel rounded-[24px] p-5 sm:p-7 text-white">
-        <AdirePattern />
-        <div className="relative z-10 grid grid-cols-1 min-[920px]:grid-cols-12 gap-6 items-stretch">
-          {/* Left: Your Rank, Mastery Index & Climb Path */}
-          <div className="min-[920px]:col-span-7 flex flex-col justify-between gap-5">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-[12.5px] font-bold text-[var(--hero-badge)] flex-wrap">
-                <span>{divisionInfo.current.title}</span>
-                <span aria-hidden="true" className="opacity-50">·</span>
-                <span className="text-white/85 font-semibold">
-                  {selfStanding.campusGoal || 'National Scholar'}
-                </span>
-                <span aria-hidden="true" className="opacity-50">·</span>
-                <span className="text-white/75 font-semibold">
-                  {user ? (isPublic ? 'Live on Board' : 'Private Mode') : 'Local Preview'}
-                </span>
-              </div>
-
-              <div className="flex items-baseline gap-4 flex-wrap">
-                <div className="font-[var(--display)] font-extrabold text-[40px] sm:text-[48px] leading-none tracking-tight tabular-nums text-white">
-                  <AnimatedNumber value={selfStanding.masteryIndex} />
-                  <span className="text-[18px] sm:text-[20px] font-bold text-white/60 ml-1">
-                    / 1,000
+      {/* 1. FOCAL HERO: YOUR ELEMENTAL RANK, HEADING-TO TARGET & PROFILE */}
+      <section className="rtc-eq-plate rounded-[24px] p-4 sm:p-6 text-white">
+        <div className="relative z-10 grid grid-cols-1 min-[920px]:grid-cols-12 gap-5 items-stretch">
+          {/* Left: Current Elemental Emblem -> Next Element Climb */}
+          <div className="min-[920px]:col-span-7 flex flex-col justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <ElementalEmblem
+                rankId={selfElemental.currentRank?.id || null}
+                unlocked={Boolean(selfElemental.currentRank)}
+                size={68}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-[12px] font-bold text-white/85 flex-wrap">
+                  <span>{selfElemental.currentLabel}</span>
+                  <span aria-hidden="true" className="opacity-50">·</span>
+                  <span className="text-white/80 font-semibold truncate">
+                    {selfStanding.campusGoal || 'Scholar'}
                   </span>
                 </div>
-                {selfRow && (
-                  <div className="text-[14px] font-bold text-[var(--hero-badge)] tabular-nums">
-                    Ranked #{selfRow.rank} of {fullUnfilteredRows.length}
-                  </div>
-                )}
-              </div>
 
-              <p className="text-[14px] text-white/80 leading-relaxed max-w-xl">
-                {nextRivalAbove
-                  ? `${Math.max(1, nextRivalAbove.scoreValue - (selfRow?.scoreValue || 0))} ${
-                      subjectFilter !== 'all' && criterion === 'masteryIndex'
-                        ? '% mastery'
-                        : criterion === 'masteryIndex'
-                          ? 'index points'
-                          : criterion === 'bestCbtScore'
-                            ? 'CBT points'
-                            : criterion === 'streakCount'
-                              ? 'days'
-                              : criterion === 'accuracyPct'
-                                ? '% accuracy'
-                                : 'topics'
-                    } behind ${nextRivalAbove.entry.displayName} (#${nextRivalAbove.rank}). Pass a Topic Test or beat your JAMB CBT record to climb.`
-                  : divisionInfo.next
-                    ? `${divisionInfo.pointsToNext} index points to unlock ${divisionInfo.next.title}. Keep building mastery across subjects.`
-                    : "You stand at the summit of the Chancellor's List. Defend your #1 spot with daily accuracy."}
-              </p>
+                <div className="flex items-baseline gap-3 flex-wrap mt-0.5">
+                  <div className="font-[var(--display)] font-extrabold text-[34px] sm:text-[42px] leading-none tracking-tight tabular-nums text-white">
+                    <AnimatedNumber value={selfStanding.masteryIndex} />
+                    <span className="text-[15px] sm:text-[17px] font-bold text-white/65 ml-1">
+                      RP
+                    </span>
+                  </div>
+                  {selfRow && (
+                    <span className="text-[13px] font-bold text-[var(--hero-badge)] tabular-nums">
+                      #{selfRow.rank} of {fullUnfilteredRows.length}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* Climb Progress Bar toward next Division */}
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between text-[12px] font-semibold text-white/85 tabular-nums">
-                <span>
-                  {divisionInfo.next
-                    ? `Climb to ${divisionInfo.next.title} (${divisionInfo.next.minIndex} index)`
-                    : "Chancellor's List Summit Reached"}
+            {/* Heading To Next Element Strip */}
+            <div className="rounded-2xl bg-black/25 border border-white/15 p-3.5 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {selfElemental.nextRank ? (
+                    <>
+                      <ElementalEmblem rankId={selfElemental.nextRank.id} unlocked size={32} />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-extrabold text-white truncate">
+                          Heading to {selfElemental.nextLabel}
+                        </div>
+                        <div className="text-[11px] font-semibold text-white/70 tabular-nums truncate">
+                          Need {selfElemental.nextRank.minRp} RP · {selfElemental.nextRank.minAccuracyPct}%+ acc · {selfElemental.nextRank.minTopicsPassed} topics
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[13px] font-extrabold text-amber-300">
+                      Solar Apex Reached — Defend #1
+                    </div>
+                  )}
+                </div>
+                <span className="font-[var(--display)] font-extrabold text-[15px] text-[var(--hero-badge)] tabular-nums shrink-0">
+                  {selfElemental.progressToNextPct}%
                 </span>
-                <span>{divisionInfo.tierProgressPct}%</span>
               </div>
+
               <SmoothProgressBar
-                value={divisionInfo.tierProgressPct}
+                value={selfElemental.progressToNextPct}
                 max={100}
                 tone="gold"
                 heightClass="h-2"
                 trackClass="bg-white/15"
-                ariaLabel="Progress to next academic division"
+                ariaLabel="Progress toward next Elemental rank"
               />
             </div>
 
-            {/* 4-Metric Personal Breakdown Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-white/15">
+            {/* 4-Metric Smartness Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-white/15">
               <div>
-                <div className="text-[11.5px] font-semibold text-white/65">Topics Mastered</div>
-                <div className="font-[var(--display)] font-extrabold text-[20px] tabular-nums">
+                <div className="text-[11px] font-semibold text-white/65">Topics Passed</div>
+                <div className="font-[var(--display)] font-extrabold text-[18px] tabular-nums">
                   {selfStanding.topicsPassed}
                 </div>
               </div>
               <div>
-                <div className="text-[11.5px] font-semibold text-white/65">Accuracy</div>
-                <div className="font-[var(--display)] font-extrabold text-[20px] tabular-nums">
+                <div className="text-[11px] font-semibold text-white/65">Accuracy</div>
+                <div className="font-[var(--display)] font-extrabold text-[18px] tabular-nums">
                   {selfStanding.accuracyPct}%
                 </div>
               </div>
               <div>
-                <div className="text-[11.5px] font-semibold text-white/65">Best CBT</div>
-                <div className="font-[var(--display)] font-extrabold text-[20px] tabular-nums">
+                <div className="text-[11px] font-semibold text-white/65">Best Mock</div>
+                <div className="font-[var(--display)] font-extrabold text-[18px] tabular-nums">
                   {selfStanding.bestCbtScore}/400
                 </div>
               </div>
               <div>
-                <div className="text-[11.5px] font-semibold text-white/65">Study Streak</div>
-                <div className="font-[var(--display)] font-extrabold text-[20px] tabular-nums">
+                <div className="text-[11px] font-semibold text-white/65">Streak</div>
+                <div className="font-[var(--display)] font-extrabold text-[18px] tabular-nums">
                   {selfStanding.streakCount}d
                 </div>
               </div>
             </div>
 
             {/* Direct Climb CTAs */}
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={onOpenCbt}
-                className="btn-tactile paper min-h-[42px] px-4 text-[13.5px] whitespace-nowrap"
+                className="btn-tactile paper min-h-[40px] px-3.5 text-[13px] whitespace-nowrap"
               >
-                <Icon name="clock" size={16} />
-                <span>Boost CBT Score</span>
+                <Icon name="clock" size={15} />
+                <span>Boost Mock</span>
               </button>
               <button
                 type="button"
                 onClick={onOpenTopics}
-                className="inline-flex items-center gap-2 min-h-[42px] px-4 rounded-xl bg-white/12 hover:bg-white/20 text-white font-bold text-[13.5px] transition-colors cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 rounded-xl bg-white/12 hover:bg-white/20 text-white font-bold text-[13px] transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Icon name="map" size={16} />
-                <span>Pass a Topic Test</span>
+                <Icon name="map" size={15} />
+                <span>Pass Topic Test</span>
               </button>
               <button
                 type="button"
                 onClick={onOpenDuel}
-                className="inline-flex items-center gap-2 min-h-[42px] px-4 rounded-xl bg-white/12 hover:bg-white/20 text-white font-bold text-[13.5px] transition-colors cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 rounded-xl bg-white/12 hover:bg-white/20 text-white font-bold text-[13px] transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Icon name="trophy" size={16} />
+                <Icon name="trophy" size={15} />
                 <span>Peer Duel</span>
               </button>
             </div>
           </div>
 
           {/* Right: Competitor Profile & Live Cloud Join Panel */}
-          <div className="min-[920px]:col-span-5 rounded-2xl bg-black/25 border border-white/15 p-4 sm:p-5 flex flex-col justify-between gap-4">
-            <div className="flex flex-col gap-3">
+          <div className="min-[920px]:col-span-5 rounded-2xl bg-black/25 border border-white/15 p-4 flex flex-col justify-between gap-3.5">
+            <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold tracking-wide text-[var(--hero-badge)]">
                   Competitor Profile
                 </span>
-                <span className="text-[12px] font-semibold text-white/75 tabular-nums">
+                <span className="text-[12px] font-semibold text-white/80 truncate max-w-[140px]">
                   {selfStanding.displayName}
                 </span>
               </div>
@@ -419,15 +419,15 @@ export function LeaderboardScreen({
                     value={campusInput}
                     onChange={(e) => setCampusInput(e.target.value)}
                     placeholder="e.g. UNILAG · Medicine"
-                    className="flex-1 min-w-0 rounded-xl bg-white/10 border border-white/20 px-3 py-2 text-[13.5px] font-semibold text-white placeholder:text-white/45 focus:outline-none focus:border-[var(--hero-badge)]"
+                    className="flex-1 min-w-0 rounded-xl bg-white/10 border border-white/20 px-3 py-2 text-[13px] font-semibold text-white placeholder:text-white/45 focus:outline-none focus:border-[var(--hero-badge)]"
                   />
                   <button
                     type="button"
                     onClick={() => void handleSaveCampusAndSync()}
                     disabled={syncBusy}
-                    className="min-h-[38px] px-3.5 rounded-xl bg-[var(--hero-badge)] text-[#141C33] font-extrabold text-[12.5px] hover:opacity-95 transition cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
+                    className="min-h-[38px] px-3.5 rounded-xl bg-white hover:bg-slate-100 text-[#141C33] font-[var(--display)] font-extrabold text-[12.5px] shadow-sm transition cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
                   >
-                    {syncBusy ? 'Syncing…' : user ? 'Save & Sync' : 'Save'}
+                    {syncBusy ? 'Saving…' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -441,7 +441,7 @@ export function LeaderboardScreen({
                       key={preset}
                       type="button"
                       onClick={() => void handleSaveCampusAndSync(preset)}
-                      className={`px-2.5 py-1 rounded-lg text-[11.5px] font-semibold transition cursor-pointer whitespace-nowrap ${
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer whitespace-nowrap ${
                         selected
                           ? 'bg-[var(--hero-badge)] text-[#141C33]'
                           : 'bg-white/10 text-white/80 hover:bg-white/20'
@@ -454,15 +454,13 @@ export function LeaderboardScreen({
               </div>
             </div>
 
-            <div className="flex flex-col gap-2.5 pt-3 border-t border-white/15">
+            <div className="flex flex-col gap-2 pt-3 border-t border-white/15">
               {user ? (
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-[12.5px] text-white/85">
+                  <div className="text-[12px] text-white/85">
                     <span className="font-bold text-white">Public Standings</span>
-                    <span className="block text-[11.5px] text-white/65">
-                      {isPublic
-                        ? 'Other scholars can see your name & mastery score.'
-                        : 'Hidden from other scholars.'}
+                    <span className="block text-[11px] text-white/65">
+                      {isPublic ? 'Visible on board' : 'Hidden from board'}
                     </span>
                   </div>
                   <button
@@ -470,7 +468,7 @@ export function LeaderboardScreen({
                     role="switch"
                     aria-checked={isPublic}
                     onClick={() => void handleSaveCampusAndSync(campusInput, !isPublic)}
-                    className={`min-h-[36px] px-3.5 rounded-xl text-[12px] font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`min-h-[34px] px-3 rounded-xl text-[12px] font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
                       isPublic
                         ? 'bg-emerald-400 text-[#0B1120]'
                         : 'bg-white/15 text-white hover:bg-white/25'
@@ -483,20 +481,20 @@ export function LeaderboardScreen({
                 <button
                   type="button"
                   onClick={() => void signInWithGoogle()}
-                  className="btn-tactile paper w-full justify-center min-h-[42px] text-[13.5px] whitespace-nowrap"
+                  className="btn-tactile paper w-full justify-center min-h-[40px] text-[13px] whitespace-nowrap"
                 >
-                  <Icon name="shield" size={16} />
+                  <Icon name="shield" size={15} />
                   <span>Sign in with Google to Compete Live</span>
                 </button>
               )}
 
               {syncNotice && (
-                <p className="text-[12px] font-semibold text-[var(--hero-badge)] leading-snug">
+                <p className="text-[11.5px] font-semibold text-[var(--hero-badge)] leading-snug">
                   {syncNotice}
                 </p>
               )}
               {liveError && (
-                <p className="text-[12px] font-semibold text-amber-200 leading-snug">
+                <p className="text-[11.5px] font-semibold text-amber-200 leading-snug">
                   {liveError}
                 </p>
               )}
@@ -505,17 +503,20 @@ export function LeaderboardScreen({
         </div>
       </section>
 
-      {/* 2. TOP 3 PODIUM STAGE */}
+      {/* 2. TOP 3 PODIUM STAGE WITH ELEMENTAL EMBLEMS & HEADING-TO RANK */}
       {topThree.length >= 3 && (
-        <section aria-label="Top three scholars podium" className="grid grid-cols-1 min-[780px]:grid-cols-3 gap-4 items-end">
+        <section
+          aria-label="Top three scholars podium"
+          className="grid grid-cols-1 min-[780px]:grid-cols-3 gap-3.5 items-end"
+        >
           {[topThree[1], topThree[0], topThree[2]].map((row) => {
             const isFirst = row.rank === 1;
             const isSecond = row.rank === 2;
-            const accentColor = isFirst
-              ? 'var(--gold)'
+            const rankBadgeCls = isFirst
+              ? 'bg-[var(--gold)] text-[var(--on-acc)]'
               : isSecond
-                ? 'var(--ink)'
-                : 'var(--coral-ink)';
+                ? 'bg-[var(--bg)] text-[var(--ink)]'
+                : 'bg-[var(--bg)] text-[var(--coral-ink)]';
 
             return (
               <button
@@ -524,58 +525,41 @@ export function LeaderboardScreen({
                 onClick={() =>
                   setCompareUid((prev) => (prev === row.entry.uid ? null : row.entry.uid))
                 }
-                className={`rtc-card text-left rounded-2xl p-5 flex flex-col gap-3 transition-transform hover:-translate-y-0.5 cursor-pointer ${
+                className={`rtc-card text-left rounded-2xl p-4 flex flex-col gap-2.5 cursor-pointer ${
                   isFirst
-                    ? 'border-[var(--acc-line)] bg-gradient-to-b from-[var(--acc-soft)]/50 via-[var(--card)] to-[var(--card)] min-[780px]:pb-7'
+                    ? 'border-[var(--acc-line)] bg-gradient-to-b from-[var(--acc-soft)]/50 via-[var(--card)] to-[var(--card)] min-[780px]:pb-5'
                     : ''
                 } ${row.entry.isSelf ? 'ring-2 ring-[var(--gold)]/40' : ''}`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className="w-8 h-8 rounded-xl flex items-center justify-center font-[var(--display)] font-extrabold text-[14px] tabular-nums"
-                      style={{
-                        background: isFirst ? 'var(--gold)' : 'var(--bg)',
-                        color: isFirst ? 'var(--on-acc)' : accentColor,
-                      }}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center font-[var(--display)] font-extrabold text-[13px] tabular-nums shrink-0 ${rankBadgeCls}`}
                     >
                       #{row.rank}
                     </span>
-                    <span className="text-[12px] font-bold text-[var(--dim)]">
-                      {row.division.title}
-                      {row.entry.isBenchmark ? ' · Standard' : row.entry.isSelf ? ' · You' : ''}
-                    </span>
+                    <ElementalHeadingIndicator standing={row.elemental} compact />
                   </div>
-                  {isFirst && <Icon name="crown" size={18} className="text-[var(--gold)] shrink-0" />}
+                  {isFirst && <Icon name="crown" size={17} className="text-[var(--gold)] shrink-0" />}
                 </div>
 
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    aria-hidden="true"
-                    className="w-11 h-11 rounded-xl bg-[var(--bg)] border border-[var(--line)] font-[var(--display)] font-extrabold text-[16px] text-[var(--ink)] flex items-center justify-center shrink-0"
-                  >
-                    {row.entry.displayName.slice(0, 1).toUpperCase()}
-                  </div>
+                <div className="flex items-center gap-2.5 min-w-0">
                   <div className="min-w-0 flex-1">
-                    <div className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)] truncate">
+                    <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)] truncate">
                       {row.entry.displayName}
+                      {row.entry.isSelf ? ' · You' : ''}
                     </div>
-                    <div className="text-[12.5px] text-[var(--dim)] truncate">
+                    <div className="text-[12px] text-[var(--dim)] truncate">
                       {row.entry.campusGoal || SUBJECT_INFO[row.entry.primarySubj].name}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-baseline justify-between gap-2 pt-2 border-t border-[var(--line)]">
-                  <div>
-                    <div className="text-[11px] font-semibold text-[var(--dim)]">
-                      {scoreColumnLabel}
-                    </div>
-                    <div className="font-[var(--display)] font-extrabold text-[24px] text-[var(--ink)] tabular-nums leading-tight">
-                      {formatScoreDisplay(row.scoreValue)}
-                    </div>
+                  <div className="font-[var(--display)] font-extrabold text-[20px] text-[var(--ink)] tabular-nums leading-tight">
+                    {formatScoreDisplay(row.scoreValue)}
                   </div>
-                  <div className="text-right text-[12px] font-semibold text-[var(--dim)] tabular-nums">
+                  <div className="text-right text-[11.5px] font-semibold text-[var(--dim)] tabular-nums">
                     <span>{row.entry.topicsPassed} topics</span>
                     <span aria-hidden="true"> · </span>
                     <span>{row.entry.accuracyPct}% acc</span>
@@ -587,195 +571,199 @@ export function LeaderboardScreen({
         </section>
       )}
 
-      {/* 3. HEAD-TO-HEAD COMPARISON DRAWER (WHEN A SCHOLAR OR BENCHMARK IS SELECTED) */}
-      {activeCompareEntry && headToHead && activeCompareEntry.uid !== selfStanding.uid && (
-        <section
-          aria-label="Head to head comparison"
-          className="rtc-card rounded-2xl border-[var(--acc-line)] p-5 flex flex-col gap-4"
-        >
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <span className="eyebrow text-[var(--gold)]">Head-to-Head Comparison</span>
-              <h2 className="h18 text-[var(--ink)]">
-                {selfStanding.displayName} vs {activeCompareEntry.displayName}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onOpenDuel}
-                className="btn-tactile indigo min-h-[38px] text-[12.5px] px-3.5 whitespace-nowrap"
-              >
-                <Icon name="trophy" size={14} />
-                <span>Start Peer Duel</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCompareUid(null)}
-                aria-label="Close comparison"
-                className="btn-tactile paper min-h-[38px] text-[12.5px] px-3 whitespace-nowrap"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {headToHead.map((row) => {
-              const ahead = row.delta > 0;
-              const tied = row.delta === 0;
-              return (
-                <div
-                  key={row.metric}
-                  className="rounded-xl bg-[var(--bg)] p-3 flex flex-col gap-1"
-                >
-                  <span className="text-[11.5px] font-semibold text-[var(--dim)]">
-                    {row.metric}
-                  </span>
-                  <div className="font-[var(--display)] font-extrabold text-[17px] text-[var(--ink)] tabular-nums">
-                    {row.selfVal}
-                    <span className="text-[12px] font-semibold text-[var(--dim)]">
-                      {' '}vs {row.rivalVal}
-                    </span>
-                  </div>
-                  <span
-                    className={`text-[12px] font-bold tabular-nums ${
-                      ahead
-                        ? 'text-[var(--green)]'
-                        : tied
-                          ? 'text-[var(--dim)]'
-                          : 'text-[var(--coral-ink)]'
-                    }`}
-                  >
-                    {ahead
-                      ? `+${row.delta} ahead`
-                      : tied
-                        ? 'Even'
-                        : `${Math.abs(row.delta)} to catch`}
-                  </span>
+      {/* 3. HEAD-TO-HEAD COMPARISON DRAWER */}
+      <SmoothCollapse
+        open={Boolean(activeCompareEntry && headToHead && activeCompareEntry.uid !== selfStanding.uid)}
+      >
+        {activeCompareEntry && headToHead && activeCompareEntry.uid !== selfStanding.uid && (
+          <SmoothViewSwitch viewKey={activeCompareEntry.uid}>
+            <section
+              aria-label="Head to head comparison"
+              className="rtc-card rounded-2xl border-[var(--acc-line)] p-4 flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <span className="eyebrow text-[var(--gold)]">Head-to-Head</span>
+                  <h2 className="h18 text-[var(--ink)]">
+                    {selfStanding.displayName} vs {activeCompareEntry.displayName}
+                  </h2>
                 </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onOpenDuel}
+                    className="btn-tactile indigo min-h-[36px] text-[12px] px-3 whitespace-nowrap"
+                  >
+                    <Icon name="trophy" size={14} />
+                    <span>Peer Duel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompareUid(null)}
+                    aria-label="Close comparison"
+                    className="btn-tactile paper min-h-[36px] text-[12px] px-3 whitespace-nowrap"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
 
-      {/* 4. FILTER TOOLBAR + RANKED STANDINGS TABLE */}
-      <section className="rtc-card rounded-2xl p-5 sm:p-6 flex flex-col gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                {headToHead.map((row) => {
+                  const ahead = row.delta > 0;
+                  const tied = row.delta === 0;
+                  return (
+                    <div
+                      key={row.metric}
+                      className="rounded-xl bg-[var(--bg)] p-2.5 flex flex-col gap-0.5"
+                    >
+                      <span className="text-[11px] font-semibold text-[var(--dim)]">{row.metric}</span>
+                      <div className="font-[var(--display)] font-extrabold text-[15.5px] text-[var(--ink)] tabular-nums">
+                        {row.selfVal}
+                        <span className="text-[11.5px] font-semibold text-[var(--dim)]">
+                          {' '}vs {row.rivalVal}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-[11.5px] font-bold tabular-nums ${
+                          ahead
+                            ? 'text-[var(--green)]'
+                            : tied
+                              ? 'text-[var(--dim)]'
+                              : 'text-[var(--coral-ink)]'
+                        }`}
+                      >
+                        {ahead
+                          ? `+${row.delta} ahead`
+                          : tied
+                            ? 'Even'
+                            : `${Math.abs(row.delta)} behind`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </SmoothViewSwitch>
+        )}
+      </SmoothCollapse>
+
+      {/* 4. FILTER TOOLBAR + ELEMENTAL RANKED STANDINGS TABLE */}
+      <section className="rtc-card rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5">
         {/* Ranking Criterion Segmented Controls + Search */}
-        <div className="flex flex-col min-[900px]:flex-row min-[900px]:items-center justify-between gap-3">
-          <div
-            role="tablist"
-            aria-label="Rank scholars by criterion"
-            className="flex items-center gap-1 p-1 rounded-xl bg-[var(--bg)] border border-[var(--line)] overflow-x-auto"
-          >
-            {CRITERIA_TABS.map((tab) => {
-              const active = criterion === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setCriterion(tab.id)}
-                  className={`px-3 py-1.5 rounded-lg text-[12.5px] font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    active
-                      ? 'bg-[var(--card)] text-[var(--ink)] shadow-xs border border-[var(--acc-line)]'
-                      : 'text-[var(--dim)] hover:text-[var(--ink)]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex flex-col min-[900px]:flex-row min-[900px]:items-center justify-between gap-2.5">
+          <LiquidCapsuleBar
+            roleType="tablist"
+            size="sm"
+            ariaLabel="Rank scholars by criterion"
+            items={CRITERIA_TABS.map((tab) => ({ id: tab.id, label: tab.label }))}
+            value={criterion}
+            onChange={setCriterion}
+          />
 
-          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search scholar, campus, division…"
+              placeholder="Search scholar, campus, element…"
               aria-label="Search leaderboard"
-              className="flex-1 min-w-[200px] rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3.5 py-2 text-[13px] font-medium text-[var(--ink)] placeholder:text-[var(--dim)] focus:outline-none focus:border-[var(--acc-line)]"
+              className="flex-1 min-w-[180px] rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3 py-2 text-[13px] font-medium text-[var(--ink)] placeholder:text-[var(--dim)] focus:outline-none focus:border-[var(--acc-line)]"
             />
             <button
               type="button"
               onClick={() => setShowBenchmarks((v) => !v)}
-              className={`min-h-[38px] px-3 rounded-xl border text-[12px] font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[36px] px-3 rounded-xl border text-[12px] font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 showBenchmarks
                   ? 'bg-[var(--acc-soft)] border-[var(--acc-line)] text-[var(--gold)]'
                   : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
               }`}
             >
-              {showBenchmarks ? 'Cut-Offs: Shown' : 'Cut-Offs: Hidden'}
+              {showBenchmarks ? 'Gates: Shown' : 'Gates: Hidden'}
             </button>
           </div>
         </div>
 
-        {/* 12-Subject Filter Strip */}
+        {/* Compact Subject Filter Bar */}
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setSubjectFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-[12px] font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+            className={`px-2.5 py-1.5 rounded-lg text-[12px] font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
               subjectFilter === 'all'
                 ? 'bg-[var(--gold)] text-[var(--on-acc)]'
                 : 'bg-[var(--bg)] text-[var(--dim)] hover:text-[var(--ink)]'
             }`}
           >
-            All 12 Subjects
+            All subjects
           </button>
-          {SUBJECT_IDS.map((sid) => {
-            const active = subjectFilter === sid;
-            return (
-              <button
-                key={sid}
-                type="button"
-                onClick={() => {
-                  setSubjectFilter(sid);
-                  setCriterion('masteryIndex');
-                }}
-                className={`px-3 py-1.5 rounded-lg text-[12px] font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                  active
-                    ? 'bg-[var(--gold)] text-[var(--on-acc)]'
-                    : 'bg-[var(--bg)] text-[var(--dim)] hover:text-[var(--ink)]'
-                }`}
-              >
-                {SUBJECT_INFO[sid].short}
-              </button>
-            );
-          })}
+          {getVisibleEnrolledSubjects(progress)
+            .slice(0, 5)
+            .map((sid) => {
+              const active = subjectFilter === sid;
+              return (
+                <button
+                  key={sid}
+                  type="button"
+                  onClick={() => {
+                    setSubjectFilter(sid);
+                    setCriterion('masteryIndex');
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-[12px] font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+                    active
+                      ? 'bg-[var(--gold)] text-[var(--on-acc)]'
+                      : 'bg-[var(--bg)] text-[var(--dim)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  {SUBJECT_INFO[sid].short}
+                </button>
+              );
+            })}
+          <select
+            aria-label="Filter leaderboard by any subject"
+            value={subjectFilter}
+            onChange={(e) => {
+              const next = e.target.value as 'all' | SubjectId;
+              setSubjectFilter(next);
+              if (next !== 'all') setCriterion('masteryIndex');
+            }}
+            className="min-h-[32px] px-2.5 rounded-lg bg-[var(--bg)] border border-[var(--line)] text-[12px] font-bold text-[var(--ink)] cursor-pointer focus:outline-none focus:border-[var(--gold)]"
+          >
+            <option value="all">All 49 subjects</option>
+            {SUBJECT_IDS.map((sid) => (
+              <option key={sid} value={sid}>
+                {SUBJECT_INFO[sid].name}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* Standings Table */}
+        {/* Standings Table — Every Row Shows Current Element & Which Element They Are Heading To */}
         {liveLoading && liveEntries.length === 0 ? (
-          <div className="py-10 text-center text-[13.5px] font-semibold text-[var(--dim)]">
-            Loading live National Leaderboard standings…
+          <div className="py-8 text-center text-[13px] font-semibold text-[var(--dim)]">
+            Loading live Elemental standings…
           </div>
         ) : rankedRows.length === 0 ? (
-          <div className="py-10 text-center flex flex-col items-center gap-2">
-            <div className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
+          <div className="py-8 text-center flex flex-col items-center gap-1.5">
+            <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)]">
               No matching scholars found
             </div>
-            <p className="text-[13px] text-[var(--dim)]">
-              Try clearing your search filter or showing National Cut-Off Benchmarks.
+            <p className="text-[12.5px] text-[var(--dim)]">
+              Clear search or toggle Gates: Shown.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto -mx-2 px-2">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-[var(--line)] text-[11.5px] font-bold text-[var(--dim)]">
-                  <th className="py-2.5 pr-3 w-14">Rank</th>
-                  <th className="py-2.5 pr-4">Scholar &amp; Goal</th>
-                  <th className="py-2.5 pr-4 hidden md:table-cell">Division</th>
-                  <th className="py-2.5 pr-4 text-right">{scoreColumnLabel}</th>
-                  <th className="py-2.5 pr-4 text-right hidden sm:table-cell">Topics</th>
-                  <th className="py-2.5 pr-4 text-right hidden sm:table-cell">Accuracy</th>
-                  <th className="py-2.5 pr-4 text-right hidden lg:table-cell">Best CBT</th>
-                  <th className="py-2.5 pr-3 text-right hidden lg:table-cell">Streak</th>
-                  <th className="py-2.5 text-right w-24">Action</th>
+                <tr className="border-b border-[var(--line)] text-[11px] font-bold text-[var(--dim)]">
+                  <th className="py-2 pr-2.5 w-11">#</th>
+                  <th className="py-2 pr-3">Scholar</th>
+                  <th className="py-2 pr-3 hidden md:table-cell">Element → Heading To</th>
+                  <th className="py-2 pr-3 text-right">{scoreColumnLabel}</th>
+                  <th className="py-2 pr-3 text-right hidden sm:table-cell">Accuracy</th>
+                  <th className="py-2 pr-3 text-right hidden lg:table-cell">Topics</th>
+                  <th className="py-2 text-right w-18">Compare</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--line)]">
@@ -793,65 +781,51 @@ export function LeaderboardScreen({
                             : 'hover:bg-[var(--bg)]/60'
                       }`}
                     >
-                      <td className="py-3.5 pr-3 font-[var(--display)] font-extrabold text-[15px] tabular-nums text-[var(--ink)]">
+                      <td className="py-3 pr-2.5 font-[var(--display)] font-extrabold text-[14px] tabular-nums text-[var(--ink)]">
                         #{row.rank}
                       </td>
-                      <td className="py-3.5 pr-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            aria-hidden="true"
-                            className={`w-9 h-9 rounded-xl font-[var(--display)] font-extrabold text-[14px] flex items-center justify-center shrink-0 ${
-                              isSelf
-                                ? 'bg-[var(--gold)] text-[var(--on-acc)]'
-                                : 'bg-[var(--bg)] border border-[var(--line)] text-[var(--ink)]'
-                            }`}
-                          >
-                            {row.entry.displayName.slice(0, 1).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] truncate">
+                      <td className="py-3 pr-3">
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
                               {row.entry.displayName}
-                              {isSelf && (
-                                <span className="ml-2 text-[11.5px] font-bold text-[var(--gold)]">
-                                  (You)
-                                </span>
-                              )}
-                              {row.entry.isBenchmark && (
-                                <span className="ml-2 text-[11.5px] font-semibold text-[var(--dim)]">
-                                  · National Benchmark
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[12px] text-[var(--dim)] truncate">
-                              {row.entry.campusGoal || SUBJECT_INFO[row.entry.primarySubj].name}
-                              <span aria-hidden="true"> · </span>
-                              {SUBJECT_INFO[row.entry.primarySubj].short}
-                            </div>
+                            </span>
+                            {isSelf && (
+                              <span className="text-[11px] font-bold text-[var(--gold)] shrink-0">
+                                You
+                              </span>
+                            )}
+                            {row.entry.isBenchmark && (
+                              <span className="text-[11px] font-semibold text-[var(--dim)] shrink-0">
+                                · Gate
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11.5px] text-[var(--dim)] truncate">
+                            {row.entry.campusGoal || SUBJECT_INFO[row.entry.primarySubj].short}
+                          </div>
+                          {/* Mobile inline Element -> Heading To */}
+                          <div className="md:hidden pt-0.5">
+                            <ElementalHeadingIndicator standing={row.elemental} compact />
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 pr-4 hidden md:table-cell text-[12.5px] font-semibold text-[var(--dim)] whitespace-nowrap">
-                        {row.division.title}
+                      <td className="py-3 pr-3 hidden md:table-cell whitespace-nowrap">
+                        <ElementalHeadingIndicator standing={row.elemental} />
                       </td>
-                      <td className="py-3.5 pr-4 text-right font-[var(--display)] font-extrabold text-[16px] text-[var(--gold)] tabular-nums whitespace-nowrap">
+                      <td className="py-3 pr-3 text-right font-[var(--display)] font-extrabold text-[15px] text-[var(--gold)] tabular-nums whitespace-nowrap">
                         {formatScoreDisplay(row.scoreValue)}
                       </td>
-                      <td className="py-3.5 pr-4 text-right hidden sm:table-cell text-[13.5px] font-bold text-[var(--ink)] tabular-nums">
-                        {row.entry.topicsPassed}
-                      </td>
-                      <td className="py-3.5 pr-4 text-right hidden sm:table-cell text-[13.5px] font-bold text-[var(--green)] tabular-nums">
+                      <td className="py-3 pr-3 text-right hidden sm:table-cell text-[13px] font-bold text-[var(--green)] tabular-nums">
                         {row.entry.accuracyPct}%
                       </td>
-                      <td className="py-3.5 pr-4 text-right hidden lg:table-cell text-[13.5px] font-semibold text-[var(--ink)] tabular-nums">
-                        {row.entry.bestCbtScore}/400
+                      <td className="py-3 pr-3 text-right hidden lg:table-cell text-[13px] font-bold text-[var(--ink)] tabular-nums">
+                        {row.entry.topicsPassed}
                       </td>
-                      <td className="py-3.5 pr-3 text-right hidden lg:table-cell text-[13px] font-bold text-[var(--coral-ink)] tabular-nums">
-                        {row.entry.streakCount}d
-                      </td>
-                      <td className="py-3.5 text-right">
+                      <td className="py-3 text-right">
                         {isSelf ? (
-                          <span className="text-[12px] font-bold text-[var(--gold)] whitespace-nowrap">
-                            Your row
+                          <span className="text-[11.5px] font-bold text-[var(--gold)] whitespace-nowrap">
+                            You
                           </span>
                         ) : (
                           <button
@@ -861,7 +835,7 @@ export function LeaderboardScreen({
                                 prev === row.entry.uid ? null : row.entry.uid
                               )
                             }
-                            className="text-[12.5px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+                            className="text-[12px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
                           >
                             {isComparing ? 'Hide' : 'Compare'}
                           </button>
@@ -876,43 +850,43 @@ export function LeaderboardScreen({
         )}
       </section>
 
-      {/* 5. TRANSPARENT 1,000-POINT MASTERY INDEX FORMULA & 5 ACADEMIC DIVISIONS */}
-      <div className="grid grid-cols-1 min-[860px]:grid-cols-12 gap-5">
-        <section className="min-[860px]:col-span-6 rtc-card rounded-2xl p-5 flex flex-col gap-3.5">
+      {/* 5. ASCENDING ELEMENTAL CLIMB SPINE + COMPACT RP BREAKDOWN */}
+      <div className="grid grid-cols-1 min-[860px]:grid-cols-12 gap-4 items-start">
+        <div className="min-[860px]:col-span-7">
+          <ElementalClimbSpine standing={selfElemental} />
+        </div>
+
+        <section className="min-[860px]:col-span-5 rtc-card rounded-2xl p-4 sm:p-5 flex flex-col gap-3">
           <div>
-            <span className="eyebrow text-[var(--gold)]">Transparent Merit Formula</span>
-            <h2 className="h18 text-[var(--ink)]">How Your 1,000-Point Index Is Calculated</h2>
+            <span className="eyebrow text-[var(--gold)]">Smartness Weighting</span>
+            <h2 className="h18 text-[var(--ink)]">Rank Points (1,000 RP)</h2>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
             {[
               {
-                label: 'Topics Mastered (Topic Tests Passed)',
+                label: 'Syllabus Topics Passed',
                 val: selfBreakdown.topicsPoints,
-                max: 400,
-                hint: 'Pass 25 syllabus topics across your subjects for full 400',
+                max: 420,
               },
               {
-                label: 'Weighted Exam Accuracy',
+                label: 'Precision Accuracy Curve',
                 val: selfBreakdown.accuracyPoints,
-                max: 250,
-                hint: 'Accuracy % scaled by question volume (full weight at 60+ answered)',
+                max: 320,
               },
               {
-                label: 'Best JAMB / WAEC CBT Score',
+                label: 'Best Mock Score (/400)',
                 val: selfBreakdown.cbtPoints,
-                max: 200,
-                hint: 'Your highest timed CBT simulation scaled to 400',
+                max: 180,
               },
               {
-                label: 'Daily Consistency & Peer Duels',
+                label: 'Streak & Peer Duels',
                 val: selfBreakdown.consistencyPoints,
-                max: 150,
-                hint: 'Active study streak days + completed Peer Duels & Theory scripts',
+                max: 80,
               },
             ].map((item) => (
               <div key={item.label} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between text-[13px] font-bold text-[var(--ink)] tabular-nums">
+                <div className="flex items-center justify-between text-[12.5px] font-bold text-[var(--ink)] tabular-nums">
                   <span>{item.label}</span>
                   <span className="text-[var(--gold)]">
                     {item.val} / {item.max}
@@ -925,57 +899,8 @@ export function LeaderboardScreen({
                   heightClass="h-1.5"
                   trackClass="bg-[var(--deep)]"
                 />
-                <span className="text-[11.5px] text-[var(--dim)]">{item.hint}</span>
               </div>
             ))}
-          </div>
-        </section>
-
-        <section className="min-[860px]:col-span-6 rtc-card rounded-2xl p-5 flex flex-col gap-3.5">
-          <div>
-            <span className="eyebrow text-[var(--gold)]">National Standing Tiers</span>
-            <h2 className="h18 text-[var(--ink)]">5 Academic Divisions</h2>
-          </div>
-
-          <div className="divide-y divide-[var(--line)]">
-            {LEADERBOARD_DIVISIONS.slice()
-              .reverse()
-              .map((div) => {
-                const isCurrent = divisionInfo.current.id === div.id;
-                const unlocked = selfStanding.masteryIndex >= div.minIndex;
-                return (
-                  <div
-                    key={div.id}
-                    className={`py-2.5 flex items-center justify-between gap-3 ${
-                      isCurrent ? 'text-[var(--ink)]' : ''
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-[14px] font-[var(--display)] font-bold text-[var(--ink)]">
-                        <span>{div.title}</span>
-                        {isCurrent && (
-                          <span className="text-[11.5px] font-bold text-[var(--gold)]">
-                            · Current Division
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[12px] text-[var(--dim)]">{div.tagline}</div>
-                    </div>
-                    <div className="text-right shrink-0 tabular-nums">
-                      <div
-                        className={`font-[var(--display)] font-extrabold text-[14px] ${
-                          unlocked ? 'text-[var(--green)]' : 'text-[var(--dim)]'
-                        }`}
-                      >
-                        {div.minIndex}+
-                      </div>
-                      <div className="text-[11px] font-semibold text-[var(--dim)]">
-                        {unlocked ? 'Reached' : `${div.minIndex - selfStanding.masteryIndex} away`}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
           </div>
         </section>
       </div>

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
 import type { UserProgress } from '../../types';
 import {
   CHEM_FORMULAS,
@@ -126,12 +125,13 @@ import {
   sanitizeNationalText,
 } from '../../utils/nationalLearningSanitizer';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
+import { buildFormulaSheetPdf, downloadPdfBytes } from '../../utils/pdfExport';
 import { AnimatedNumber } from '../AnimatedNumber';
 import { SubscreenTopBar } from '../AppShell';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
 import { Icon } from '../Icons';
 import { MotivationBanner } from '../MotivationBanner';
-import { LIQUID_CAPSULE_SPRING, SlidingTabs, SmoothProgressBar } from '../ULessonMotion';
+import { LiquidCapsuleBar, SlidingTabs, SmoothProgressBar } from '../ULessonMotion';
 
 const EXPLORER_BATCH_SIZE = 6;
 
@@ -178,7 +178,6 @@ export function ChemFormulasScreen({
   onCelebrate?: () => void;
   onSound?: (kind: 'ok' | 'no' | 'done') => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const isFMath = progress.subj === 'fmaths';
   const isChem = progress.subj === 'chem';
   const isPhys = progress.subj === 'phys';
@@ -604,46 +603,69 @@ export function ChemFormulasScreen({
     setDrillShowHint(false);
   };
 
+  const [pdfSavedFlash, setPdfSavedFlash] = useState(false);
   const activeTopicFilterMeta = topicFilterId ? getTopic(progress.subj, topicFilterId) : undefined;
 
   if (progress.subj === 'bio' || progress.subj === 'agric' || progress.subj === 'civic') {
     return null;
   }
 
+  const handleDownloadFormulaPdf = () => {
+    const pdfBytes = buildFormulaSheetPdf({
+      subjectLabel: subjName,
+      itemNounPlural,
+      items: allFormulas.map((f) => ({
+        name: f.name,
+        expressionHtml: f.rearrangements[0]?.exprHtml || f.summary,
+        trapHtml: f.trap,
+      })),
+    });
+    downloadPdfBytes(
+      pdfBytes,
+      `EYAK-${subjName}-${isEng ? 'Rules' : 'Formulas'}-Sheet.pdf`
+    );
+    setPdfSavedFlash(true);
+    window.setTimeout(() => setPdfSavedFlash(false), 2600);
+  };
+
   return (
     <div className="flex flex-col gap-5">
+      <div className="no-print flex flex-col gap-5">
       <SubscreenTopBar
-        title={
-          isDataProc
-            ? 'Data Processing SQL & Formula Studio'
-            : isDigiTech
-              ? 'Digital Tech Formula & Binary Studio'
-              : isEng
-                ? 'English Grammar & Rules Studio'
-                : isGeog
-                  ? 'Geography Calculations Studio'
-                  : `${subjName} Formula & Calculation Studio`
-        }
-        subtitle={`SS1–SS3 National Curriculum · ${masteredCount} of ${allFormulas.length} ${itemNounPlural} mastered`}
+        title={isEng ? 'Grammar rules' : 'Formulas'}
+        subtitle={`${subjName} · ${masteredCount} of ${allFormulas.length} ${itemNounPlural} mastered`}
         onBack={onBack}
         right={
           <div className="no-print flex items-center gap-2">
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handleDownloadFormulaPdf}
               className="min-h-[38px] px-3 rounded-xl bg-[var(--card)] text-[var(--ink)] border border-[var(--line)] hover:border-[var(--gold)] text-[12.5px] font-bold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Icon name="book" size={14} className="text-[var(--gold)]" />
-              <span>Print 1-Page Sheet</span>
+              <Icon
+                name={pdfSavedFlash ? 'check' : 'download'}
+                size={14}
+                className="text-[var(--gold)]"
+              />
+              <span>{pdfSavedFlash ? 'PDF saved' : 'Download PDF'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              aria-label="Print formula sheet"
+              className="min-h-[38px] px-2.5 rounded-xl bg-[var(--card)] text-[var(--dim)] hover:text-[var(--ink)] border border-[var(--line)] text-[12px] font-bold hidden sm:inline-flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Icon name="printer" size={14} />
+              <span>Print</span>
             </button>
             {!isEng && !isEcon && !isFMath && !isGeog && !isDigiTech && !isDataProc && (
               <button
                 type="button"
                 onClick={onOpenLab}
-                className="min-h-[38px] px-3.5 rounded-xl bg-[#0F172A] text-white border border-white/10 text-[12.5px] font-bold flex items-center gap-1.5 hover:bg-[#1E293B] transition cursor-pointer whitespace-nowrap shrink-0"
+                className="min-h-[38px] px-3.5 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] shadow-[0_2px_0_var(--acc-d)] text-[12.5px] font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
               >
-                <Icon name={isChem ? 'flask' : isPhys ? 'atom' : 'pen'} size={15} className="text-amber-300" />
-                <span>{isChem || isPhys ? 'Practicals Lab' : 'Constructions Lab'}</span>
+                <Icon name={isChem ? 'flask' : isPhys ? 'atom' : 'pen'} size={15} />
+                <span>Labs</span>
               </button>
             )}
           </div>
@@ -688,7 +710,7 @@ export function ChemFormulasScreen({
               value={masteredCount}
               max={allFormulas.length}
               tone="emerald"
-              heightClass="h-1.5"
+              heightClass="h-3"
               className="max-w-[260px]"
             />
           </div>
@@ -804,44 +826,21 @@ export function ChemFormulasScreen({
             </div>
 
             <div className="overflow-x-auto max-w-full pb-0.5">
-              <div
-                role="group"
-                aria-label="Filter formulas by branch"
-                className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-[var(--bg)] border border-[var(--line)]"
-              >
-                {formulaCategories.map((cat) => {
-                  const active = catFilter === cat.id && !topicFilterId;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => {
-                        setTopicFilterId(null);
-                        setCatFilter(cat.id);
-                        setExplorerPage(0);
-                      }}
-                      className={`relative min-h-[32px] px-3 rounded-[9px] text-[12.5px] font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
-                        active
-                          ? 'text-[var(--ink)] font-bold'
-                          : 'text-[var(--dim)] hover:text-[var(--ink)]'
-                      }`}
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId={`formula-cat-capsule-${progress.subj}`}
-                          transition={reduceMotion ? { duration: 0 } : LIQUID_CAPSULE_SPRING}
-                          className="absolute inset-0 rounded-[9px] bg-[var(--card)] border border-[var(--acc-line)] shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span className="relative z-10 tabular-nums">
-                        {cat.shortLabel} ({catCounts[cat.id] ?? 0})
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <LiquidCapsuleBar
+                roleType="group"
+                size="sm"
+                ariaLabel="Filter formulas by branch"
+                items={formulaCategories.map((cat) => ({
+                  id: cat.id,
+                  label: `${cat.shortLabel} (${catCounts[cat.id] ?? 0})`,
+                }))}
+                value={topicFilterId ? null : catFilter}
+                onChange={(cid) => {
+                  setTopicFilterId(null);
+                  setCatFilter(cid);
+                  setExplorerPage(0);
+                }}
+              />
             </div>
           </div>
 
@@ -1078,8 +1077,8 @@ export function ChemFormulasScreen({
                     </div>
 
                     {/* Trap Callout */}
-                    <div className="text-[12.5px] text-[var(--coral-ink)] bg-[var(--bad-soft)]/65 border border-[var(--bad-line)] rounded-xl px-3 py-2 leading-snug">
-                      <strong className="font-bold">Trap: </strong>
+                    <div className="text-[12.5px] text-[var(--ink)] bg-[var(--warn-soft)] border border-[var(--warn-line)] rounded-xl px-3 py-2 leading-snug">
+                      <strong className="font-bold text-[var(--warn-ink)]">Trap: </strong>
                       <span
                         dangerouslySetInnerHTML={{
                           __html: typesetMathHtml(f.trap, progress.subj),
@@ -1332,14 +1331,14 @@ export function ChemFormulasScreen({
                   className="btn-tactile indigo whitespace-nowrap"
                 >
                   <Icon name="replay" size={17} />
-                  <span>{isEng ? 'Generate 8 new questions' : 'Generate 8 new problems'}</span>
+                  <span>{isEng ? 'Try 8 new questions' : 'Try 8 new problems'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setMode('explorer')}
                   className="btn-tactile paper whitespace-nowrap"
                 >
-                  <span>{isEng ? 'Back to Rule Sheet' : 'Back to Formula Sheet'}</span>
+                  <span>{isEng ? 'Back to rule sheet' : 'Back to formula sheet'}</span>
                 </button>
               </div>
             </section>
@@ -1369,11 +1368,11 @@ export function ChemFormulasScreen({
                   {drillDeck.map((qItem, idx) => (
                     <span
                       key={qItem.id}
-                      className={`h-2 flex-1 rounded-full transition-all duration-200 ${
+                      className={`h-3 flex-1 rounded-full transition-all duration-200 ${
                         idx < drillIdx
                           ? 'bg-[var(--green)]'
                           : idx === drillIdx
-                            ? 'bg-[var(--gold)] scale-y-110'
+                            ? 'bg-[var(--gold)]'
                             : 'bg-[var(--line)]'
                       }`}
                     />
@@ -1489,7 +1488,7 @@ export function ChemFormulasScreen({
                           onClick={() => handlePickDrillOption(idx)}
                           className={`opt-tile tabular-nums ${stateCls}`}
                         >
-                          <span className="w-7 h-7 rounded-lg bg-[var(--deep)] border border-[var(--line)] text-[12.5px] font-extrabold flex items-center justify-center shrink-0">
+                          <span className="opt-bubble">
                             {String.fromCharCode(65 + idx)}
                           </span>
                           <span
@@ -1703,8 +1702,8 @@ export function ChemFormulasScreen({
                     />
                   </div>
 
-                  <div className="text-[13px] text-[var(--coral-ink)] bg-[var(--bad-soft)] border border-[var(--bad-line)] rounded-xl p-3 leading-snug">
-                    <strong>Trap: </strong>
+                  <div className="text-[13px] text-[var(--ink)] bg-[var(--warn-soft)] border border-[var(--warn-line)] rounded-xl p-3 leading-snug">
+                    <strong className="font-bold text-[var(--warn-ink)]">Trap: </strong>
                     <span
                       dangerouslySetInnerHTML={{
                         __html: typesetMathHtml(currentRecallCard.trap, progress.subj),
@@ -1744,6 +1743,7 @@ export function ChemFormulasScreen({
           </div>
         </div>
       )}
+      </div>
 
       {/* Printable 1-Page Formula / Rules Cheat Sheet */}
       <section className="hidden print:block print-sheet">

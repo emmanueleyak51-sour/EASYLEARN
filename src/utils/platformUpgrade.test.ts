@@ -37,31 +37,31 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 }
 
-test('Motivation panels rotate cleanly every 3 minutes (180,000 ms) across 5 slides', () => {
+test('Motivation panels rotate cleanly once per day (86,400,000 ms) across 5 slides', () => {
   assert.equal(MOTIVATION_SLIDES.length, 5);
-  assert.equal(MOTIVATION_ROTATION_MS, 180_000);
+  assert.equal(MOTIVATION_ROTATION_MS, 86_400_000);
 
   const t0 = 1_800_000_000_000;
   const seen = new Set<number>();
   for (let step = 0; step < 5; step++) {
-    const idx = getMotivationSlotAtTime(t0 + step * 180_000, 0);
+    const idx = getMotivationSlotAtTime(t0 + step * 86_400_000, 0);
     seen.add(idx);
   }
-  assert.equal(seen.size, 5, '5 consecutive 3-minute intervals should visit all 5 slides');
+  assert.equal(seen.size, 5, '5 consecutive days should visit all 5 slides');
   assert.equal(
-    getMotivationSlotAtTime(t0 + 5 * 180_000, 0),
+    getMotivationSlotAtTime(t0 + 5 * 86_400_000, 0),
     getMotivationSlotAtTime(t0, 0),
-    'Slide index wraps cleanly after 15 minutes'
+    'Slide index wraps cleanly after 5 days'
   );
 });
 
-test('All 28 tiered badges unlock with xpBonus and exact note:/lab:/fmaster:/flawless_boss flags', () => {
-  assert.equal(BADGES.length, 28);
+test('All 8 hard-earned Elemental Rank badges unlock only when full smartness & accuracy gates are met', () => {
+  assert.equal(BADGES.length, 8);
   const tiers = BADGES.reduce<Record<string, number>>((acc, b) => {
     acc[b.tier] = (acc[b.tier] || 0) + 1;
     return acc;
   }, {});
-  assert.deepEqual(tiers, { bronze: 6, silver: 8, gold: 8, mythic: 6 });
+  assert.deepEqual(tiers, { bronze: 2, silver: 2, gold: 2, mythic: 2 });
 
   const allTopicsBySubj = Object.fromEntries(
     SUBJECT_IDS.map((sid) => [sid, getTopics(sid)])
@@ -69,19 +69,31 @@ test('All 28 tiered badges unlock with xpBonus and exact note:/lab:/fmaster:/fla
 
   const p = makeBlankProgress();
   p.dx = 19900;
-  p.streak = { d: 19900, n: 30 };
-  p.run = 25;
-  p.revok = 25;
+  p.streak = { d: 19900, n: 35 };
   p.xp = 8000;
-  p.badges = { combo5: 1 };
-  p.hist = Array.from({ length: 1000 }, (_, i) => [`q-${i}`, 1, 19900] as [string, number, number]);
-  p.flags = { flawless_boss: 5 };
+  p.hist = Array.from({ length: 1900 }, (_, i) => [
+    `q-${i}`,
+    i < 1850 ? 1 : 0,
+    19900,
+  ] as [string, number, number]);
+  p.cbtHistory = [
+    {
+      id: 'cbt-solar',
+      mode: 'jamb',
+      dateDay: 19900,
+      subjects: ['maths', 'phys', 'chem', 'eng'],
+      scaledScore: 386,
+      maxScale: 400,
+      rawCorrect: 39,
+      totalQuestions: 40,
+      durationSec: 1200,
+    },
+  ];
+  p.theoryScores = Object.fromEntries(
+    Array.from({ length: 10 }, (_, i) => [`th-${i}`, { earned: 95, max: 100, day: 19900 }])
+  );
 
-  for (let i = 0; i < 15; i++) p.flags[`note:p-motion:${i}`] = 1;
-  for (let i = 0; i < 28; i++) p.flags[`lab:p-lab-${i}`] = 1;
-  for (let i = 0; i < 45; i++) p.flags[`fmaster:pf-${i}`] = 1;
-
-  for (const subj of SUBJECT_IDS) {
+  for (const subj of ['maths', 'phys', 'chem', 'bio', 'eng'] as const) {
     for (const t of allTopicsBySubj[subj]) {
       p.t[t.id] = {
         att: Array.from({ length: 12 }, () => [1, 5] as [number, number]),
@@ -98,7 +110,7 @@ test('All 28 tiered badges unlock with xpBonus and exact note:/lab:/fmaster:/fla
     19900,
     allTopicsBySubj
   );
-  assert.equal(newlyEarned.length, 28, 'Should unlock all 28 badges for a maxed scholar profile');
+  assert.equal(newlyEarned.length, 8, 'Should unlock all 8 Elemental Ranks for a Solar-caliber scholar');
   const expectedBonus = BADGES.reduce((sum, b) => sum + b.xpBonus, 0);
   assert.equal(updated.xp, 8000 + expectedBonus);
 });
@@ -140,20 +152,8 @@ test('Complete Physics curriculum: 32 NERDC topics, 16 practicals, 30 formulas &
 });
 
 test('Complete Biology curriculum: 30 NERDC SS1–SS3 topics and 14 practicals (no Formula Studio)', () => {
-  assert.deepEqual(SUBJECT_IDS, [
-    'maths',
-    'fmaths',
-    'chem',
-    'phys',
-    'bio',
-    'agric',
-    'geog',
-    'econ',
-    'eng',
-    'civic',
-    'digitech',
-    'dataproc',
-  ]);
+  assert.equal(SUBJECT_IDS.length, 49);
+  assert.ok(SUBJECT_IDS.includes('bio'));
   const bioTopics = getTopics('bio');
   assert.equal(bioTopics.length, 30);
 

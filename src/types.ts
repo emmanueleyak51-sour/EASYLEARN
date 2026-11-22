@@ -1,16 +1,55 @@
 export type SubjectId =
+  // 25 Official JAMB UTME & WAEC/NECO subjects
+  | 'eng'
   | 'maths'
-  | 'fmaths'
-  | 'chem'
   | 'phys'
+  | 'chem'
   | 'bio'
   | 'agric'
   | 'geog'
   | 'econ'
-  | 'eng'
+  | 'govt'
+  | 'lit'
+  | 'crs'
+  | 'irs'
+  | 'comm'
+  | 'acct'
+  | 'hist'
+  | 'comp'
+  | 'homeec'
+  | 'phe'
+  | 'art'
+  | 'music'
+  | 'french'
+  | 'arabic'
+  | 'hausa'
+  | 'igbo'
+  | 'yoruba'
+  // 24 WAEC/NECO-only school & trade subjects
+  | 'fmaths'
   | 'civic'
   | 'digitech'
-  | 'dataproc';
+  | 'dataproc'
+  | 'techdraw'
+  | 'foodnut'
+  | 'homemgt'
+  | 'animalhusb'
+  | 'fisheries'
+  | 'marketing'
+  | 'officeprac'
+  | 'insurance'
+  | 'storemgt'
+  | 'bookkeep'
+  | 'catering'
+  | 'garment'
+  | 'photo'
+  | 'cosmet'
+  | 'tourism'
+  | 'elecinst'
+  | 'automech'
+  | 'carpentry'
+  | 'blocklay'
+  | 'gsm';
 
 export type ChemClassId = 'ss1' | 'ss2' | 'ss3' | 'all';
 
@@ -32,8 +71,11 @@ export type ThemeAppearanceMode = 'light' | 'dark';
 
 export type ClockFormat = '12h' | '24h';
 
+export type ExamTrack = 'jamb' | 'waec' | 'both';
+
 export type ScreenName =
   | 'welcome'
+  | 'examsetup'
   | 'dxintro'
   | 'home'
   | 'topics'
@@ -46,6 +88,7 @@ export type ScreenName =
   | 'review'
   | 'lab'
   | 'labrun'
+  | 'studio'
   | 'formulas'
   | 'cbt'
   | 'mistakes'
@@ -271,7 +314,18 @@ export interface TeachBeat {
   body: TeachBlock[];
 }
 
+export interface PredictBeat {
+  k: 'predict';
+  kl?: string;
+  title?: string;
+  intro?: string;
+  q: string;
+  o: string[];
+  g?: DiagramSpec;
+}
+
 export type Beat =
+  | PredictBeat
   | ExploreBeat
   | DayoBeat
   | FadeBeat
@@ -316,6 +370,8 @@ export interface UserProgress {
   dx: number;
   subj: SubjectId;
   subjs: SubjectId[];
+  examTrack?: ExamTrack;
+  jambSubjects?: SubjectId[];
   curriculumTrack?: CurriculumTrack;
   jss3Term?: Jss3TermId;
   juniorThemeId?: JuniorThemeId;
@@ -353,11 +409,25 @@ export interface UserProgress {
   act: Record<number, number>;
   run: number;
   revok: number;
-  pro: { pid: string; until: number; code: string; on: number } | null;
+  pro: {
+    pid: string;
+    until: number;
+    code: string;
+    on: number;
+    sig?: string;
+    source?: 'voucher' | 'paystack' | 'admin';
+    planName?: string;
+  } | null;
+  trial?: {
+    startedDay: number;
+    untilDay: number;
+    sig?: string;
+  } | null;
   owner: number;
   sales: { d: number; dev: string; pid: string; code: string; price: number }[];
   ob: number;
   dev: string;
+  devToken?: string;
   mistakes?: Record<
     string,
     {
@@ -374,7 +444,7 @@ export interface UserProgress {
     }
   >;
   studyPlan?: {
-    examType: 'jamb' | 'waec';
+    examType: 'jamb' | 'waec' | 'both';
     examDateIso: string;
     dailyMinutes: number;
     focusSubjects: SubjectId[];
@@ -402,6 +472,12 @@ export interface UserProgress {
   }[];
   leaderboardCampusGoal?: string;
   leaderboardPublic?: boolean;
+  novelNotebook?: {
+    chaptersRead: number[];
+    characters: string;
+    themes: string;
+    events: string;
+  };
 }
 
 export interface QuizSession {
@@ -428,10 +504,12 @@ export interface TopicTestSession {
   list: string[];
   i: number;
   hp: number;
+  targetHp?: number;
   hits: number;
   combo: number;
   best: number;
   time: number;
+  totalTime?: number;
   picked: number | null;
   result: 'right' | 'wrong' | null;
   pred0: number;

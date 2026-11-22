@@ -6,6 +6,8 @@ import {
   makeBlankProgress,
   mastery,
   mpct,
+  computeRatioPct,
+  computeTopicsProgressPct,
   predicted,
   nextMission,
   pickPractice,
@@ -14,8 +16,9 @@ import {
   dueList,
   recordAnswer,
   evaluateNewBadges,
+  fmtDev,
   getRankProgress,
-  makeCode,
+  isPro,
   today,
 } from './engine';
 import { SUBJECTS } from '../data/curriculum';
@@ -78,6 +81,34 @@ describe('Mastery, practice progression, and spaced repetition', () => {
     assert.deepEqual(p.rev['bases-1'], { due: 102, st: 0 });
   });
 
+  it('computes unit and ratio percentages cleanly instead of X/Y done counts', () => {
+    const p = makeBlankProgress();
+    const unitItems = [{ id: 't1' }, { id: 't2' }, { id: 't3' }, { id: 't4' }];
+    assert.equal(computeTopicsProgressPct(p, unitItems), 0);
+    assert.equal(computeTopicsProgressPct(p, []), 0);
+    assert.equal(computeRatioPct(0, 4), 0);
+    assert.equal(computeRatioPct(3, 4), 75);
+    assert.equal(computeRatioPct(5, 4), 100);
+
+    // Partial diagnostic attempts: t1 ~46%, t2 0%, t3 50%, t4 0% -> 24%
+    p.t['t1'] = { att: [[1, 1], [0, 1], [1, 2]], lesson: 0, practice: 0, boss: 0 };
+    p.t['t3'] = { att: [[1, 2], [1, 2], [0, 2], [1, 2]], lesson: 0, practice: 0, boss: 0 };
+    const expectedAvg = Math.round((mpct(p, 't1') + 0 + mpct(p, 't3') + 0) / 4);
+    assert.equal(computeTopicsProgressPct(p, unitItems), expectedAvg);
+
+    // Lesson-only progress without question attempts reflects non-zero progress
+    const pLesson = makeBlankProgress();
+    pLesson.t['t1'] = { att: [], lesson: 1, practice: 0, boss: 0 };
+    assert.equal(computeTopicsProgressPct(pLesson, unitItems), 8);
+
+    // Completed boss tests with no attempts -> 100%
+    const pDone = makeBlankProgress();
+    for (const item of unitItems) {
+      pDone.t[item.id] = { att: [], lesson: 1, practice: 1, boss: 1 };
+    }
+    assert.equal(computeTopicsProgressPct(pDone, unitItems), 100);
+  });
+
   it('promotes review items across 1 -> 3 -> 7 days and clears on 3rd review hit', () => {
     const p0 = makeBlankProgress();
     const fullQ = { ...SUBJECTS.maths.topics[0].qs[0], id: 'bases-1', t: 'bases' };
@@ -118,35 +149,70 @@ describe('Mastery, practice progression, and spaced repetition', () => {
     assert.ok(pq);
   });
 
-  it('evaluates badges deterministically', () => {
-    let p = makeBlankProgress();
-    p.dx = 1;
-    p.hist = [['bases-1', 1, today()]];
-    const res = evaluateNewBadges(p, SUBJECTS.maths.topics, 200);
-    assert.ok(res.newlyEarned.some((b) => b.id === 'first'));
+  it('evaluates hard-earned Elemental Rank badges deterministically', () => {
+    const pStarter = makeBlankProgress();
+    pStarter.dx = 1;
+    pStarter.hist = [['bases-1', 1, today()]];
+    const starterRes = evaluateNewBadges(pStarter, SUBJECTS.maths.topics, 200);
+    assert.equal(starterRes.newlyEarned.length, 0, 'Casual 1-question starter should earn 0 Elemental badges');
+
+    const pTerra = makeBlankProgress();
+    pTerra.streak = { d: 200, n: 6 };
+    pTerra.hist = Array.from({ length: 80 }, (_, i) => [
+      `bases-${i}`,
+      i < 60 ? 1 : 0,
+      200,
+    ] as [string, number, number]);
+    for (let i = 0; i < 6; i++) {
+      pTerra.t[SUBJECTS.maths.topics[i].id] = {
+        att: [[1, 2], [1, 2], [1, 2]],
+        lesson: 1,
+        practice: 1,
+        boss: 200,
+      };
+    }
+    const terraRes = evaluateNewBadges(pTerra, SUBJECTS.maths.topics, 200);
+    assert.ok(terraRes.newlyEarned.some((b) => b.id === 'rank-terra'));
   });
 
-  it('generates valid activation codes', () => {
-    const code = makeCode('ABCD1234', 'W', 20000);
-    assert.match(code, /^[A-Z0-9]{5}-[A-Z0-9]{5}$/);
+  it('formats device IDs and enforces server-signed Premium receipts', () => {
+    assert.equal(fmtDev('ABCD1234'), 'ABCD-1234');
+    const blank = makeBlankProgress();
+    assert.equal(isPro(blank, 20000), false);
+    assert.equal(
+      isPro(
+        {
+          ...blank,
+          pro: {
+            pid: 'season',
+            on: 20000,
+            until: 20365,
+            code: 'EYAK-ABCD-2345',
+            sig: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          },
+        },
+        20000
+      ),
+      true
+    );
   });
 
-  it('computes rank level and XP progress ratios cleanly across thresholds', () => {
+  it('computes Elemental rank level and XP progress ratios cleanly across thresholds', () => {
     const r0 = getRankProgress(0);
     assert.equal(r0.level, 1);
-    assert.equal(r0.currentTitle, 'Fresh Starter');
-    assert.equal(r0.nextTitle, 'Serious Learner');
+    assert.equal(r0.currentTitle, 'Terra');
+    assert.equal(r0.nextTitle, 'Frost');
     assert.equal(r0.progressRatio, 0);
-    assert.equal(r0.xpNeededForNext, 300);
+    assert.equal(r0.xpNeededForNext, 400);
 
-    const rMid = getRankProgress(150);
+    const rMid = getRankProgress(200);
     assert.equal(rMid.level, 1);
     assert.equal(rMid.progressRatio, 0.5);
-    assert.equal(rMid.xpNeededForNext, 150);
+    assert.equal(rMid.xpNeededForNext, 200);
 
-    const rMax = getRankProgress(12500);
-    assert.equal(rMax.level, 7);
-    assert.equal(rMax.currentTitle, 'National Laureate');
+    const rMax = getRankProgress(14000);
+    assert.equal(rMax.level, 8);
+    assert.equal(rMax.currentTitle, 'Solar');
     assert.equal(rMax.nextTitle, null);
     assert.equal(rMax.progressRatio, 1);
   });

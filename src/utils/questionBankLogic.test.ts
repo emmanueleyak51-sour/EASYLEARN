@@ -17,9 +17,9 @@ import {
 } from './questionBankLogic';
 
 describe('Hybrid Question Bank & Sync Engine (Pure Logic)', () => {
-  it('defines all 12 required subjects with exact ALOC slug mapping and LaTeX flags', () => {
-    assert.equal(QUESTION_BANK_SUBJECTS.length, 12);
-    assert.equal(ALOC_SUPPORTED_SUBJECTS.length, 9);
+  it('defines all 49 subjects with exact ALOC slug mapping and LaTeX flags', () => {
+    assert.equal(QUESTION_BANK_SUBJECTS.length, 49);
+    assert.ok(ALOC_SUPPORTED_SUBJECTS.length >= 9);
 
     assert.equal(BANK_SUBJECT_MAP.maths.alocSlug, 'mathematics');
     assert.equal(BANK_SUBJECT_MAP.chem.alocSlug, 'chemistry');

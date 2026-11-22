@@ -134,3 +134,120 @@ export const duelEntriesRelations = relations(duelEntries, ({ one }) => ({
     references: [users.uid],
   }),
 }));
+
+// Server-only cryptographic signing secrets (never exposed to clients)
+export const systemSecrets = pgTable('system_secrets', {
+  keyName: text('key_name').primaryKey(),
+  secretValue: text('secret_value').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// Single-use Premium Activation PINs / Vouchers issued by Admin
+export const accessVouchers = pgTable(
+  'access_vouchers',
+  {
+    code: text('code').primaryKey(),
+    planId: text('plan_id').notNull(),
+    days: integer('days').notNull(),
+    priceNgn: integer('price_ngn').notNull().default(0),
+    note: text('note').notNull().default(''),
+    createdByEmail: text('created_by_email').notNull(),
+    redeemedByUid: text('redeemed_by_uid'),
+    redeemedByDeviceId: text('redeemed_by_device_id'),
+    redeemedAt: timestamp('redeemed_at', { withTimezone: true }),
+    revoked: boolean('revoked').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('access_vouchers_created_idx').on(table.createdAt)]
+);
+
+// Authoritative Premium subscriptions (supports both signed-in UID and offline Device ID)
+export const premiumSubscriptions = pgTable(
+  'premium_subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    uid: text('uid'),
+    deviceId: text('device_id').notNull(),
+    email: text('email').notNull().default(''),
+    planId: text('plan_id').notNull(),
+    source: text('source').notNull(), // 'voucher' | 'paystack' | 'admin'
+    reference: text('reference').notNull(),
+    startsDay: integer('starts_day').notNull(),
+    untilDay: integer('until_day').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('created_at_upd', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('premium_subs_uid_idx').on(table.uid, table.untilDay),
+    index('premium_subs_device_idx').on(table.deviceId, table.untilDay),
+  ]
+);
+
+// Verified online Paystack payment references (prevents replay of transaction references)
+export const paymentTransactions = pgTable(
+  'payment_transactions',
+  {
+    reference: text('reference').primaryKey(),
+    planId: text('plan_id').notNull(),
+    amountKobo: integer('amount_kobo').notNull(),
+    currency: text('currency').notNull().default('NGN'),
+    email: text('email').notNull(),
+    uid: text('uid'),
+    deviceId: text('device_id').notNull(),
+    status: text('status').notNull().default('pending'), // 'pending' | 'verified'
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('payment_tx_status_idx').on(table.status, table.createdAt)]
+);
+
+// Authoritative 3-day free trial enrollment ledger (prevents resetting trial via localStorage edits)
+export const trialRegistrations = pgTable(
+  'trial_registrations',
+  {
+    id: serial('id').primaryKey(),
+    uid: text('uid'),
+    deviceId: text('device_id').notNull().unique(),
+    startedDay: integer('started_day').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('trial_reg_uid_idx').on(table.uid, table.startedDay)]
+);
+
+// Same-day CBT student cohort standings (ranks every student who took CBT on a given WAT day)
+export const cbtDailyEntries = pgTable(
+  'cbt_daily_entries',
+  {
+    id: serial('id').primaryKey(),
+    dayNumber: integer('day_number').notNull(),
+    mode: text('mode').notNull().default('jamb'),
+    participantKey: text('participant_key').notNull(),
+    displayName: text('display_name').notNull(),
+    campusGoal: text('campus_goal').notNull().default('National Scholar'),
+    scaledScore: integer('scaled_score').notNull(),
+    maxScale: integer('max_scale').notNull().default(400),
+    rawCorrect: integer('raw_correct').notNull().default(0),
+    totalQuestions: integer('total_questions').notNull().default(40),
+    accuracyPct: integer('accuracy_pct').notNull().default(0),
+    durationSec: integer('duration_sec').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('cbt_daily_day_mode_key_uniq').on(
+      table.dayNumber,
+      table.mode,
+      table.participantKey
+    ),
+    index('cbt_daily_day_mode_score_idx').on(
+      table.dayNumber,
+      table.mode,
+      table.scaledScore,
+      table.durationSec
+    ),
+  ]
+);
+
+
+

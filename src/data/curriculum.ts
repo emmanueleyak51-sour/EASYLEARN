@@ -25,12 +25,70 @@ import { buildDigiTechCurriculum } from './digitechData';
 import { filterDigiTechTopicsByClass } from './digitechNerdc2027';
 import { buildDataProcCurriculum } from './dataprocData';
 import { filterDataProcTopicsByClass } from './dataprocNerdc2027';
+
+// Part 4 core JAMB UTME subjects (single-block syllabi)
+import { buildGovtCurriculum } from './utme/govt';
+import { buildLitCurriculum } from './utme/lit';
+import { buildCrsCurriculum } from './utme/crs';
+import { buildIrsCurriculum } from './utme/irs';
+import { buildCommCurriculum } from './utme/comm';
+import { buildAcctCurriculum } from './utme/acct';
+
+// Remaining 11 official JAMB UTME subjects
+import {
+  buildArtCurriculum,
+  buildCompCurriculum,
+  buildHistCurriculum,
+  buildHomeEcCurriculum,
+  buildMusicCurriculum,
+  buildPheCurriculum,
+} from './utme/jambHumanities';
+import {
+  buildArabicCurriculum,
+  buildFrenchCurriculum,
+  buildHausaCurriculum,
+  buildIgboCurriculum,
+  buildYorubaCurriculum,
+} from './utme/jambLanguages';
+
+// 20 additional WAEC/NECO-only school & trade subjects
+import {
+  buildAnimalHusbCurriculum,
+  buildFisheriesCurriculum,
+  buildFoodNutCurriculum,
+  buildHomeMgtCurriculum,
+  buildTechDrawCurriculum,
+} from './utme/waecAppliedA';
+import {
+  buildBookKeepCurriculum,
+  buildInsuranceCurriculum,
+  buildMarketingCurriculum,
+  buildOfficePracCurriculum,
+  buildStoreMgtCurriculum,
+} from './utme/waecAppliedB';
+import {
+  buildCateringCurriculum,
+  buildCosmetCurriculum,
+  buildGarmentCurriculum,
+  buildPhotoCurriculum,
+  buildTourismCurriculum,
+} from './utme/waecTradesA';
+import {
+  buildAutoMechCurriculum,
+  buildBlockLayCurriculum,
+  buildCarpentryCurriculum,
+  buildElecInstCurriculum,
+  buildGsmCurriculum,
+} from './utme/waecTradesB';
+
 import { bankForTopic } from '../utils/engine';
+import { ALL_SUBJECT_IDS } from '../utils/examSubjects';
 import { calibrateSubjectCurriculum } from '../utils/jambDistractorCalibrator';
 import {
   sanitizeLessonForNationalLearning,
   sanitizeTopicForNationalLearning,
 } from '../utils/nationalLearningSanitizer';
+import { SUBJECT_TUTOR_REGISTRY } from '../utils/tutorRegistry';
 
 function finalizeSubjectCurriculum(
   subj: SubjectId,
@@ -47,43 +105,24 @@ function finalizeSubjectCurriculum(
   return { topics, il };
 }
 
+function buildEntry(
+  id: SubjectId,
+  raw: { topics: Topic[]; il: Record<string, InteractiveLesson> }
+): SubjectData {
+  const built = finalizeSubjectCurriculum(id, raw.topics, raw.il);
+  const meta = SUBJECT_TUTOR_REGISTRY[id];
+  return {
+    id,
+    name: meta.name,
+    short: meta.short,
+    topics: built.topics,
+    il: built.il,
+  };
+}
+
 const rawMathTopics = applyMathGenerators(MATH_TOPICS);
 const rawMathIL = buildMathInteractiveLessons(rawMathTopics);
 const enrichedMath = enrichMathCurriculum(rawMathTopics, rawMathIL);
-const builtMath = finalizeSubjectCurriculum('maths', enrichedMath.topics, enrichedMath.il);
-
-const rawChem = buildChemCurriculum();
-const builtChem = finalizeSubjectCurriculum('chem', rawChem.topics, rawChem.il);
-
-const rawPhys = buildPhysCurriculum();
-const builtPhys = finalizeSubjectCurriculum('phys', rawPhys.topics, rawPhys.il);
-
-const rawBio = buildBioCurriculum();
-const builtBio = finalizeSubjectCurriculum('bio', rawBio.topics, rawBio.il);
-
-const rawAgric = buildAgricCurriculum();
-const builtAgric = finalizeSubjectCurriculum('agric', rawAgric.topics, rawAgric.il);
-
-const rawEcon = buildEconCurriculum();
-const builtEcon = finalizeSubjectCurriculum('econ', rawEcon.topics, rawEcon.il);
-
-const rawEng = buildEngCurriculum();
-const builtEng = finalizeSubjectCurriculum('eng', rawEng.topics, rawEng.il);
-
-const rawCivic = buildCivicCurriculum();
-const builtCivic = finalizeSubjectCurriculum('civic', rawCivic.topics, rawCivic.il);
-
-const rawFMath = buildFMathCurriculum();
-const builtFMath = finalizeSubjectCurriculum('fmaths', rawFMath.topics, rawFMath.il);
-
-const rawGeog = buildGeogCurriculum();
-const builtGeog = finalizeSubjectCurriculum('geog', rawGeog.topics, rawGeog.il);
-
-const rawDigiTech = buildDigiTechCurriculum();
-const builtDigiTech = finalizeSubjectCurriculum('digitech', rawDigiTech.topics, rawDigiTech.il);
-
-const rawDataProc = buildDataProcCurriculum();
-const builtDataProc = finalizeSubjectCurriculum('dataproc', rawDataProc.topics, rawDataProc.il);
 
 export interface SubjectData {
   id: SubjectId;
@@ -94,106 +133,69 @@ export interface SubjectData {
 }
 
 export const SUBJECTS: Record<SubjectId, SubjectData> = {
-  maths: {
-    id: 'maths',
-    name: 'Mathematics',
-    short: 'Maths',
-    topics: builtMath.topics,
-    il: builtMath.il,
-  },
-  fmaths: {
-    id: 'fmaths',
-    name: 'Further Mathematics',
-    short: 'F.Maths',
-    topics: builtFMath.topics,
-    il: builtFMath.il,
-  },
-  chem: {
-    id: 'chem',
-    name: 'Chemistry',
-    short: 'Chemistry',
-    topics: builtChem.topics,
-    il: builtChem.il,
-  },
-  phys: {
-    id: 'phys',
-    name: 'Physics',
-    short: 'Physics',
-    topics: builtPhys.topics,
-    il: builtPhys.il,
-  },
-  bio: {
-    id: 'bio',
-    name: 'Biology',
-    short: 'Biology',
-    topics: builtBio.topics,
-    il: builtBio.il,
-  },
-  agric: {
-    id: 'agric',
-    name: 'Agricultural Science',
-    short: 'Agric',
-    topics: builtAgric.topics,
-    il: builtAgric.il,
-  },
-  geog: {
-    id: 'geog',
-    name: 'Geography',
-    short: 'Geog',
-    topics: builtGeog.topics,
-    il: builtGeog.il,
-  },
-  econ: {
-    id: 'econ',
-    name: 'Economics',
-    short: 'Economics',
-    topics: builtEcon.topics,
-    il: builtEcon.il,
-  },
-  eng: {
-    id: 'eng',
-    name: 'English Language',
-    short: 'English',
-    topics: builtEng.topics,
-    il: builtEng.il,
-  },
-  civic: {
-    id: 'civic',
-    name: 'Civic Education',
-    short: 'Civic',
-    topics: builtCivic.topics,
-    il: builtCivic.il,
-  },
-  digitech: {
-    id: 'digitech',
-    name: 'Digital Technologies',
-    short: 'DigiTech',
-    topics: builtDigiTech.topics,
-    il: builtDigiTech.il,
-  },
-  dataproc: {
-    id: 'dataproc',
-    name: 'Data Processing',
-    short: 'DataProc',
-    topics: builtDataProc.topics,
-    il: builtDataProc.il,
-  },
+  // ── 25 Official JAMB UTME & WAEC/NECO Subjects ──
+  eng: buildEntry('eng', buildEngCurriculum()),
+  maths: buildEntry('maths', { topics: enrichedMath.topics, il: enrichedMath.il }),
+  phys: buildEntry('phys', buildPhysCurriculum()),
+  chem: buildEntry('chem', buildChemCurriculum()),
+  bio: buildEntry('bio', buildBioCurriculum()),
+  agric: buildEntry('agric', buildAgricCurriculum()),
+  geog: buildEntry('geog', buildGeogCurriculum()),
+  econ: buildEntry('econ', buildEconCurriculum()),
+  govt: buildEntry('govt', buildGovtCurriculum()),
+  lit: buildEntry('lit', buildLitCurriculum()),
+  crs: buildEntry('crs', buildCrsCurriculum()),
+  irs: buildEntry('irs', buildIrsCurriculum()),
+  comm: buildEntry('comm', buildCommCurriculum()),
+  acct: buildEntry('acct', buildAcctCurriculum()),
+  hist: buildEntry('hist', buildHistCurriculum()),
+  comp: buildEntry('comp', buildCompCurriculum()),
+  homeec: buildEntry('homeec', buildHomeEcCurriculum()),
+  phe: buildEntry('phe', buildPheCurriculum()),
+  art: buildEntry('art', buildArtCurriculum()),
+  music: buildEntry('music', buildMusicCurriculum()),
+  french: buildEntry('french', buildFrenchCurriculum()),
+  arabic: buildEntry('arabic', buildArabicCurriculum()),
+  hausa: buildEntry('hausa', buildHausaCurriculum()),
+  igbo: buildEntry('igbo', buildIgboCurriculum()),
+  yoruba: buildEntry('yoruba', buildYorubaCurriculum()),
+
+  // ── 24 WAEC/NECO-Only School & Trade Subjects ──
+  fmaths: buildEntry('fmaths', buildFMathCurriculum()),
+  civic: buildEntry('civic', buildCivicCurriculum()),
+  digitech: buildEntry('digitech', buildDigiTechCurriculum()),
+  dataproc: buildEntry('dataproc', buildDataProcCurriculum()),
+  techdraw: buildEntry('techdraw', buildTechDrawCurriculum()),
+  foodnut: buildEntry('foodnut', buildFoodNutCurriculum()),
+  homemgt: buildEntry('homemgt', buildHomeMgtCurriculum()),
+  animalhusb: buildEntry('animalhusb', buildAnimalHusbCurriculum()),
+  fisheries: buildEntry('fisheries', buildFisheriesCurriculum()),
+  marketing: buildEntry('marketing', buildMarketingCurriculum()),
+  officeprac: buildEntry('officeprac', buildOfficePracCurriculum()),
+  insurance: buildEntry('insurance', buildInsuranceCurriculum()),
+  storemgt: buildEntry('storemgt', buildStoreMgtCurriculum()),
+  bookkeep: buildEntry('bookkeep', buildBookKeepCurriculum()),
+  catering: buildEntry('catering', buildCateringCurriculum()),
+  garment: buildEntry('garment', buildGarmentCurriculum()),
+  photo: buildEntry('photo', buildPhotoCurriculum()),
+  cosmet: buildEntry('cosmet', buildCosmetCurriculum()),
+  tourism: buildEntry('tourism', buildTourismCurriculum()),
+  elecinst: buildEntry('elecinst', buildElecInstCurriculum()),
+  automech: buildEntry('automech', buildAutoMechCurriculum()),
+  carpentry: buildEntry('carpentry', buildCarpentryCurriculum()),
+  blocklay: buildEntry('blocklay', buildBlockLayCurriculum()),
+  gsm: buildEntry('gsm', buildGsmCurriculum()),
 };
 
-export const SUBJECT_IDS: SubjectId[] = [
-  'maths',
-  'fmaths',
-  'chem',
-  'phys',
-  'bio',
-  'agric',
-  'geog',
-  'econ',
-  'eng',
-  'civic',
-  'digitech',
-  'dataproc',
-];
+export const SUBJECT_IDS: SubjectId[] = [...ALL_SUBJECT_IDS];
+
+export function getAllTopicsBySubj(): Record<SubjectId, Topic[]> {
+  const out = {} as Record<SubjectId, Topic[]>;
+  for (const sid of SUBJECT_IDS) {
+    out[sid] = SUBJECTS[sid].topics;
+  }
+  return out;
+}
 
 export function getTopics(subj: SubjectId): Topic[] {
   return (SUBJECTS[subj] || SUBJECTS.maths).topics;
@@ -218,6 +220,9 @@ export function getTopicsForProgress(
   >
 ): Topic[] {
   const all = (SUBJECTS[progress.subj] || SUBJECTS.maths).topics;
+  if (progress.subj === 'maths') {
+    return filterMathTopicsByClass(all, progress.mathClass);
+  }
   if (progress.subj === 'fmaths') {
     return filterFMathTopicsByClass(all, progress.fmathClass);
   }
@@ -251,7 +256,8 @@ export function getTopicsForProgress(
   if (progress.subj === 'dataproc') {
     return filterDataProcTopicsByClass(all, progress.dataprocClass);
   }
-  return filterMathTopicsByClass(all, progress.mathClass);
+  // All UTME / WAEC single-block subjects follow one complete syllabus with no SS1–SS3 tabs
+  return all;
 }
 
 export function getTopic(subj: SubjectId, tid: string): Topic | undefined {

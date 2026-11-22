@@ -27,11 +27,11 @@ export class ErrorBoundary extends React.Component<
 
   render() {
     if (this.state.hasError) {
-      let friendly = 'Something went wrong while loading this study module.';
+      let friendly = 'Something went wrong while loading this page.';
       if (this.state.message.includes('Missing or insufficient permissions')) {
-        friendly = 'Cloud sync permission check failed. Please sign in with your verified Google account or continue in local study mode.';
+        friendly = 'Account check failed. Please sign in with your verified account or keep studying offline on this phone.';
       } else if (this.state.message.includes('Quota exceeded')) {
-        friendly = 'Daily cloud sync quota reached. Your study progress remains safely saved locally and cloud quota resets tomorrow.';
+        friendly = 'Daily cloud save limit reached. Your study progress is still safe on this phone and cloud saving resets tomorrow.';
       }
       return (
         <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] text-[var(--ink)] p-6">

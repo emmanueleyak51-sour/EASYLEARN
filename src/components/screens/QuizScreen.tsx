@@ -4,8 +4,9 @@ import { SUBJECT_INFO, perm, predicted } from '../../utils/engine';
 import { extractQuestionSpeechScript } from '../../utils/chemVoiceLogic';
 import { findQuestion, getTopics } from '../../data/curriculum';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
-import { AdirePattern, DiagramFigure, Icon } from '../Icons';
+import { DiagramFigure, Icon } from '../Icons';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { AnimatedNumber } from '../AnimatedNumber';
 import { SplitWorkbench, SubscreenTopBar } from '../AppShell';
 import { SmoothProgressBar } from '../ULessonMotion';
@@ -83,8 +84,8 @@ export function QuizScreen({
   if (!q) {
     return (
       <div className="max-w-[640px] mx-auto py-8 flex flex-col gap-4">
-        <SubscreenTopBar title="Question Unavailable" onBack={onExit} />
-        <div className="rounded-2xl bg-[var(--card)] border border-[var(--line)] p-6 text-center">
+        <SubscreenTopBar title="Question unavailable" onBack={onExit} />
+        <div className="rtc-card p-6 text-center">
           <p className="text-[15px] text-[var(--dim)]">Could not load this question.</p>
           <button type="button" onClick={onExit} className="btn-tactile indigo mt-4">
             Return
@@ -98,35 +99,12 @@ export function QuizScreen({
   const compact = q.o.every((x) => x.replace(/<[^>]+>/g, '').length <= 8);
   const answered = session.picked !== null;
   const isCorrect = answered && session.picked === q.a;
-  const voiceMode =
-    progress.subj === 'dataproc'
-      ? 'dataproc'
-      : progress.subj === 'digitech'
-        ? 'digitech'
-        : progress.subj === 'civic'
-          ? 'civic'
-          : progress.subj === 'eng'
-            ? 'eng'
-            : progress.subj === 'econ'
-              ? 'econ'
-              : progress.subj === 'geog'
-                ? 'geog'
-                : progress.subj === 'agric'
-                  ? 'agric'
-                  : progress.subj === 'bio'
-                    ? 'bio'
-                    : progress.subj === 'phys'
-                      ? 'phys'
-                      : progress.subj === 'chem'
-                        ? 'chem'
-                        : progress.subj === 'fmaths'
-                          ? 'fmath'
-                          : 'math';
+  const voiceMode = subjectToLiveCoachMode(progress.subj);
   const kindLabel =
     session.kind === 'dx'
-      ? `${SUBJECT_INFO[progress.subj].short} Diagnostic`
+      ? `${SUBJECT_INFO[progress.subj].short} placement check`
       : session.kind === 'review'
-        ? 'Spaced Review'
+        ? 'Revision'
         : topic?.name || 'Practice';
   const progressPct = Math.round(((session.i + (answered ? 1 : 0)) / Math.max(1, session.n)) * 100);
 
@@ -137,34 +115,27 @@ export function QuizScreen({
         subtitle={`Question ${session.i + 1} of ${session.n}`}
         onBack={onExit}
         right={
-          <div className="flex items-center gap-2 text-[12.5px] font-extrabold text-[var(--dim)] tabular-nums">
+          <div className="flex items-center gap-2 text-[12.5px] font-bold text-[var(--dim)] tabular-nums">
             <button
               type="button"
               onClick={() => setToolsOpen(true)}
-              className="min-h-[32px] px-2.5 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[11.5px] font-bold text-[var(--ink)] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              className="min-h-[34px] px-3 rounded-[14px] bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[12px] font-bold text-[var(--ink)] flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
               <Icon name="sigma" size={13} className="text-[var(--gold)]" />
-              <span>Calc &amp; Pad</span>
+              <span>Calculator</span>
             </button>
-            {session.kind === 'practice' && (
-              <>
-                <span className="text-[var(--gold)]">Level {q.l}/5</span>
-                <span aria-hidden="true">·</span>
-              </>
-            )}
             <span className="text-[var(--ink)]">{session.right} right</span>
           </div>
         }
       />
 
-      {/* Smooth GPU Progress Track */}
       <SmoothProgressBar
         value={progressPct}
         max={100}
         tone="indigo"
-        heightClass="h-2"
+        heightClass="h-3"
         trackClass="bg-[var(--deep)]"
-        ariaLabel="Quiz progress"
+        ariaLabel="Practice progress"
       />
 
       <ChemMadScientistBar
@@ -177,7 +148,7 @@ export function QuizScreen({
         context={{
           topicName: topic?.name || SUBJECT_INFO[progress.subj].name,
           sectionName: topic?.sec || kindLabel,
-          stepLabel: answered ? 'Worked Answer Explanation' : `Question ${session.i + 1} of ${session.n}`,
+          stepLabel: answered ? 'Answer explanation' : `Question ${session.i + 1} of ${session.n}`,
           stepText: extractQuestionSpeechScript(
             q,
             topic?.name || SUBJECT_INFO[progress.subj].short,
@@ -191,8 +162,23 @@ export function QuizScreen({
       <SplitWorkbench
         hasRightPane={!!q.g}
         left={
-          <div key={q.id} className="flex flex-col gap-4 anim-q-enter">
-            <div className="rtc-card rounded-2xl p-5 flex flex-col gap-4">
+          <div key={q.id} className="flex flex-col gap-4 anim-q-fwd">
+            <div className="rtc-card p-5 sm:p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-[var(--line)]">
+                <div className="flex items-center gap-2 text-[12.5px] font-bold min-w-0">
+                  <span className="font-[var(--display)] font-bold text-[var(--gold)] tabular-nums">
+                    Question {session.i + 1}
+                  </span>
+                  <span className="text-[var(--dim)]" aria-hidden="true">·</span>
+                  <span className="text-[var(--ink)] truncate">{kindLabel}</span>
+                </div>
+                {!answered && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--dim)] shrink-0">
+                    <kbd className="eyak-kbd">A</kbd>–<kbd className="eyak-kbd">D</kbd>
+                    <span>answer</span>
+                  </span>
+                )}
+              </div>
               <div
                 className="qt text-[var(--ink)]"
                 dangerouslySetInnerHTML={{ __html: typesetMathHtml(q.q, progress.subj) }}
@@ -200,12 +186,6 @@ export function QuizScreen({
               {q.g && (
                 <div className="min-[980px]:hidden">
                   <DiagramFigure g={q.g} />
-                </div>
-              )}
-              {!answered && !compact && (
-                <div className="flex items-center justify-between gap-2 text-[11.5px] font-semibold text-[var(--dim)] pt-1 border-t border-[var(--line)]/60">
-                  <span>Tip: Cross out tricky distractors with ✕ before choosing</span>
-                  <span className="hidden sm:inline">Keys: A–D to answer</span>
                 </div>
               )}
             </div>
@@ -218,7 +198,7 @@ export function QuizScreen({
                 let stateCls = '';
                 if (answered) {
                   if (isRightOpt) stateCls = 'ok';
-                  else if (isThisPicked) stateCls = 'no anim-shake';
+                  else if (isThisPicked) stateCls = 'no';
                   else stateCls = 'opt-eliminated';
                 }
                 const optLetter = String.fromCharCode(65 + dispIdx);
@@ -228,10 +208,13 @@ export function QuizScreen({
                     type="button"
                     disabled={answered}
                     onClick={() => onPickAnswer(q, origIdx, origIdx === q.a)}
-                    className={`opt-tile two-col ${stateCls}`}
+                    className={`opt-tile ${stateCls}`}
                   >
+                    <span className="opt-bubble">
+                      <span>{optLetter}</span>
+                    </span>
                     <span
-                      className="opt"
+                      className="opt flex-1 text-left"
                       dangerouslySetInnerHTML={{
                         __html: typesetMathHtml(q.o[origIdx], progress.subj),
                       }}
@@ -245,8 +228,8 @@ export function QuizScreen({
                       onClick={() => onPickAnswer(q, origIdx, origIdx === q.a)}
                       className={`opt-tile flex-1 ${stateCls} ${isCrossed ? 'opacity-45' : ''}`}
                     >
-                      <span className="w-7 h-7 rounded-lg bg-[var(--deep)] border border-[var(--line)] font-extrabold text-[13px] flex items-center justify-center shrink-0">
-                        {optLetter}
+                      <span className="opt-bubble">
+                        <span>{optLetter}</span>
                       </span>
                       <span
                         className={`flex-1 ${isCrossed ? 'line-through text-[var(--dim)]' : ''}`}
@@ -254,9 +237,6 @@ export function QuizScreen({
                           __html: typesetMathHtml(q.o[origIdx], progress.subj),
                         }}
                       />
-                      {answered && isRightOpt && (
-                        <Icon name="check" size={18} className="text-[var(--green)] shrink-0 anim-check-draw" />
-                      )}
                     </button>
 
                     {!answered && (
@@ -266,13 +246,13 @@ export function QuizScreen({
                         aria-label={
                           isCrossed
                             ? `Restore option ${optLetter}`
-                            : `Eliminate option ${optLetter}`
+                            : `Cross out option ${optLetter}`
                         }
-                        title={isCrossed ? 'Restore option' : 'Cross out distractor'}
+                        title={isCrossed ? 'Restore option' : 'Cross out wrong option'}
                         onClick={() =>
                           setEliminated((prev) => ({ ...prev, [origIdx]: !prev[origIdx] }))
                         }
-                        className={`w-10 rounded-2xl border flex items-center justify-center transition cursor-pointer shrink-0 ${
+                        className={`w-11 rounded-[22px] border-2 flex items-center justify-center transition cursor-pointer shrink-0 ${
                           isCrossed
                             ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--coral-ink)]'
                             : 'bg-[var(--card)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)] hover:border-[var(--acc-line)]'
@@ -288,7 +268,7 @@ export function QuizScreen({
 
             {answered && (
               <div
-                className={`rounded-2xl border p-4 sm:p-5 flex flex-col gap-2 anim-explain-reveal ${
+                className={`rounded-[22px] border-2 p-4 sm:p-5 flex flex-col gap-2 anim-explain-reveal ${
                   isCorrect
                     ? 'bg-[var(--ok-soft)] border-[var(--ok-line)]'
                     : 'bg-[var(--bad-soft)] border-[var(--bad-line)]'
@@ -306,7 +286,7 @@ export function QuizScreen({
                 </div>
                 {!isCorrect && q.w && q.w[session.picked!] && (
                   <div
-                    className="fb text-[14.5px] text-[var(--ink)] leading-relaxed bg-[var(--card)]/85 rounded-xl p-3 border border-[var(--bad-line)]"
+                    className="fb text-[14.5px] text-[var(--ink)] leading-relaxed bg-[var(--card)]/85 rounded-[16px] p-3 border border-[var(--bad-line)]"
                     dangerouslySetInnerHTML={{
                       __html: typesetMathHtml(q.w[session.picked!], progress.subj),
                     }}
@@ -322,8 +302,8 @@ export function QuizScreen({
         }
         right={
           q.g ? (
-            <div className="rtc-card rounded-[20px] p-4 flex flex-col gap-3">
-              <span className="eyebrow text-[var(--dim)] px-1">Question Diagram</span>
+            <div className="rtc-card p-4 flex flex-col gap-3">
+              <span className="eyebrow text-[var(--dim)] px-1">Question diagram</span>
               <DiagramFigure g={q.g} />
             </div>
           ) : undefined
@@ -333,7 +313,7 @@ export function QuizScreen({
             <div className="pt-1">
               <button type="button" onClick={onNextQuestion} className="btn-tactile indigo w-full">
                 <span>{session.i + 1 >= session.n ? 'See results' : 'Next question'}</span>
-                <Icon name="go" size={18} />
+                <Icon name="go" size={18} className="ul-arrow" />
               </button>
             </div>
           ) : undefined
@@ -365,42 +345,52 @@ export function SummaryScreen({
   const accuracy = Math.round((session.right / Math.max(1, session.n)) * 100);
   const title =
     session.kind === 'dx'
-      ? 'Diagnostic Complete'
+      ? 'Placement check finished'
       : session.kind === 'review'
-        ? 'Review Session Done'
-        : `${topic?.name || 'Practice'} Complete`;
+        ? 'Revision finished'
+        : `${topic?.name || 'Practice'} finished`;
 
   return (
     <div className="max-w-[640px] mx-auto py-4 flex flex-col gap-5 anim-rise">
-      <section className="adire-panel rounded-[26px] p-7 text-center flex flex-col items-center gap-3">
-        <AdirePattern />
-        <div className="relative z-10 w-16 h-16 rounded-2xl bg-[var(--hero-badge)] text-[#141C33] flex items-center justify-center shadow-lg anim-stamp">
-          <Icon name={accuracy >= 70 ? 'crown' : 'target'} size={32} />
+      <section className="rtc-eq-plate p-6 sm:p-7 text-center flex flex-col items-center gap-4">
+        <div className="w-14 h-14 rounded-[18px] tile-peach flex items-center justify-center">
+          <Icon name={accuracy >= 70 ? 'crown' : 'target'} size={28} />
         </div>
-        <div className="relative z-10 flex flex-col gap-1">
-          <span className="eyebrow text-[var(--hero-badge)]">{title}</span>
+        <div className="flex flex-col gap-1">
+          <span className="eyebrow text-[#FFE1D1]">{title}</span>
           <h1 className="h34 text-white tabular-nums">
-            <AnimatedNumber value={session.right} /> / {session.n} correct
+            <AnimatedNumber value={session.right} duration={680} /> / {session.n} correct
           </h1>
-          <p className="text-[15px] text-white/85">
+          <p className="text-[15px] text-white/90 max-w-md mx-auto">
             {accuracy >= 80
-              ? 'Sharp work! You’re commanding these questions cleanly.'
+              ? 'Great work — you handled these questions cleanly.'
               : accuracy >= 50
-                ? 'Solid effort — missed questions were added to your spaced review.'
-                : 'Keep going — every missed question is queued for review so it clicks next time.'}
+                ? 'Good progress — any missed questions were saved for revision.'
+                : 'Keep going — missed questions are saved in Mistakes to fix with step-by-step explanations.'}
           </p>
         </div>
 
-        <div className="relative z-10 grid grid-cols-2 gap-3 w-full max-w-sm pt-2">
-          <div className="rounded-2xl bg-white/12 border border-white/15 p-3">
-            <div className="text-[11px] font-bold uppercase text-white/75">Mastery Score</div>
-            <div className="font-[var(--display)] font-extrabold text-[22px] text-white tabular-nums">
-              <AnimatedNumber value={newPred} suffix="%" />
+        <div className="w-full max-w-md">
+          <SmoothProgressBar
+            value={accuracy}
+            max={100}
+            tone="emerald"
+            heightClass="h-3"
+            trackClass="bg-white/20"
+            ariaLabel="Accuracy"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 w-full max-w-sm pt-1">
+          <div className="rounded-[16px] tile-mint p-3">
+            <div className="text-[12px] font-bold opacity-80">Subject mastery</div>
+            <div className="font-[var(--display)] font-bold text-[22px] tabular-nums">
+              <AnimatedNumber value={newPred} duration={680} suffix="%" />
             </div>
           </div>
-          <div className="rounded-2xl bg-white/12 border border-white/15 p-3">
-            <div className="text-[11px] font-bold uppercase text-white/75">Movement</div>
-            <div className="font-[var(--display)] font-extrabold text-[22px] text-[var(--hero-badge)] tabular-nums">
+          <div className="rounded-[16px] tile-sky p-3">
+            <div className="text-[12px] font-bold opacity-80">Change</div>
+            <div className="font-[var(--display)] font-bold text-[22px] tabular-nums">
               {predDelta >= 0 ? `+${predDelta}%` : `${predDelta}%`}
             </div>
           </div>
@@ -410,8 +400,8 @@ export function SummaryScreen({
       <div className="flex flex-col gap-3">
         {session.kind === 'practice' && topic && (
           <button type="button" onClick={onTakeTopicTest} className="btn-tactile indigo w-full">
-            <span>Take topic test ({topic.boss})</span>
-            <Icon name="go" size={18} />
+            <span>Take topic test</span>
+            <Icon name="go" size={18} className="ul-arrow" />
           </button>
         )}
         {session.kind === 'practice' && (
@@ -420,7 +410,7 @@ export function SummaryScreen({
           </button>
         )}
         <button type="button" onClick={onDone} className="btn-tactile paper w-full">
-          <span>{session.kind === 'practice' && topic ? 'Back to topic hub' : 'Back to Home'}</span>
+          <span>{session.kind === 'practice' && topic ? 'Back to topic' : 'Back to Home'}</span>
         </button>
       </div>
     </div>

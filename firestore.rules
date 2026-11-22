@@ -33,18 +33,12 @@ service cloud.firestore {
         && subj.size() >= 3
         && subj.size() <= 16
         && subj in [
-          'maths',
-          'fmaths',
-          'chem',
-          'phys',
-          'bio',
-          'agric',
-          'geog',
-          'econ',
-          'eng',
-          'civic',
-          'digitech',
-          'dataproc'
+          'eng', 'maths', 'phys', 'chem', 'bio', 'agric', 'geog', 'econ', 'govt', 'lit',
+          'crs', 'irs', 'comm', 'acct', 'hist', 'comp', 'homeec', 'phe', 'art', 'music',
+          'french', 'arabic', 'hausa', 'igbo', 'yoruba', 'fmaths', 'civic', 'digitech',
+          'dataproc', 'techdraw', 'foodnut', 'homemgt', 'animalhusb', 'fisheries', 'marketing',
+          'officeprac', 'insurance', 'storemgt', 'bookkeep', 'catering', 'garment', 'photo',
+          'cosmet', 'tourism', 'elecinst', 'automech', 'carpentry', 'blocklay', 'gsm'
         ];
     }
 
@@ -100,7 +94,9 @@ service cloud.firestore {
         && data.uid == request.auth.uid
         && isValidId(data.uid)
         && data.progress is map
-        && data.progress.keys().size() <= 20
+        && data.progress.keys().size() <= 21
+        && !('owner' in data.progress)
+        && !('devToken' in data.progress)
         && data.progress.keys().hasOnly([
           'name',
           'target',
@@ -121,7 +117,8 @@ service cloud.firestore {
           'theoryScores',
           'duelHistory',
           'leaderboardCampusGoal',
-          'leaderboardPublic'
+          'leaderboardPublic',
+          'pro'
         ])
         && data.schemaVersion is number
         && data.schemaVersion >= 1

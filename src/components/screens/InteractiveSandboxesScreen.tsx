@@ -17,6 +17,7 @@ import {
 } from '../../utils/sandboxEngines';
 import { SubscreenTopBar } from '../AppShell';
 import { Icon } from '../Icons';
+import { LiquidCapsuleBar } from '../ULessonMotion';
 
 type SandboxTab = 'dataproc' | 'digitech' | 'fmaths' | 'geog';
 
@@ -126,52 +127,27 @@ export function InteractiveSandboxesScreen({
   return (
     <div className="flex flex-col gap-5 anim-rise">
       <SubscreenTopBar
-        title="Interactive Subject Sandboxes"
-        subtitle="Hands-on SQL, Logic Gates, Matrix & Calculus, and WAEC Topographic Map Labs"
+        title="Try-it tools"
+        subtitle="Hands-on SQL tables, logic gates, matrices, graphs and map reading"
         onBack={onBack}
       />
 
       {/* Studio Switcher */}
-      <div className="grid grid-cols-2 min-[780px]:grid-cols-4 gap-2.5" role="tablist" aria-label="Interactive sandboxes">
-        {(
-          [
-            { id: 'dataproc', label: 'SQL & 3NF Studio', sub: 'Data Processing', icon: 'database' },
-            { id: 'digitech', label: 'Logic & Binary Lab', sub: 'Digital Tech', icon: 'cpu' },
-            { id: 'fmaths', label: 'Matrices & Calculus', sub: 'Further Maths', icon: 'integral' },
-            { id: 'geog', label: 'Map & Bearing Lab', sub: 'Geography 1:50k', icon: 'globe' },
-          ] as const
-        ).map((item) => {
-          const active = tab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(item.id)}
-              className={`rounded-2xl border p-3.5 text-left flex items-center gap-3 transition cursor-pointer ${
-                active
-                  ? 'bg-[var(--acc-soft)] border-[var(--gold)] ring-1 ring-[var(--gold)]/25 text-[var(--ink)]'
-                  : 'rtc-card hover:border-[var(--acc-line)] text-[var(--dim)]'
-              }`}
-            >
-              <span
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                  active ? 'bg-[var(--gold)] text-[var(--on-acc)]' : 'bg-[var(--bg)] text-[var(--gold)]'
-                }`}
-              >
-                <Icon name={item.icon} size={18} />
-              </span>
-              <div className="min-w-0">
-                <div className="font-[var(--display)] font-bold text-[13.5px] text-[var(--ink)] truncate">
-                  {item.label}
-                </div>
-                <div className="text-[11.5px] text-[var(--dim)] truncate">{item.sub}</div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <LiquidCapsuleBar
+        roleType="tablist"
+        layoutMode="grid"
+        gridClassName="grid-cols-2 min-[780px]:grid-cols-4 gap-2"
+        size="lg"
+        ariaLabel="Try-it tools"
+        items={[
+          { id: 'dataproc' as SandboxTab, label: 'SQL tables', icon: 'database' },
+          { id: 'digitech' as SandboxTab, label: 'Logic & binary', icon: 'cpu' },
+          { id: 'fmaths' as SandboxTab, label: 'Matrices & graphs', icon: 'integral' },
+          { id: 'geog' as SandboxTab, label: 'Map reading', icon: 'globe' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
 
       {/* ═══════════════════ 1. DATA PROCESSING: SQL & 3NF ═══════════════════ */}
       {tab === 'dataproc' && (

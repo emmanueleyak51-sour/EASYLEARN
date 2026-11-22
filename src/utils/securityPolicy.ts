@@ -1,8 +1,9 @@
 import type { SubjectId } from '../types';
+import { SUBJECT_TUTOR_REGISTRY } from './tutorRegistry.ts';
 
 /**
- * Allowed 12 subjects with server-authoritative names, LaTeX requirements, and ALOC slugs.
- * Never trust client-supplied subjectName, requiresLatex, or arbitrary ALOC URL slugs.
+ * All 49 supported JAMB UTME and WAEC/NECO subjects with server-authoritative names,
+ * LaTeX requirements, and ALOC slugs. Never trust client-supplied subjectName or arbitrary slugs.
  */
 export interface AuthoritativeSubjectSpec {
   id: SubjectId;
@@ -11,20 +12,21 @@ export interface AuthoritativeSubjectSpec {
   requiresLatex: boolean;
 }
 
-export const AUTHORITATIVE_SUBJECTS: Record<SubjectId, AuthoritativeSubjectSpec> = {
-  maths: { id: 'maths', fullName: 'Mathematics', alocSlug: 'mathematics', requiresLatex: true },
-  fmaths: { id: 'fmaths', fullName: 'Further Mathematics', alocSlug: null, requiresLatex: true },
-  chem: { id: 'chem', fullName: 'Chemistry', alocSlug: 'chemistry', requiresLatex: true },
-  phys: { id: 'phys', fullName: 'Physics', alocSlug: 'physics', requiresLatex: true },
-  bio: { id: 'bio', fullName: 'Biology', alocSlug: 'biology', requiresLatex: false },
-  agric: { id: 'agric', fullName: 'Agricultural Science', alocSlug: 'agric', requiresLatex: false },
-  geog: { id: 'geog', fullName: 'Geography', alocSlug: 'geography', requiresLatex: false },
-  econ: { id: 'econ', fullName: 'Economics', alocSlug: 'economics', requiresLatex: false },
-  eng: { id: 'eng', fullName: 'English Language', alocSlug: 'english', requiresLatex: false },
-  civic: { id: 'civic', fullName: 'Civic Education', alocSlug: 'civic-education', requiresLatex: false },
-  digitech: { id: 'digitech', fullName: 'Digital Technologies', alocSlug: null, requiresLatex: false },
-  dataproc: { id: 'dataproc', fullName: 'Data Processing', alocSlug: null, requiresLatex: false },
-};
+export const AUTHORITATIVE_SUBJECTS: Record<SubjectId, AuthoritativeSubjectSpec> = (
+  Object.keys(SUBJECT_TUTOR_REGISTRY) as SubjectId[]
+).reduce(
+  (acc, id) => {
+    const meta = SUBJECT_TUTOR_REGISTRY[id];
+    acc[id] = {
+      id,
+      fullName: meta.name,
+      alocSlug: meta.alocSlug,
+      requiresLatex: meta.requiresLatex,
+    };
+    return acc;
+  },
+  {} as Record<SubjectId, AuthoritativeSubjectSpec>
+);
 
 const VALID_ALOC_SLUGS = new Set<string>(
   Object.values(AUTHORITATIVE_SUBJECTS)
@@ -196,6 +198,64 @@ export function isAllowedWebSocketOrigin(
   } catch {
     return false;
   }
+}
+
+export interface ApiMutationRequestContext extends WebSocketOriginContext {
+  method?: string;
+  originHeader?: string;
+  hostHeader?: string;
+}
+
+/**
+ * Blocks cross-site state-changing API requests (CSRF / cross-origin quota abuse)
+ * using browser-enforced Fetch Metadata (`Sec-Fetch-Site`) and strict `Origin` matching.
+ */
+export function isAllowedApiMutationRequest(ctx: ApiMutationRequestContext): boolean {
+  const method = (ctx.method || 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    return true;
+  }
+  const fetchSite = ctx.secFetchSite?.trim().toLowerCase();
+  if (fetchSite === 'cross-site') {
+    return false;
+  }
+  if (!ctx.originHeader) {
+    return true;
+  }
+  return isAllowedWebSocketOrigin(ctx.originHeader, ctx.hostHeader, {
+    forwardedHost: ctx.forwardedHost,
+    secFetchSite: ctx.secFetchSite,
+    extraAllowedOrigins: ctx.extraAllowedOrigins,
+  });
+}
+
+/**
+ * Extracts a rate-limiter client IP without trusting spoofable leftmost `X-Forwarded-For` entries.
+ * - On Express routes (`app.set('trust proxy', 1)`), `expressIp` already resolves the trusted hop.
+ * - On raw `http.IncomingMessage` (e.g. WebSocket upgrade), reads the rightmost hop appended by
+ *   the Cloud Run / reverse-proxy load balancer rather than client-controlled leftmost values.
+ */
+export function extractTrustedClientIp(opts: {
+  expressIp?: string;
+  forwardedForHeader?: string | string[];
+  remoteAddress?: string;
+}): string {
+  if (typeof opts.expressIp === 'string' && opts.expressIp.trim()) {
+    return opts.expressIp.trim().slice(0, 64);
+  }
+  const rawFwd = Array.isArray(opts.forwardedForHeader)
+    ? opts.forwardedForHeader[opts.forwardedForHeader.length - 1]
+    : opts.forwardedForHeader;
+  if (typeof rawFwd === 'string' && rawFwd.trim()) {
+    const parts = rawFwd
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      return parts[parts.length - 1].slice(0, 64);
+    }
+  }
+  return (opts.remoteAddress || 'unknown').trim().slice(0, 64);
 }
 
 /**

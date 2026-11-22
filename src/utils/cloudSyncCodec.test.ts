@@ -207,3 +207,46 @@ test('decideDocUpsertAction chooses create, update, or recreate accurately for F
     'recreate'
   );
 });
+
+test('mergeCloudProgress preserves newer local Dark mode and owner entitlement over stale cloud light snapshot', () => {
+  const localDarkOwner: UserProgress = {
+    ...createSampleProgress(),
+    owner: 1,
+    themeMode: 'dark',
+    themeId: 'stage-9-starlight',
+    flags: { intro: 1, themeTs: 2000 },
+  };
+  const staleRemote = buildCompactProgressMap({
+    ...createSampleProgress(),
+    themeMode: 'light',
+    themeId: 'stage-1-adire',
+    flags: { intro: 1, themeTs: 1000 },
+  });
+
+  const merged = mergeCloudProgress(localDarkOwner, staleRemote);
+  assert.equal(merged.owner, 1);
+  assert.equal(merged.themeMode, 'dark');
+  assert.equal(merged.themeId, 'stage-9-starlight');
+  assert.equal(merged.flags.themeTs, 2000);
+});
+
+test('mergeCloudProgress restores cloud Dark mode on a fresh device with no local theme timestamp', () => {
+  const freshLocal: UserProgress = {
+    ...createSampleProgress(),
+    themeMode: 'light',
+    themeId: 'stage-1-adire',
+    flags: { intro: 1 },
+  };
+  const newerRemote = buildCompactProgressMap({
+    ...createSampleProgress(),
+    themeMode: 'dark',
+    themeId: 'stage-4-lagoon',
+    flags: { intro: 1, themeTs: 5000 },
+  });
+
+  const merged = mergeCloudProgress(freshLocal, newerRemote);
+  assert.equal(merged.themeMode, 'dark');
+  assert.equal(merged.themeId, 'stage-4-lagoon');
+  assert.equal(merged.flags.themeTs, 5000);
+});
+

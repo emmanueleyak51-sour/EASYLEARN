@@ -11,33 +11,35 @@ export interface ScreenTransitionSpec {
 
 /**
  * Horizontal index of the 5 top-level primary navigation tabs:
- * Home (0) -> Subjects (1) -> Topics (2) -> Formulas (3) -> Settings (4)
+ * Home (0) -> Subjects (1) -> Topics (2) -> Mock exam (3) -> Settings (4)
  */
 export const PRIMARY_TAB_ORDER: Partial<Record<ScreenName, number>> = {
   home: 0,
   subjs: 1,
   topics: 2,
-  formulas: 3,
+  cbt: 3,
   more: 4,
 };
 
 /**
- * True hierarchical navigation depth.
+ * Hierarchical navigation depth.
  * All 5 primary tabs live at depth 0 on the same horizontal plane so tab switches
- * glide laterally rather than misfiring push/pop animations.
+ * slide sideways in nav order rather than misfiring push/pop animations.
  */
 export const SCREEN_HIERARCHY_DEPTH: Record<ScreenName, number> = {
   welcome: 0,
   home: 0,
   subjs: 0,
   topics: 0,
-  formulas: 0,
+  cbt: 0,
   more: 0,
+  examsetup: 1,
   dxintro: 1,
   review: 1,
   topic: 1,
   lab: 1,
-  cbt: 1,
+  studio: 1,
+  formulas: 1,
   mistakes: 1,
   planner: 1,
   sandboxes: 1,
@@ -54,8 +56,7 @@ export const SCREEN_HIERARCHY_DEPTH: Record<ScreenName, number> = {
 };
 
 /**
- * Computes the exact spatial transition between two screens synchronously on Frame 1
- * (eliminating 1-frame-late useEffect animation class swaps).
+ * Computes the exact spatial transition between two screens synchronously on Frame 1.
  */
 export function computeScreenTransition(
   prev: ScreenName,
@@ -65,7 +66,6 @@ export function computeScreenTransition(
     return { kind: 'fade', direction: 0 };
   }
 
-  // Portal entry/exit (welcome <-> app) uses a clean, calm spatial fade-scale
   if (prev === 'welcome' || next === 'welcome') {
     return { kind: 'fade', direction: next === 'welcome' ? -1 : 1 };
   }
@@ -80,7 +80,6 @@ export function computeScreenTransition(
     return { kind: 'pop', direction: -1 };
   }
 
-  // Same depth: check if both are top-level primary tabs
   const prevTabIdx = PRIMARY_TAB_ORDER[prev];
   const nextTabIdx = PRIMARY_TAB_ORDER[next];
   if (prevTabIdx !== undefined && nextTabIdx !== undefined) {

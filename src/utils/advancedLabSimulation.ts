@@ -95,8 +95,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
   if (subj === 'chem') {
     if (id.includes('titrat') || lab.cat === 'volumetric') {
       return {
-        benchTitle: 'Digital Burette & pH Endpoint Simulator',
-        instrumentTag: 'Volumetric Bench · ±0.05 cm³',
+        benchTitle: 'Acid-base titration in a burette',
+        instrumentTag: 'Burette and flask · ±0.05 cm³',
         sliders: [
           {
             id: 'vb',
@@ -145,10 +145,10 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             equationHtml: 'C<sub>A</sub>V<sub>A</sub> / C<sub>B</sub>V<sub>B</sub> = n<sub>A</sub> / n<sub>B</sub>',
             statusTone: nearEq ? 'endpoint' : va > vEq ? 'caution' : 'nominal',
             statusLabel: nearEq
-              ? '◆ ENDPOINT REACHED'
+              ? '◆ Endpoint reached'
               : va > vEq
-                ? '▲ OVER-TITRATED'
-                : '● PRE-EQUIVALENCE',
+                ? '▲ Past endpoint'
+                : '● Before endpoint',
             observationNote: nearEq
               ? `Sharp indicator colour flip at V_A = ${va.toFixed(2)} cm³ (equivalence point ${vEq.toFixed(2)} cm³).`
               : va < vEq
@@ -178,8 +178,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
 
     if (id.includes('electro') || lab.cat === 'physical') {
       return {
-        benchTitle: 'Reaction Kinetics & Faraday Coulometer Sandbox',
-        instrumentTag: 'Thermostated Physical Bench',
+        benchTitle: 'Reaction speed at different temperatures',
+        instrumentTag: 'Water bath and stopwatch',
         sliders: [
           {
             id: 'temp',
@@ -214,7 +214,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             equationHtml: 'Rate = 1 / t &nbsp;∝&nbsp; [C] · e<sup>−E<sub>a</sub>/RT</sup>',
             statusTone: temp >= 60 ? 'caution' : temp >= 35 ? 'optimal' : 'nominal',
             statusLabel:
-              temp >= 60 ? '▲ RAPID KINETICS' : temp >= 35 ? '● OPTIMAL RATE' : '● BASELINE RUN',
+              temp >= 60 ? '▲ Fast reaction' : temp >= 35 ? '● Steady speed' : '● Slow start',
             observationNote: `Cross obscured in ${timeCross.toFixed(1)} s at ${temp} °C — every +10 °C roughly doubles collision frequency above E_a.`,
             metrics: [
               { label: 'Disappearance t', value: timeCross.toFixed(1), unit: 's' },
@@ -237,8 +237,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
     }
 
     return {
-      benchTitle: 'Molar Gas & Stoichiometric Yield Analyzer',
-      instrumentTag: 'Gas Syringe · s.t.p. Calibrated',
+      benchTitle: 'Collecting gas in a syringe',
+      instrumentTag: 'Gas syringe at room pressure',
       sliders: [
         {
           id: 'mass',
@@ -273,7 +273,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
           primaryUnit: 'cm³',
           equationHtml: 'V = n × V<sub>m</sub> = (m<sub>pure</sub> / M<sub>r</sub>) × 22,400 cm³',
           statusTone: purity >= 85 ? 'optimal' : 'nominal',
-          statusLabel: purity >= 85 ? '● ANALYTICAL GRADE' : '▲ IMPURE SAMPLE',
+          statusLabel: purity >= 85 ? '● High purity' : '▲ Impure sample',
           observationNote: `${mass.toFixed(2)} g at ${purity}% purity yields ${moles.toFixed(4)} mol (${vol.toFixed(0)} cm³ dry gas at s.t.p.).`,
           metrics: [
             { label: 'Pure Mass', value: ((mass * purity) / 100).toFixed(2), unit: 'g' },
@@ -299,8 +299,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
   if (subj === 'phys') {
     if (id.includes('pendulum')) {
       return {
-        benchTitle: 'Simple Pendulum Timing & T²–L Gravity Rig',
-        instrumentTag: 'Digital Photogate · g = 9.81 m s⁻²',
+        benchTitle: 'Swinging pendulum timer',
+        instrumentTag: 'Stopwatch · g = 9.81 m s⁻²',
         sliders: [
           {
             id: 'len',
@@ -336,7 +336,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             primaryUnit: 's²',
             equationHtml: 'T = 2π√(L / g) &nbsp;⇒&nbsp; T² = (4π² / g)L',
             statusTone: n >= 20 ? 'optimal' : 'caution',
-            statusLabel: n >= 20 ? '● LOW TIMING ERROR' : '▲ INCREASE N ≥ 20',
+            statusLabel: n >= 20 ? '● Good timing count' : '▲ Time at least 20 swings',
             observationNote: `${n} small-angle oscillations take t = ${totalTime.toFixed(2)} s, giving T = ${period.toFixed(3)} s and slope 4π²/g = 4.02 s² m⁻¹.`,
             metrics: [
               { label: 'Stopwatch t', value: totalTime.toFixed(2), unit: 's' },
@@ -360,8 +360,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
 
     if (lab.cat === 'optics') {
       return {
-        benchTitle: 'Optical Bench Conjugate Focus & Magnification Rig',
-        instrumentTag: 'Illuminated Cross-Wire · ±0.1 cm',
+        benchTitle: 'Image distance with a converging lens',
+        instrumentTag: 'Light box, lens and screen · ±0.1 cm',
         sliders: [
           {
             id: 'u',
@@ -396,7 +396,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             primaryUnit: 'cm',
             equationHtml: '1 / f = 1 / u + 1 / v &nbsp;⇒&nbsp; v = uf / (u − f)',
             statusTone: is2f ? 'endpoint' : 'optimal',
-            statusLabel: is2f ? '◆ SYMMETRIC 2f POINT' : '● NO-PARALLAX LOCK',
+            statusLabel: is2f ? '◆ Equal distance (2f)' : '● Sharp image on screen',
             observationNote: `Sharp inverted real image at v = ${v.toFixed(1)} cm with linear magnification M = v/u = ${mag.toFixed(2)}×.`,
             metrics: [
               { label: 'Magnification M', value: `${mag.toFixed(2)}×`, unit: '' },
@@ -420,8 +420,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
 
     if (lab.cat === 'electricity') {
       return {
-        benchTitle: 'DC Precision Rheostat, Voltmeter & Ammeter Bench',
-        instrumentTag: 'Ohm & Internal Resistance Rig',
+        benchTitle: 'Current and voltage in a circuit',
+        instrumentTag: 'Cell, resistor, ammeter and voltmeter',
         sliders: [
           {
             id: 'rload',
@@ -456,7 +456,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             primaryUnit: 'V',
             equationHtml: 'I = E / (R + r) &nbsp;·&nbsp; V = E − Ir',
             statusTone: curr > 1.8 ? 'caution' : 'optimal',
-            statusLabel: curr > 1.8 ? '▲ HIGH JOULE HEATING' : '● OHMIC LINEARITY',
+            statusLabel: curr > 1.8 ? '▲ Wire getting warm' : '● Steady current',
             observationNote: `Current I = ${curr.toFixed(3)} A with internal lost volts Ir = ${(curr * rInt).toFixed(2)} V (open key between readings to keep T constant).`,
             metrics: [
               { label: 'Current I', value: curr.toFixed(3), unit: 'A' },
@@ -479,8 +479,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
     }
 
     return {
-      benchTitle: 'Hooke’s Law Spiral Spring & Mechanics Bench',
-      instrumentTag: 'Mirror-Scale Pointer · ±0.5 mm',
+      benchTitle: 'Stretching a spring with weights',
+      instrumentTag: 'Spring, ruler and slotted weights',
       sliders: [
         {
           id: 'mass',
@@ -515,7 +515,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
           primaryUnit: 'cm',
           equationHtml: 'F = ke &nbsp;·&nbsp; W = ½ke²',
           statusTone: extCm > 16 ? 'caution' : 'optimal',
-          statusLabel: extCm > 16 ? '▲ NEAR ELASTIC LIMIT' : '● PROPORTIONAL REGION',
+          statusLabel: extCm > 16 ? '▲ Near elastic limit' : '● Straight-line stretch',
           observationNote: `Load F = ${forceN.toFixed(2)} N produces extension e = ${extCm.toFixed(2)} cm and stores ${energyJ.toFixed(3)} J of elastic potential energy.`,
           metrics: [
             { label: 'Applied Force F', value: forceN.toFixed(2), unit: 'N' },
@@ -541,8 +541,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
   if (subj === 'bio') {
     if (id.includes('osmosis')) {
       return {
-        benchTitle: 'Potato Tissue Osmometer & Water Potential Rig',
-        instrumentTag: 'Sucrose Molarity Series · ±0.01 g',
+        benchTitle: 'Osmosis in potato strips',
+        instrumentTag: 'Sugar solutions and balance · ±0.01 g',
         sliders: [
           {
             id: 'molarity',
@@ -578,10 +578,10 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             equationHtml: '% Δm = [(m<sub>final</sub> − m<sub>initial</sub>) / m<sub>initial</sub>] × 100%',
             statusTone: isotonic ? 'endpoint' : pct > 0 ? 'optimal' : 'caution',
             statusLabel: isotonic
-              ? '◆ ISOTONIC POINT (Δm = 0%)'
+              ? '◆ No mass change (0%)'
               : pct > 0
-                ? '● TURGID (ENDOSMOSIS)'
-                : '▲ FLACCID (EXOSMOSIS)',
+                ? '● Strip gained water'
+                : '▲ Strip lost water',
             observationNote: isotonic
               ? `Zero net water movement at 0.30 mol dm⁻³ — external sucrose matches cell sap water potential!`
               : pct > 0
@@ -611,8 +611,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
 
     if (id.includes('photo') || id.includes('potometer') || lab.cat === 'physiology') {
       return {
-        benchTitle: 'Physiological Rate & Enzyme-Temperature Assay',
-        instrumentTag: 'Controlled Water-Bath Chamber',
+        benchTitle: 'Enzyme and leaf bubbles in a water bath',
+        instrumentTag: 'Water bath and lamp',
         sliders: [
           {
             id: 'temp',
@@ -652,10 +652,10 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             equationHtml: 'v = V<sub>max</sub>[S] / (K<sub>m</sub> + [S])',
             statusTone: opt ? 'endpoint' : denatured ? 'caution' : 'nominal',
             statusLabel: opt
-              ? '◆ OPTIMUM (~37 °C)'
+              ? '◆ Best temperature (~37 °C)'
               : denatured
-                ? '▲ ACTIVE-SITE DENATURATION'
-                : '● KINETIC RISE',
+                ? '▲ Too hot — enzyme damaged'
+                : '● Warming up',
             observationNote: denatured
               ? `Above 45 °C, thermal vibration breaks hydrogen bonds and irreversibly distorts the enzyme active site.`
               : `At ${temp} °C and ${light} klux, physiological rate reaches ${rate.toFixed(1)} bubbles min⁻¹.`,
@@ -680,8 +680,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
     }
 
     return {
-      benchTitle: 'Microscopy Magnification & Quadrat Population Counter',
-      instrumentTag: 'Calibrated Eyepiece Graticule',
+      benchTitle: 'Microscope magnification and quadrat count',
+      instrumentTag: 'Microscope lens and ruler',
       sliders: [
         {
           id: 'obj',
@@ -716,7 +716,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
           primaryUnit: '',
           equationHtml: 'Magnification = Drawing Size / Actual Specimen Size',
           statusTone: 'optimal',
-          statusLabel: `● COMPOUND ×${totalMag} VIEW`,
+          statusLabel: `● ×${totalMag} lens view`,
           observationNote: `Eyepiece (×10) × Objective (×${obj}) = ×${totalMag} optical power; biological drawing scale = ${drawMm} mm ÷ ${specMm} mm = ×${drawMag.toFixed(1)}.`,
           metrics: [
             { label: 'Optical Power', value: `×${totalMag}`, unit: '' },
@@ -742,8 +742,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
   if (subj === 'agric') {
     if (id === 'a-soil-ph' || id === 'a-soil-sediment' || id === 'a-soil-porosity') {
       return {
-        benchTitle: 'Agronomic Soil pH, Liming & Water-Retention Analyzer',
-        instrumentTag: 'Soil Testing Bench · CaCO₃ Equivalent',
+        benchTitle: 'Testing soil pH and adding lime',
+        instrumentTag: 'Soil pH meter and lime',
         sliders: [
           {
             id: 'lime',
@@ -781,10 +781,10 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             equationHtml: 'CaCO<sub>3</sub> + 2H<sup>+</sup>(soil) &nbsp;→&nbsp; Ca<sup>2+</sup> + CO<sub>2</sub>↑ + H<sub>2</sub>O',
             statusTone: sweetSpot ? 'endpoint' : ph < 5.5 ? 'caution' : 'nominal',
             statusLabel: sweetSpot
-              ? '◆ OPTIMAL ARABLE pH (6.0–7.0)'
+              ? '◆ Best crop pH (6.0–7.0)'
               : ph < 5.5
-                ? '▲ ACIDIC Al³⁺ TOXICITY'
-                : '● SLIGHTLY ALKALINE',
+                ? '▲ Too acidic'
+                : '● Slightly alkaline',
             observationNote: sweetSpot
               ? `At pH ${ph.toFixed(2)}, NPK availability peaks (${availP}% phosphorus unlocked) and nitrifying bacteria thrive.`
               : ph < 5.5
@@ -814,8 +814,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
 
     if (id === 'a-feed-ration' || lab.cat === 'livestock') {
       return {
-        benchTitle: 'Pearson Square Feed Ration & Crude Protein Formulator',
-        instrumentTag: 'Livestock Nutrition Studio · 100 kg Batch',
+        benchTitle: 'Mixing livestock feed (Pearson square)',
+        instrumentTag: 'Feed scale · 100 kg batch',
         sliders: [
           {
             id: 'targetCp',
@@ -855,8 +855,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
             statusTone: target >= 20 && target <= 23 ? 'endpoint' : 'optimal',
             statusLabel:
               target >= 20 && target <= 23
-                ? '◆ BROILER STARTER GRADE'
-                : '● BALANCED GROWER RATION',
+                ? '◆ Starter chick mix'
+                : '● Grower feed mix',
             observationNote: `Blend ${maizeKg.toFixed(1)} kg yellow maize (9% CP) with ${soyKg.toFixed(1)} kg cake (${soy}% CP) to hit exact ${target}% CP.`,
             metrics: [
               { label: 'Maize (9% CP)', value: maizeKg.toFixed(1), unit: 'kg' },
@@ -879,8 +879,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
     }
 
     return {
-      benchTitle: 'Mitscherlich NPK Fertilizer Yield & Seed Viability Rig',
-      instrumentTag: 'Field Plot Agronomy Telemetry',
+      benchTitle: 'Fertiliser rate and seed germination',
+      instrumentTag: 'Farm plot trial',
       sliders: [
         {
           id: 'nRate',
@@ -916,10 +916,10 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
           equationHtml: 'Germination % = (Viable Seeds / Total Tested) × 100% &nbsp;·&nbsp; Required Rate = Base / Germ',
           statusTone: opt ? 'endpoint' : germ < 75 ? 'caution' : 'nominal',
           statusLabel: opt
-            ? '◆ ECONOMIC OPTIMUM YIELD'
+            ? '◆ Best harvest yield'
             : germ < 75
-              ? '▲ LOW SEED VIABILITY'
-              : '● VEGETATIVE RESPONSE',
+              ? '▲ Low germination'
+              : '● Growing plot',
           observationNote: `At ${nRate} kg N ha⁻¹ and ${germ}% viability, maize plot yields ${yTons.toFixed(2)} t ha⁻¹ (adjust seed rate by ×${(100 / germ).toFixed(2)} to avoid gappy stands).`,
           metrics: [
             { label: 'Grain Yield', value: yTons.toFixed(2), unit: 't ha⁻¹' },
@@ -943,8 +943,8 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
 
   // ═══════════════════ MATHEMATICS GEOMETRIC & GRAPHICAL LABS ═══════════════════
   return {
-    benchTitle: 'Precision Compass, Protractor & Coordinate Locus Rig',
-    instrumentTag: 'Euclidean Verification Sandbox · ±0.1°',
+    benchTitle: 'Compass and protractor measurements',
+    instrumentTag: 'Ruler, compasses and protractor · ±0.1°',
     sliders: [
       {
         id: 'radius',
@@ -981,7 +981,7 @@ export function getLabSimulationSpec(lab: LabItem): LabSimulationSpec {
         primaryUnit: 'cm',
         equationHtml: '|AB| = 2r sin(θ / 2) &nbsp;·&nbsp; L = (θ / 360°) × 2πr',
         statusTone: compassExact ? 'endpoint' : 'nominal',
-        statusLabel: compassExact ? '◆ COMPASS-EXACT ANGLE' : '● PROTRACTOR CHECK',
+        statusLabel: compassExact ? '◆ Compass angle' : '● Protractor check',
         observationNote: `For r = ${r.toFixed(1)} cm and θ = ${deg}°, chord |AB| = ${chord.toFixed(2)} cm, arc length L = ${arc.toFixed(2)} cm, and sector area = ${sectorArea.toFixed(2)} cm².`,
         metrics: [
           { label: 'Arc Length L', value: arc.toFixed(2), unit: 'cm' },

@@ -1,7 +1,6 @@
 import type {
   MasteryThemeId,
   ThemeAppearanceMode,
-  ThemeLockMode,
   Topic,
   UserProgress,
 } from '../types';
@@ -11,7 +10,8 @@ import {
   getMasteryThemeById,
   type MasteryThemeDef,
 } from '../data/masteryThemes';
-import { predicted, subjTarget, tstate } from './engine';
+import { predicted, subjTarget, today, tstate } from './engine';
+import { hasActivePremium } from './paywallLogic';
 
 export interface GoalMasterySnapshot {
   /** 0..100 — student's earned progress toward their target mastery goal */
@@ -20,22 +20,18 @@ export interface GoalMasterySnapshot {
   currentPred: number;
   /** Student's target mastery score (50..95) */
   targetPct: number;
-  /** Highest stage number (1..10) unlocked by current goalPct */
+  /** Highest stage number (1..10) reached by current goalPct */
   highestUnlockedStage: number;
-  /** Theme definition for the highest unlocked stage */
+  /** Theme definition corresponding to highestUnlockedStage */
   highestUnlockedTheme: MasteryThemeDef;
-  /** Next locked theme milestone, or null if Stage 10 (100%) is reached */
+  /** Next milestone, or null if 100% is reached */
   nextTheme: MasteryThemeDef | null;
-  /** Remaining goal % points needed to unlock nextTheme */
+  /** Remaining goal % points to next milestone */
   pctToNextTheme: number;
 }
 
 /**
  * Computes deterministic, earned progress (0% -> 100%) toward the student's exam goal.
- * - A brand-new student with zero study activity starts cleanly at 0% (Stage 1).
- * - Completing lessons, practising questions accurately, and passing topic tests smoothly
- *   advances goalPct up to 100% (Stage 10) when the student reaches their target mastery
- *   or completes all topics in the track.
  */
 export function computeGoalProgress(
   progress: UserProgress,
@@ -67,14 +63,11 @@ export function computeGoalProgress(
 
   let goalPct = 0;
   if (hasAnyActivity && topics.length > 0) {
-    // Component A: Syllabus milestone progress (0..1)
     const syllabusRatio = Math.min(
       1,
       (passedCount + 0.55 * practicedOnlyCount + 0.3 * lessonOnlyCount) / totalTopics
     );
 
-    // Component B: Calibrated mastery score climb toward targetPct (baseline 45% -> targetPct)
-    // Scaled by topic coverage so answering 1 question doesn't jump straight to 100%
     const coverageWeight = Math.min(
       1,
       (attemptedTopics + passedCount + 0.5 * lessonOnlyCount) / Math.max(3, totalTopics * 0.35)
@@ -89,7 +82,6 @@ export function computeGoalProgress(
       goalPct = 100;
     } else {
       const blended = Math.max(syllabusRatio, 0.55 * syllabusRatio + 0.45 * calibratedScoreRatio);
-      // Give at least 2% once the student starts studying so progress feels alive immediately
       goalPct = Math.max(2, Math.min(99, Math.round(blended * 100)));
     }
   }
@@ -117,46 +109,56 @@ export function computeGoalProgress(
 }
 
 /**
- * Returns whether a given mastery theme can be selected right now.
- * - In `'unlocked'` mode (default Test & Preview mode), all 10 themes are selectable.
- * - In `'goal'` mode, themes unlock strictly as `goalPct >= theme.unlockGoalPct`.
+ * Returns true if the student holds active Premium access (or owner status).
+ * Deliberately independent of `CONFIG.PAYWALL` so extra colour themes stay
+ * reserved for Premium students while core study topics remain open.
+ */
+export function hasPremiumThemeAccess(
+  progress: Pick<UserProgress, 'pro' | 'owner'>,
+  currentDay = today()
+): boolean {
+  return hasActivePremium(progress, currentDay);
+}
+
+/**
+ * Returns whether a given colour theme can be selected by this student.
+ * - `Playful grape` (`!theme.premiumOnly`) is always available to every student.
+ * - Additional colour themes (`theme.premiumOnly`) require active Premium status.
  */
 export function isThemeUnlocked(
   theme: MasteryThemeDef,
-  goalPct: number,
-  lockMode: ThemeLockMode = 'unlocked'
+  progress: Pick<UserProgress, 'pro' | 'owner'> = { pro: null, owner: 0 },
+  currentDay = today()
 ): boolean {
-  if (lockMode === 'unlocked') return true;
-  return goalPct >= theme.unlockGoalPct;
+  if (!theme.premiumOnly) return true;
+  return hasPremiumThemeAccess(progress, currentDay);
 }
 
 /**
  * Resolves the effective MasteryThemeId to apply to `<html data-theme="...">`.
- * If `themeLockMode === 'goal'` and the stored theme exceeds the student's unlocked stage,
- * falls back cleanly to `highestUnlockedTheme.id`.
+ * Standard students always receive `stage-1-adire` (Playful grape), even if a
+ * previous session had saved a different stage theme. Premium students can use
+ * any theme they select.
  */
 export function resolveEffectiveThemeId(
-  progress: Pick<UserProgress, 'themeId' | 'themeLockMode'>,
-  goalPct: number
+  progress: Pick<UserProgress, 'themeId' | 'pro' | 'owner'>,
+  currentDay = today()
 ): MasteryThemeId {
-  const lockMode: ThemeLockMode = progress.themeLockMode || 'unlocked';
   const requested = getMasteryThemeById(progress.themeId || DEFAULT_MASTERY_THEME_ID);
-  if (isThemeUnlocked(requested, goalPct, lockMode)) {
+  if (isThemeUnlocked(requested, progress, currentDay)) {
     return requested.id;
   }
-  let best = MASTERY_THEMES[0];
-  for (const t of MASTERY_THEMES) {
-    if (goalPct >= t.unlockGoalPct) best = t;
-  }
-  return best.id;
+  return DEFAULT_MASTERY_THEME_ID;
 }
 
 /**
  * Resolves the active Light or Dark appearance mode (`'light' | 'dark'`).
- * Students can freely choose Light or Dark at any Mastery Stage.
+ * Light and Dark mode are open to every student (including during the 3-day starter trial);
+ * only the 9 extra colour palettes are locked behind a subscription.
  */
 export function resolveEffectiveThemeMode(
-  progress: Pick<UserProgress, 'themeMode'>
+  progress: Pick<UserProgress, 'themeMode'>,
+  _currentDay = today()
 ): ThemeAppearanceMode {
   return progress.themeMode === 'dark' ? 'dark' : 'light';
 }

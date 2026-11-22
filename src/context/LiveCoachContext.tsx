@@ -1,19 +1,20 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { SubjectId } from '../types';
 import type { ChemLessonVoiceContext } from '../utils/chemVoiceLogic';
 
-export type LiveCoachMode =
-  | 'chem'
-  | 'math'
-  | 'fmath'
-  | 'phys'
-  | 'bio'
-  | 'agric'
-  | 'geog'
-  | 'econ'
-  | 'eng'
-  | 'civic'
-  | 'digitech'
-  | 'dataproc';
+export type LiveCoachMode = SubjectId | 'math' | 'fmath';
+
+export function subjectToLiveCoachMode(subj: SubjectId): LiveCoachMode {
+  if (subj === 'maths') return 'math';
+  if (subj === 'fmaths') return 'fmath';
+  return subj;
+}
+
+export function liveCoachModeToSubjectId(mode: LiveCoachMode | 'mathLab'): SubjectId {
+  if (mode === 'math' || mode === 'mathLab') return 'maths';
+  if (mode === 'fmath') return 'fmaths';
+  return mode;
+}
 
 export interface ActiveLiveContextEntry {
   stepKey: string;
@@ -29,12 +30,12 @@ interface LiveCoachRegistryValue {
 
 const DEFAULT_ENTRY: ActiveLiveContextEntry = {
   stepKey: 'global-home',
-  mode: 'math',
+  mode: 'eng',
   context: {
     topicName: 'EYAK Studio',
-    partTitle: 'SS1–SS3 National Learning',
+    partTitle: 'Nigerian JAMB and WAEC Learning',
     stepLabel: 'Overview',
-    stepText: 'Ask any SS1–SS3 Mathematics, Further Mathematics, Chemistry, Physics, Biology, Agricultural Science, Geography, Economics, English, Civic Education, Digital Technologies, or Data Processing question aloud.',
+    stepText: 'Ask any question across all 49 JAMB UTME and WAEC/NECO subjects aloud.',
   },
 };
 

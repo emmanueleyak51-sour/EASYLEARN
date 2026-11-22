@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
 import type { LabItem, SubjectId } from '../../types';
 import { BLAB_CATS } from '../../data/bioLabs';
 import {
@@ -24,7 +23,7 @@ import { playLabFoleySchedule } from '../../utils/sound';
 import { Icon, LabGlyph } from '../Icons';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
 import { SubscreenTopBar } from '../AppShell';
-import { LIQUID_CAPSULE_SPRING } from '../ULessonMotion';
+import { LiquidCapsuleBar, SmoothCollapse, SmoothViewSwitch } from '../ULessonMotion';
 
 const CHEM_CAT_SHORT: Record<string, string> = {
   q: 'Volumetric',
@@ -125,15 +124,15 @@ function InteractiveLabInstrumentDeck({ lab }: { lab: LabItem }) {
       {/* Instrument Header + Dual-Coded Status Telemetry */}
       <div className="flex flex-wrap items-start justify-between gap-2.5 border-b border-[#24493B] pb-3">
         <div>
-          <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#FFC531]">
-            Interactive Virtual Instrument · {spec.instrumentTag}
+          <span className="text-[11.5px] font-bold text-[#FFC531]">
+            Try it yourself · {spec.instrumentTag}
           </span>
           <h3 className="font-[var(--display)] font-bold text-[16.5px] text-white mt-0.5">
             {spec.benchTitle}
           </h3>
         </div>
         <span
-          className={`px-2.5 py-1 rounded-lg border text-[11px] font-extrabold tracking-wider uppercase whitespace-nowrap ${statusPillCls}`}
+          className={`px-2.5 py-1 rounded-lg border text-[11.5px] font-bold whitespace-nowrap ${statusPillCls}`}
         >
           {evalResult.statusLabel}
         </span>
@@ -361,8 +360,8 @@ function InteractiveLabInstrumentDeck({ lab }: { lab: LabItem }) {
       {trials.length > 0 && (
         <div className="rounded-xl bg-[#0C1D16] border border-[#285240] p-3 flex flex-col gap-2 anim-rise">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#9ED6B5]">
-              Observation Data Logger ({trials.length} {trials.length === 1 ? 'trial' : 'trials'} recorded)
+            <span className="text-[11.5px] font-bold text-[#9ED6B5]">
+              Recorded readings ({trials.length} {trials.length === 1 ? 'trial' : 'trials'})
             </span>
             <button
               type="button"
@@ -513,7 +512,6 @@ export function LabListScreen({
   onOpenLabItem: (id: string) => void;
   onOpenFormulas?: () => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const [catFilter, setCatFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -627,9 +625,10 @@ export function LabListScreen({
     return firstWithPending?.title || groups[0]?.title || '';
   }, [groups, flags]);
 
+  const hasExplicitToggle = Object.keys(expandedGroups).length > 0;
   const isGroupExpanded = (title: string): boolean => {
     if (isFiltering || expandAllGroups) return true;
-    if (title in expandedGroups) return expandedGroups[title];
+    if (hasExplicitToggle) return Boolean(expandedGroups[title]);
     return title === defaultOpenGroupTitle;
   };
 
@@ -640,17 +639,7 @@ export function LabListScreen({
   return (
     <div className="flex flex-col gap-5 anim-rise">
       <SubscreenTopBar
-        title={
-          subj === 'chem'
-            ? 'Chemistry Practicals Lab'
-            : subj === 'phys'
-              ? 'Physics Practicals Lab'
-              : subj === 'bio'
-                ? 'Biology Practicals Lab'
-                : subj === 'agric'
-                  ? 'Agricultural Science Practicals Lab'
-                  : 'Maths Constructions Lab'
-        }
+        title="Labs"
         subtitle={`${SUBJECT_INFO[subj].name} · ${completedCount} of ${labs.length} ${
           isPracticalSubj ? 'practicals' : 'constructions'
         } completed`}
@@ -663,7 +652,7 @@ export function LabListScreen({
               className="min-h-[38px] px-3.5 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] text-[12.5px] font-bold flex items-center gap-1.5 shadow-[0_2px_0_var(--acc-d)] cursor-pointer whitespace-nowrap shrink-0"
             >
               <Icon name="sigma" size={15} />
-              <span>Formula Studio</span>
+              <span>Formulas</span>
             </button>
           ) : undefined
         }
@@ -677,10 +666,10 @@ export function LabListScreen({
               <LabGlyph id={recommendedLab.id} size={25} />
             </span>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[11.5px] font-extrabold uppercase tracking-wider">
-                <span className="text-[var(--gold)]">Recommended Next {isPracticalSubj ? 'Practical' : 'Construction'}</span>
+              <div className="flex items-center gap-2 text-[12px] font-bold">
+                <span className="text-[var(--gold)]">Next {isPracticalSubj ? 'practical' : 'construction'}</span>
                 <span aria-hidden="true" className="text-[var(--dim)]">·</span>
-                <span className="text-[var(--green)] normal-case font-bold">~3 min interactive bench</span>
+                <span className="text-[var(--green)] font-bold">~3 min interactive bench</span>
               </div>
               <h2 className="h20 text-[var(--ink)] mt-0.5 truncate">{recommendedLab.name}</h2>
               <p
@@ -704,8 +693,8 @@ export function LabListScreen({
       {/* Category Filter + Search Bar */}
       <div className="rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-[0_2px_0_var(--line)] p-4 flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <span className="text-[12px] font-extrabold uppercase tracking-wider text-[var(--dim)]">
-            Filter by {isPracticalSubj ? 'practical category' : 'construction group'} ({filteredLabs.length} shown)
+          <span className="text-[12.5px] font-bold text-[var(--dim)]">
+            Filter by {isPracticalSubj ? 'category' : 'group'} ({filteredLabs.length} shown)
           </span>
           <div className="relative sm:w-[300px] shrink-0">
             <input
@@ -751,40 +740,18 @@ export function LabListScreen({
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="overflow-x-auto max-w-full pb-0.5">
-            <div
-              role="group"
-              aria-label="Filter lab experiments by category"
-              className="inline-flex items-center gap-0.5 p-1 rounded-full bg-[var(--deep)] border border-[var(--line)]"
-            >
-              {catTabs.map((tab) => {
-                const active = catFilter === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setCatFilter(tab.id)}
-                    className={`relative min-h-[34px] px-3.5 rounded-full text-[12.5px] font-bold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
-                      active
-                        ? 'text-[#0F172A]'
-                        : 'text-[var(--dim)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId={`lab-cat-capsule-${subj}`}
-                        transition={reduceMotion ? { duration: 0 } : LIQUID_CAPSULE_SPRING}
-                        className="absolute inset-0 rounded-full bg-white shadow-[0_1px_3px_rgba(15,23,42,0.16)]"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <span className="relative z-10 tabular-nums">
-                      {tab.label} ({tab.count})
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <LiquidCapsuleBar
+              roleType="group"
+              size="sm"
+              pillRadiusPx={999}
+              ariaLabel="Filter lab experiments by category"
+              items={catTabs.map((tab) => ({
+                id: tab.id,
+                label: `${tab.label} (${tab.count})`,
+              }))}
+              value={catFilter}
+              onChange={setCatFilter}
+            />
           </div>
 
           {!isFiltering && groups.length > 1 && (
@@ -819,29 +786,40 @@ export function LabListScreen({
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <SmoothViewSwitch viewKey={catFilter} className="flex flex-col gap-3">
           {groups.map((group) => {
             const open = isGroupExpanded(group.title);
             const groupDone = group.items.filter((it) => !!flags[`lab:${it.id}`]).length;
             return (
               <section
                 key={group.title}
-                className="rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-[0_2px_0_var(--line)] overflow-hidden"
+                className="rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-[0_2px_0_var(--line)] overflow-hidden transition-colors"
               >
                 <button
                   type="button"
                   aria-expanded={open}
-                  onClick={() =>
-                    setExpandedGroups((prev) => ({
-                      ...prev,
-                      [group.title]: !open,
-                    }))
-                  }
-                  className="w-full px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-[var(--bg)]/60 transition cursor-pointer"
+                  onClick={() => {
+                    if (expandAllGroups) {
+                      const nextMap: Record<string, boolean> = {};
+                      for (const g of groups) {
+                        nextMap[g.title] = g.title !== group.title;
+                      }
+                      setExpandAllGroups(false);
+                      setExpandedGroups(nextMap);
+                    } else if (isFiltering) {
+                      setExpandedGroups((prev) => ({
+                        ...prev,
+                        [group.title]: !open,
+                      }));
+                    } else {
+                      setExpandedGroups(open ? { [group.title]: false } : { [group.title]: true });
+                    }
+                  }}
+                  className="w-full px-3.5 sm:px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-[var(--bg)]/60 transition cursor-pointer"
                 >
                   <div>
                     <h2 className="h18 text-[var(--ink)]">{group.title}</h2>
-                    <p className="text-[12.5px] text-[var(--dim)] mt-0.5">
+                    <p className="text-[12px] text-[var(--dim)] mt-0.5">
                       {group.items.length}{' '}
                       {group.items.length === 1
                         ? isPracticalSubj
@@ -853,22 +831,30 @@ export function LabListScreen({
                       (~3 min each)
                     </p>
                   </div>
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <span className="text-[12.5px] font-bold text-[var(--dim)] tabular-nums">
-                      {groupDone}/{group.items.length} done
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-[12.5px] font-extrabold tabular-nums ${
+                        groupDone === group.items.length && group.items.length > 0
+                          ? 'text-[var(--green)]'
+                          : groupDone > 0
+                            ? 'text-[var(--gold)]'
+                            : 'text-[var(--dim)]'
+                      }`}
+                    >
+                      {group.items.length ? Math.round((groupDone / group.items.length) * 100) : 0}%
                     </span>
-                    <span className="w-7 h-7 rounded-lg bg-[var(--bg)] border border-[var(--line)] flex items-center justify-center text-[var(--dim)]">
+                    <span className="w-6 h-6 rounded-md bg-[var(--bg)] border border-[var(--line)] flex items-center justify-center text-[var(--dim)]">
                       <Icon
                         name="go"
-                        size={14}
+                        size={13}
                         className={`transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
                       />
                     </span>
                   </div>
                 </button>
 
-                {open && (
-                  <div className="px-4 sm:px-5 pb-4 pt-1 border-t border-[var(--line)]/70 stagger-grid grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <SmoothCollapse open={open}>
+                  <div className="px-3.5 sm:px-4 pb-3.5 pt-2 border-t border-[var(--line)]/70 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {group.items.map((item) => {
                       const isDone = !!flags[`lab:${item.id}`];
                       const stepCount = item.steps().length;
@@ -877,24 +863,24 @@ export function LabListScreen({
                           key={item.id}
                           type="button"
                           onClick={() => onOpenLabItem(item.id)}
-                          className={`study-card text-left rounded-2xl border p-4 flex items-center gap-3.5 cursor-pointer ${
+                          className={`study-card text-left rounded-xl border px-3 py-2.5 sm:px-3.5 sm:py-3 flex items-center gap-3 cursor-pointer ${
                             isDone
-                              ? 'bg-[var(--ok-soft)]/50 border-[var(--ok-line)] shadow-[0_2px_0_var(--ok-line)]'
+                              ? 'bg-[var(--ok-soft)]/50 border-[var(--ok-line)]'
                               : 'bg-[var(--bg)]/55 border-[var(--line)] hover:border-[var(--acc-line)] hover:bg-[var(--card)]'
                           }`}
                         >
-                          <span className="w-11 h-11 rounded-xl bg-[#1C3D31] text-[#FFC531] flex items-center justify-center shrink-0 shadow-[0_2px_0_#10261D]">
-                            <LabGlyph id={item.id} size={24} />
+                          <span className="w-9 h-9 rounded-lg bg-[#1C3D31] text-[#FFC531] flex items-center justify-center shrink-0 shadow-[0_2px_0_#10261D]">
+                            <LabGlyph id={item.id} size={20} />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="font-[var(--display)] font-bold text-[15.5px] text-[var(--ink)] leading-snug">
+                            <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] leading-snug">
                               {item.name}
                             </div>
                             <div
-                              className="text-[13px] text-[var(--dim)] truncate mt-0.5"
+                              className="text-[12px] text-[var(--dim)] truncate mt-0.5"
                               dangerouslySetInnerHTML={{ __html: item.blurb }}
                             />
-                            <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--dim)] mt-1 tabular-nums">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--dim)] mt-0.5 tabular-nums">
                               <span>{stepCount} steps</span>
                               <span aria-hidden="true">·</span>
                               <span>+Viva check</span>
@@ -908,18 +894,18 @@ export function LabListScreen({
                           </div>
                           <Icon
                             name={isDone ? 'check' : 'go'}
-                            size={17}
+                            size={15}
                             className={isDone ? 'text-[var(--green)] shrink-0' : 'text-[var(--dim)] shrink-0'}
                           />
                         </button>
                       );
                     })}
                   </div>
-                )}
+                </SmoothCollapse>
               </section>
             );
           })}
-        </div>
+        </SmoothViewSwitch>
       )}
     </div>
   );
@@ -1253,8 +1239,8 @@ export function LabPlayerScreen({
             {/* Collapsible Apparatus & Instruments Tray */}
             {showEquipment && (
               <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] anim-rise">
-                <span className="font-extrabold uppercase tracking-wider text-[10.5px] text-[var(--gold)]">
-                  {isChem || isPhys || isBio || isAgric ? 'Bench Setup:' : 'Tools Used:'}
+                <span className="font-bold text-[11.5px] text-[var(--gold)]">
+                  {isChem || isPhys || isBio || isAgric ? 'Bench setup:' : 'Tools used:'}
                 </span>
                 {equipmentList.map((eq, idx) => (
                   <span key={eq} className="font-semibold text-[var(--ink)] inline-flex items-center gap-1.5">
@@ -1443,8 +1429,8 @@ export function LabPlayerScreen({
           {/* Full Interactive Procedure Log — Click any step to inspect */}
           <div className="rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-[0_2px_0_var(--line)] p-3.5 flex flex-col gap-2">
             <div className="flex items-center justify-between px-1">
-              <span className="text-[11.5px] font-extrabold uppercase tracking-wider text-[var(--dim)]">
-                Full Procedure ({steps.length} steps)
+              <span className="text-[12px] font-bold text-[var(--dim)]">
+                All steps ({steps.length})
               </span>
               <span className="text-[11.5px] font-semibold text-[var(--dim)]">
                 Tap any step to jump
@@ -1540,7 +1526,7 @@ export function LabPlayerScreen({
                         isCrossed ? 'opacity-45' : ''
                       }`}
                     >
-                      <span className="w-6 h-6 rounded-md bg-[var(--deep)] border border-[var(--line)] text-[12px] font-extrabold flex items-center justify-center shrink-0">
+                      <span className="opt-bubble">
                         {String.fromCharCode(65 + idx)}
                       </span>
                       <span

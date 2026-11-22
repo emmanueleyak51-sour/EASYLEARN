@@ -16,52 +16,56 @@ export interface MasteryThemeDef {
   stage: number; // 1..10
   name: string;
   tierLabel: string;
-  unlockGoalPct: number; // 0..100 (% of student's target mastery goal)
+  premiumOnly: boolean;
+  unlockGoalPct: number;
   tagline: string;
   lightPreview: ThemePreviewPalette;
   darkPreview: ThemePreviewPalette;
 }
 
 /**
- * 10 Platform-Wide Mastery Progression Themes — each supporting both Light and Dark mode.
- * Each stage represents a milestone from 0% to 100% of the student's exam mastery goal.
+ * Platform colour themes — each supporting both Light and Dark mode.
+ * Playful grape (`stage-1-adire`) is the standard theme for all students.
+ * The remaining 9 themes are reserved for Premium students.
  */
 export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-1-adire',
     stage: 1,
-    name: 'Adire Indigo',
-    tierLabel: 'Fresh Starter',
+    name: 'Playful grape',
+    tierLabel: 'Standard theme',
+    premiumOnly: false,
     unlockGoalPct: 0,
-    tagline: 'Studio slate & royal Adire indigo for day one.',
+    tagline: 'Signature lavender paper and lively grape for calm daily study.',
     lightPreview: {
-      bg: '#EEF1F7',
+      bg: '#F5F1FF',
       card: '#FFFFFF',
-      line: '#D6DDE9',
-      ink: '#141C33',
-      accent: '#3346DB',
-      heroStart: '#2435BC',
-      heroEnd: '#4256EC',
-      badge: '#FFD84D',
+      line: '#E2DAFB',
+      ink: '#241A45',
+      accent: '#5B2BD6',
+      heroStart: '#4920B5',
+      heroEnd: '#6B3FE6',
+      badge: '#FFE1D1',
     },
     darkPreview: {
-      bg: '#0D1222',
-      card: '#151D35',
-      line: '#263357',
-      ink: '#EEF2FF',
-      accent: '#6376FF',
-      heroStart: '#19267A',
-      heroEnd: '#3B4FE4',
-      badge: '#FFD84D',
+      bg: '#15102B',
+      card: '#1E1739',
+      line: '#34295F',
+      ink: '#F1ECFF',
+      accent: '#9D7BFF',
+      heroStart: '#2A2052',
+      heroEnd: '#6A45E0',
+      badge: '#FFE1D1',
     },
   },
   {
     id: 'stage-2-savanna',
     stage: 2,
-    name: 'Savanna Sunrise',
-    tierLabel: 'Early Momentum',
+    name: 'Savanna sunrise',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 12,
-    tagline: 'Warm linen & glowing terracotta amber.',
+    tagline: 'Warm linen and glowing terracotta amber.',
     lightPreview: {
       bg: '#F6EFE6',
       card: '#FFFDF9',
@@ -86,10 +90,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-3-jade',
     stage: 3,
-    name: 'Rainforest Jade',
-    tierLabel: 'Growing Roots',
+    name: 'Rainforest jade',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 24,
-    tagline: 'Botanical mist & deep canopy emerald focus.',
+    tagline: 'Botanical mist and deep canopy emerald focus.',
     lightPreview: {
       bg: '#EAF4EE',
       card: '#FAFFFC',
@@ -114,10 +119,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-4-lagoon',
     stage: 4,
-    name: 'Atlantic Lagoon',
-    tierLabel: 'Steady Current',
+    name: 'Atlantic lagoon',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 36,
-    tagline: 'Coastal sky surfaces & crisp cerulean marine ink.',
+    tagline: 'Coastal sky surfaces and crisp cerulean marine ink.',
     lightPreview: {
       bg: '#E9F3F8',
       card: '#FAFDFF',
@@ -142,10 +148,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-5-garnet',
     stage: 5,
-    name: 'Harmattan Garnet',
-    tierLabel: 'Halfway Fire',
+    name: 'Harmattan garnet',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 48,
-    tagline: 'Rose-vellum canvas & scholarly crimson garnet.',
+    tagline: 'Rose-vellum canvas and scholarly crimson garnet.',
     lightPreview: {
       bg: '#F7EDF0',
       card: '#FFFBFC',
@@ -170,10 +177,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-6-bronze',
     stage: 6,
-    name: 'Benin Bronze',
-    tierLabel: 'Forged Precision',
+    name: 'Benin bronze',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 60,
-    tagline: 'Sculpted limestone & burnished court copper-bronze.',
+    tagline: 'Sculpted limestone and burnished court copper-bronze.',
     lightPreview: {
       bg: '#F2ECE1',
       card: '#FDFBF6',
@@ -198,8 +206,9 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-7-plum',
     stage: 7,
-    name: 'Imperial Mulberry',
-    tierLabel: 'Commanding Range',
+    name: 'Imperial mulberry',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 72,
     tagline: 'Orchid stone paired with regal mulberry violet.',
     lightPreview: {
@@ -226,10 +235,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-8-scholar',
     stage: 8,
-    name: 'Archive Emerald',
-    tierLabel: 'Distinction Bound',
+    name: 'Archive emerald',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 84,
-    tagline: 'Collegiate library vellum, bottle-green leather & brass.',
+    tagline: 'Collegiate library vellum, bottle-green leather and brass.',
     lightPreview: {
       bg: '#F1EFE3',
       card: '#FFFEF9',
@@ -254,10 +264,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-9-starlight',
     stage: 9,
-    name: 'Starlight Observatory',
-    tierLabel: 'Near-Target Elite',
+    name: 'Starlight observatory',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 94,
-    tagline: 'Astral slate & luminous sapphire observatory focus.',
+    tagline: 'Astral slate and luminous sapphire observatory focus.',
     lightPreview: {
       bg: '#ECF2FA',
       card: '#FFFFFF',
@@ -282,10 +293,11 @@ export const MASTERY_THEMES: readonly MasteryThemeDef[] = [
   {
     id: 'stage-10-chancellor',
     stage: 10,
-    name: 'Chancellor Obsidian',
-    tierLabel: 'Goal Mastered',
+    name: 'Chancellor obsidian',
+    tierLabel: 'Premium theme',
+    premiumOnly: true,
     unlockGoalPct: 100,
-    tagline: 'Sovereign ivory or onyx & gleaming academic gold.',
+    tagline: 'Sovereign ivory or onyx and gleaming academic gold.',
     lightPreview: {
       bg: '#F4EFE4',
       card: '#FFFDF8',

@@ -12,6 +12,8 @@ import type {
   TopicTestSession,
   UserProgress,
 } from './types';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
 import {
   BOSS_HP,
   BOSS_TIME,
@@ -21,6 +23,7 @@ import {
   dueList,
   dxList,
   evaluateNewBadges,
+  isTopicLocked,
   makeBlankProgress,
   mastery,
   pickPractice,
@@ -33,6 +36,7 @@ import {
 import {
   SUBJECT_IDS,
   findQuestion,
+  getAllTopicsBySubj,
   getInteractiveLesson,
   getTopic,
   getTopics,
@@ -46,8 +50,10 @@ import {
   isSessionUnlocked,
   setSessionUnlocked,
 } from './utils/authAccounts';
+import { getMasteryThemeById } from './data/masteryThemes';
 import {
-  computeGoalProgress,
+  hasPremiumThemeAccess,
+  isThemeUnlocked,
   resolveEffectiveThemeId,
   resolveEffectiveThemeMode,
 } from './utils/masteryThemeLogic';
@@ -59,7 +65,12 @@ import { AppShell, type MainTab } from './components/AppShell';
 import { ClockFormatProvider } from './components/WatClock';
 import { FloatingLiveCoach } from './components/FloatingLiveCoach';
 import { BadgeUnlockCelebration, type XpBurstItem } from './components/FxCelebration';
-import { LiveCoachProvider, type ActiveLiveContextEntry } from './context/LiveCoachContext';
+import {
+  LiveCoachProvider,
+  subjectToLiveCoachMode,
+  type ActiveLiveContextEntry,
+} from './context/LiveCoachContext';
+import { SUBJECT_TUTOR_REGISTRY } from './utils/tutorRegistry';
 import { DxIntroScreen, WelcomeScreen } from './components/screens/OnboardingScreen';
 import { HomeScreen } from './components/screens/HomeScreen';
 import { TopicsMapScreen } from './components/screens/TopicsMapScreen';
@@ -69,7 +80,9 @@ import { LessonScreen } from './components/screens/LessonScreen';
 import { QuizScreen, SummaryScreen } from './components/screens/QuizScreen';
 import { TopicTestScreen } from './components/screens/TopicTestScreen';
 import { LabListScreen, LabPlayerScreen } from './components/screens/LabScreens';
+import { SubjectStudioScreen } from './components/screens/SubjectStudioScreen';
 import { ChemFormulasScreen } from './components/screens/ChemFormulasScreen';
+import { hasFormulaSheet, hasSubjectStudio } from './utils/subjectStudioMeta';
 import { ReviewScreen } from './components/screens/ReviewScreen';
 import { AccountScreen, SubjectsScreen } from './components/screens/AccountScreen';
 import { CbtExamScreen } from './components/screens/CbtExamScreen';
@@ -81,16 +94,64 @@ import { TranscriptScreen } from './components/screens/TranscriptScreen';
 import { PeerDuelScreen } from './components/screens/PeerDuelScreen';
 import { LeaderboardScreen } from './components/screens/LeaderboardScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { CloudSyncProvider } from './context/CloudSyncContext';
+import { CloudSyncProvider, mergeCloudProgress } from './context/CloudSyncContext';
+import { installCopyProtection } from './utils/copyProtection';
 import { OfflineIndicator } from './components/PWAInstallBanner';
 import { redeemMistakeRecord, upsertMistakeRecord } from './utils/mistakeVaultLogic';
 import { parseDuelCode } from './utils/peerDuelLogic';
-import type { StudyPlanConfig } from './utils/studyPlannerLogic';
+import { getDefaultStudyPlan, type StudyPlanConfig } from './utils/studyPlannerLogic';
+import { isJambSubject } from './utils/examSubjects';
+import {
+  getSaturdayCbtCampaign,
+  getToughJambDrillConfig,
+  normalizeJambQuartet,
+  resolveExamTrack,
+} from './utils/examTrackLogic';
+import { ExamSetupScreen, type ExamSetupResult } from './components/screens/ExamSetupScreen';
 import { QuestionBankManagerModal, type QuestionBankTab } from './components/QuestionBankManagerModal';
+import { PaywallModal } from './components/PaywallModal';
+import { EntitlementProvider } from './context/EntitlementContext';
+import {
+  FREE_TRIAL_DAYS,
+  computeTrialStatus,
+  generateDeviceSecretToken,
+  hasActivePremium,
+  isValidDeviceSecretToken,
+  isValidPaystackReference,
+  verifySignedProReceiptAsync,
+  verifySignedTrialReceiptAsync,
+} from './utils/paywallLogic';
+
+const ENTITLEMENT_PUBKEY_STORAGE_KEY = 'rtc_pub_jwk_v1';
+
+function loadCachedEntitlementPubKey(): JsonWebKey | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = window.localStorage.getItem(ENTITLEMENT_PUBKEY_STORAGE_KEY);
+    if (!raw || raw.length > 2048) return null;
+    const jwk = JSON.parse(raw) as JsonWebKey;
+    if (jwk && jwk.kty === 'EC' && jwk.crv === 'P-256' && typeof jwk.x === 'string' && typeof jwk.y === 'string') {
+      return jwk;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function saveCachedEntitlementPubKey(jwk: JsonWebKey | null | undefined): void {
+  if (!jwk || jwk.kty !== 'EC' || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ENTITLEMENT_PUBKEY_STORAGE_KEY, JSON.stringify(jwk));
+  } catch {
+    /* ignore */
+  }
+}
 
 function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenName; initialDuelCode: string | null } {
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const autostart = params?.get('autostart') === '1';
+  const screenParam = params?.get('screen');
   const duelParam = params?.get('duel') || null;
   const parsedDuel = duelParam ? parseDuelCode(duelParam) : null;
 
@@ -121,9 +182,29 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
       ) as SubjectId[])
     : [];
 
+  const safeDevToken = isValidDeviceSecretToken(parsed?.devToken)
+    ? parsed.devToken.trim()
+    : base.devToken || generateDeviceSecretToken();
+
+  const curDay = today();
+  const safeTrial =
+    parsed?.trial &&
+    typeof parsed.trial === 'object' &&
+    Number.isFinite(Number(parsed.trial.startedDay))
+      ? {
+          startedDay: Math.min(curDay, Math.floor(Number(parsed.trial.startedDay))),
+          untilDay:
+            Math.min(curDay, Math.floor(Number(parsed.trial.startedDay))) + FREE_TRIAL_DAYS - 1,
+          sig: typeof parsed.trial.sig === 'string' ? parsed.trial.sig : undefined,
+        }
+      : null;
+
   const merged: UserProgress = {
     ...base,
     ...parsed,
+    owner: 0,
+    devToken: safeDevToken,
+    trial: safeTrial,
     name: typeof parsed?.name === 'string' ? parsed.name.trim().slice(0, 60) : base.name,
     target: safeTarget,
     subj: safeSubj,
@@ -139,98 +220,7 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
     subjs: safeSubjs.length > 0 ? safeSubjs : base.subjs,
   };
 
-  // One-time migrations so returning localStorage users automatically see English & Physics
-  if (!merged.flags['migrated:eng_v1']) {
-    if (!merged.subjs.includes('eng')) {
-      merged.subjs = [...merged.subjs, 'eng'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:eng_v1': 1 };
-  }
-  if (!merged.flags['migrated:phys_v1']) {
-    if (!merged.subjs.includes('phys')) {
-      merged.subjs = [...merged.subjs, 'phys'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:phys_v1': 1 };
-  }
-  if (!merged.flags['migrated:bio_v1']) {
-    if (!merged.subjs.includes('bio')) {
-      const engIdx = merged.subjs.indexOf('eng');
-      if (engIdx >= 0) {
-        merged.subjs = [
-          ...merged.subjs.slice(0, engIdx),
-          'bio',
-          ...merged.subjs.slice(engIdx),
-        ];
-      } else {
-        merged.subjs = [...merged.subjs, 'bio'];
-      }
-    }
-    merged.flags = { ...merged.flags, 'migrated:bio_v1': 1 };
-  }
-  if (!merged.flags['migrated:econ_v1']) {
-    if (!merged.subjs.includes('econ')) {
-      const engIdx = merged.subjs.indexOf('eng');
-      if (engIdx >= 0) {
-        merged.subjs = [
-          ...merged.subjs.slice(0, engIdx),
-          'econ',
-          ...merged.subjs.slice(engIdx),
-        ];
-      } else {
-        merged.subjs = [...merged.subjs, 'econ'];
-      }
-    }
-    merged.flags = { ...merged.flags, 'migrated:econ_v1': 1 };
-  }
-  if (!merged.flags['migrated:agric_v1']) {
-    if (!merged.subjs.includes('agric')) {
-      const econIdx = merged.subjs.indexOf('econ');
-      const engIdx = merged.subjs.indexOf('eng');
-      const insertIdx = econIdx >= 0 ? econIdx : engIdx;
-      if (insertIdx >= 0) {
-        merged.subjs = [
-          ...merged.subjs.slice(0, insertIdx),
-          'agric',
-          ...merged.subjs.slice(insertIdx),
-        ];
-      } else {
-        merged.subjs = [...merged.subjs, 'agric'];
-      }
-    }
-    merged.flags = { ...merged.flags, 'migrated:agric_v1': 1 };
-  }
-  if (!merged.flags['migrated:civic_v1']) {
-    if (!merged.subjs.includes('civic')) {
-      merged.subjs = [...merged.subjs, 'civic'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:civic_v1': 1 };
-  }
-  if (!merged.flags['migrated:fmaths_v1']) {
-    if (!merged.subjs.includes('fmaths')) {
-      merged.subjs = [...merged.subjs, 'fmaths'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:fmaths_v1': 1 };
-  }
-  if (!merged.flags['migrated:geog_v1']) {
-    if (!merged.subjs.includes('geog')) {
-      merged.subjs = [...merged.subjs, 'geog'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:geog_v1': 1 };
-  }
-  if (!merged.flags['migrated:digitech_v1']) {
-    if (!merged.subjs.includes('digitech')) {
-      merged.subjs = [...merged.subjs, 'digitech'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:digitech_v1': 1 };
-  }
-  if (!merged.flags['migrated:dataproc_v1']) {
-    if (!merged.subjs.includes('dataproc')) {
-      merged.subjs = [...merged.subjs, 'dataproc'];
-    }
-    merged.flags = { ...merged.flags, 'migrated:dataproc_v1': 1 };
-  }
-
-  // Keep enrolled subjects in clean canonical 12-subject order
+  // Keep enrolled subjects in clean canonical 49-subject order
   const canonicalSubjs = SUBJECT_IDS.filter((id) => merged.subjs.includes(id));
   if (canonicalSubjs.length > 0) {
     merged.subjs = canonicalSubjs;
@@ -260,8 +250,7 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
   }
 
   if (typeof document !== 'undefined') {
-    const initGoal = computeGoalProgress(merged, getTopics(merged.subj));
-    const initTheme = resolveEffectiveThemeId(merged, initGoal.goalPct);
+    const initTheme = resolveEffectiveThemeId(merged);
     const initMode = resolveEffectiveThemeMode(merged);
     document.documentElement.dataset.theme = initTheme;
     document.documentElement.dataset.mode = initMode;
@@ -277,6 +266,19 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
       merged.ob = 1;
     }
     return { progress: merged, startScreen: 'duel', initialDuelCode: parsedDuel.code };
+  }
+
+  if (screenParam === 'examsetup') {
+    setSessionUnlocked();
+    if (!merged.name) {
+      merged.name = 'Ada';
+      merged.ob = 1;
+    }
+    return { progress: merged, startScreen: 'examsetup', initialDuelCode: null };
+  }
+
+  if (!autostart && merged.name && isSessionUnlocked() && !merged.flags?.examSetupDone) {
+    return { progress: merged, startScreen: 'examsetup', initialDuelCode: null };
   }
 
   if (autostart || (merged.name && isSessionUnlocked())) {
@@ -304,8 +306,10 @@ export default function App() {
   const [activeTopicId, setActiveTopicId] = useState<string>('quad');
   const [activeLabId, setActiveLabId] = useState<string>('bisect-line');
   const [labReturnScreen, setLabReturnScreen] = useState<ScreenName>('topics');
+  const [studioReturnScreen, setStudioReturnScreen] = useState<ScreenName>('topics');
   const [formulaTopicFilterId, setFormulaTopicFilterId] = useState<string | null>(null);
   const [formulaReturnScreen, setFormulaReturnScreen] = useState<ScreenName>('home');
+  const [examSetupReturnScreen, setExamSetupReturnScreen] = useState<ScreenName>('home');
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
   const [bossSession, setBossSession] = useState<TopicTestSession | null>(null);
   const [badgeToast, setBadgeToast] = useState<BadgeDef | null>(null);
@@ -319,53 +323,329 @@ export default function App() {
     subject: SubjectId | null;
     tab: QuestionBankTab;
   }>({ open: false, subject: null, tab: 'overview' });
-  const burstIdRef = useRef(1);
+  const [paywallModal, setPaywallModal] = useState<{
+    open: boolean;
+    reason?: string;
+    initialRef?: string | null;
+  }>({ open: false });
+  const [billingMeta, setBillingMeta] = useState<{
+    paystackEnabled: boolean;
+    isAdmin: boolean;
+  }>({ paystackEnabled: false, isAdmin: false });
+  const [isExamHallActive, setIsExamHallActive] = useState<boolean>(false);
+
+  // Hold milestone pop-ups while inside an active lesson, quiz, topic test, or mock exam
+  const deferredMilestonesRef = useRef<{
+    toast: BadgeDef | null;
+    badges: BadgeDef[];
+  }>({ toast: null, badges: [] });
+  const screenRef = useRef<ScreenName>(screen);
+  screenRef.current = screen;
+  const bossPhaseRef = useRef<string | null>(bossSession?.phase ?? null);
+  bossPhaseRef.current = bossSession?.phase ?? null;
 
   const handleOpenQuestionBank = useCallback((subj?: SubjectId, tab: QuestionBankTab = 'overview') => {
     setQbankModal({ open: true, subject: subj || null, tab });
   }, []);
 
-  const goalSnapshot = React.useMemo(
-    () => computeGoalProgress(progress, getTopics(progress.subj)),
-    [progress]
+  const handleOpenPaywall = useCallback((reason?: string) => {
+    setPaywallModal({ open: true, reason, initialRef: null });
+  }, []);
+
+  const [entitlementPubKey, setEntitlementPubKey] = useState<JsonWebKey | null>(() =>
+    loadCachedEntitlementPubKey()
   );
-  const themeLockMode: ThemeLockMode = progress.themeLockMode || 'unlocked';
-  const themeAutoProgress = progress.themeAutoProgress !== false;
+
+  // Sync authoritative Premium pass status, Paystack availability, and Owner status from Cloud SQL
+  useEffect(() => {
+    let cancelled = false;
+    const checkStatus = async (firebaseUser = auth.currentUser) => {
+      try {
+        const headers: Record<string, string> = {};
+        if (progress.devToken) {
+          headers['X-Device-Token'] = progress.devToken;
+        }
+        if (firebaseUser) {
+          try {
+            const tok = await firebaseUser.getIdToken();
+            if (tok) headers.Authorization = `Bearer ${tok}`;
+          } catch {
+            /* ignore token error */
+          }
+        }
+        const resp = await fetch('/api/billing/status', { headers });
+        if (!resp.ok || cancelled) return;
+        const data = (await resp.json()) as {
+          paystackEnabled?: boolean;
+          isAdmin?: boolean;
+          entitlementPublicKey?: JsonWebKey;
+          pro?: NonNullable<UserProgress['pro']> | null;
+          trial?: NonNullable<UserProgress['trial']> | null;
+        };
+        if (cancelled) return;
+        if (data.entitlementPublicKey && data.entitlementPublicKey.kty === 'EC') {
+          saveCachedEntitlementPubKey(data.entitlementPublicKey);
+          setEntitlementPubKey(data.entitlementPublicKey);
+        }
+        setBillingMeta({
+          paystackEnabled: Boolean(data.paystackEnabled),
+          isAdmin: Boolean(data.isAdmin),
+        });
+        setProgress((prev) => {
+          const nextOwner = data.isAdmin ? 1 : 0;
+          const nextPro =
+            data.pro || (hasActivePremium({ pro: prev.pro, owner: 0 }) ? prev.pro : null);
+          const nextTrial = data.trial || prev.trial || null;
+          const samePro =
+            prev.pro?.sig === nextPro?.sig && prev.pro?.until === nextPro?.until;
+          const sameTrial =
+            prev.trial?.sig === nextTrial?.sig &&
+            prev.trial?.startedDay === nextTrial?.startedDay;
+          if (prev.owner === nextOwner && samePro && sameTrial) return prev;
+          return {
+            ...prev,
+            owner: nextOwner,
+            pro: nextPro,
+            trial: nextTrial,
+          };
+        });
+      } catch {
+        /* offline fallback verifies local receipt cryptographically via WebCrypto */
+      }
+    };
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      void checkStatus(u);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [progress.devToken]);
+
+  // Offline tamper guard: verify any locally stored `pro` receipt against the server ECDSA P-256 public key
+  useEffect(() => {
+    if (!globalThis.crypto?.subtle) return;
+    const currentPro = progress.pro;
+    const pubKey = entitlementPubKey || loadCachedEntitlementPubKey();
+    if (!currentPro || !pubKey) return;
+
+    let cancelled = false;
+    (async () => {
+      const ok = await verifySignedProReceiptAsync(currentPro, pubKey);
+      if (!ok && !cancelled) {
+        setProgress((prev) =>
+          prev.pro && prev.pro.sig === currentPro.sig ? { ...prev, pro: null } : prev
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [progress.pro, entitlementPubKey]);
+
+  // Offline tamper guard for 3-day starter trial: reject forged signatures and clamp to expired
+  useEffect(() => {
+    if (!globalThis.crypto?.subtle) return;
+    const currentTrial = progress.trial;
+    const pubKey = entitlementPubKey || loadCachedEntitlementPubKey();
+    if (!currentTrial || !currentTrial.sig || !pubKey) return;
+
+    let cancelled = false;
+    (async () => {
+      const ok = await verifySignedTrialReceiptAsync(currentTrial, pubKey);
+      if (!ok && !cancelled) {
+        const d = today();
+        setProgress((prev) =>
+          prev.trial && prev.trial.sig === currentTrial.sig
+            ? {
+                ...prev,
+                trial: {
+                  startedDay: d - FREE_TRIAL_DAYS,
+                  untilDay: d - 1,
+                },
+              }
+            : prev
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [progress.trial, entitlementPubKey]);
+
+  // Auto-verify returning Paystack checkout query parameter (?paystack_ref= or ?reference=)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const refParam =
+      url.searchParams.get('paystack_ref') ||
+      url.searchParams.get('reference') ||
+      url.searchParams.get('trxref');
+    if (!refParam || !isValidPaystackReference(refParam)) return;
+
+    url.searchParams.delete('paystack_ref');
+    url.searchParams.delete('reference');
+    url.searchParams.delete('trxref');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (progress.devToken) {
+          headers['X-Device-Token'] = progress.devToken;
+        }
+        if (auth.currentUser) {
+          const tok = await auth.currentUser.getIdToken().catch(() => '');
+          if (tok) headers.Authorization = `Bearer ${tok}`;
+        }
+        const resp = await fetch('/api/billing/paystack/verify', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ reference: refParam }),
+        });
+        const data = (await resp.json().catch(() => ({}))) as {
+          ok?: boolean;
+          entitlementPublicKey?: JsonWebKey;
+          pro?: NonNullable<UserProgress['pro']>;
+        };
+        if (cancelled) return;
+        if (data.entitlementPublicKey && data.entitlementPublicKey.kty === 'EC') {
+          saveCachedEntitlementPubKey(data.entitlementPublicKey);
+          setEntitlementPubKey(data.entitlementPublicKey);
+        }
+        if (resp.ok && data.ok && data.pro) {
+          setProgress((prev) => ({ ...prev, pro: data.pro! }));
+          setPaywallModal({
+            open: true,
+            reason: 'Payment verified! Your EYAK Premium pass is now active.',
+            initialRef: null,
+          });
+        } else {
+          setPaywallModal({
+            open: true,
+            reason: 'Complete or verify your Paystack checkout below.',
+            initialRef: refParam,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setPaywallModal({
+            open: true,
+            reason: 'Verify your Paystack payment status below.',
+            initialRef: refParam,
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [progress.dev]);
+
+  const effectiveOwner = progress.owner || (billingMeta.isAdmin ? 1 : 0);
+  const entitledProgress = React.useMemo(
+    () => (effectiveOwner && !progress.owner ? { ...progress, owner: 1 } : progress),
+    [progress, effectiveOwner]
+  );
+  const isPremiumStudent = React.useMemo(
+    () => hasPremiumThemeAccess(entitledProgress),
+    [entitledProgress]
+  );
+  const trialStatus = React.useMemo(
+    () => computeTrialStatus(entitledProgress),
+    [entitledProgress]
+  );
+  const isTrialLockedOut =
+    screen !== 'welcome' &&
+    screen !== 'examsetup' &&
+    !isPremiumStudent &&
+    trialStatus.isTrialExpired;
   const effectiveThemeMode = React.useMemo(
-    () => resolveEffectiveThemeMode(progress),
-    [progress]
+    () => resolveEffectiveThemeMode(entitledProgress),
+    [entitledProgress]
   );
   const effectiveThemeId = React.useMemo(
-    () => resolveEffectiveThemeId(progress, goalSnapshot.goalPct),
-    [progress, goalSnapshot.goalPct]
+    () => resolveEffectiveThemeId(entitledProgress),
+    [entitledProgress]
   );
 
+  // Confetti and floating XP bursts removed per calm Playful motion rules
   const triggerConfetti = useCallback(() => {
-    setConfettiKey((k) => k + 1);
+    setConfettiKey(0);
   }, []);
 
-  const spawnXpBurst = useCallback((label: string, sub?: string) => {
-    const id = burstIdRef.current++;
-    setXpBursts((prev) => [...prev.slice(-2), { id, label, sub }]);
-    window.setTimeout(() => {
-      setXpBursts((prev) => prev.filter((b) => b.id !== id));
-    }, 1300);
+  const spawnXpBurst = useCallback((_label: string, _sub?: string) => {
+    setXpBursts([]);
   }, []);
 
-  // Sync [data-subj], [data-theme], and [data-mode] / .dark for CSS typography/theme rules & persist to localStorage
+  const flushDeferredMilestones = useCallback(
+    (muted: boolean) => {
+      const pendingToast = deferredMilestonesRef.current.toast;
+      const pendingBadges = deferredMilestonesRef.current.badges;
+      if (!pendingToast && pendingBadges.length === 0) return;
+      deferredMilestonesRef.current = { toast: null, badges: [] };
+      if (pendingToast) {
+        setBadgeToast(pendingToast);
+        sfx('shimmer', muted);
+      }
+      if (pendingBadges.length > 0) {
+        setBadgeBatchTotal((curTotal) =>
+          badgeQueue.length > 0 ? curTotal + pendingBadges.length : pendingBadges.length
+        );
+        setBadgeQueue((cur) => [
+          ...cur,
+          ...pendingBadges.map((b) => ({ badge: b, isPreview: false })),
+        ]);
+        sfx('win', muted);
+      }
+    },
+    [badgeQueue.length]
+  );
+
+  // Flush queued milestone pop-ups once the student finishes a lesson, quiz, or test
+  useEffect(() => {
+    const inActiveAssessment =
+      screen === 'lesson' ||
+      screen === 'quiz' ||
+      (screen === 'boss' && bossSession?.phase === 'fight') ||
+      (screen === 'cbt' && isExamHallActive);
+    if (!inActiveAssessment) {
+      flushDeferredMilestones(progress.muted);
+    }
+    if (screen !== 'cbt' && isExamHallActive) {
+      setIsExamHallActive(false);
+    }
+  }, [screen, bossSession?.phase, isExamHallActive, flushDeferredMilestones, progress.muted]);
+
+  // Sync [data-subj], [data-theme], [data-mode] & persist to localStorage
   useEffect(() => {
     document.documentElement.dataset.subj = progress.subj;
     document.documentElement.dataset.theme = effectiveThemeId;
     document.documentElement.dataset.mode = effectiveThemeMode;
     document.documentElement.classList.toggle('dark', effectiveThemeMode === 'dark');
+    delete document.documentElement.dataset.template;
+    delete document.body.dataset.template;
     document.body.dataset.theme = effectiveThemeId;
     document.body.dataset.mode = effectiveThemeMode;
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', effectiveThemeMode === 'dark' ? '#15102B' : '#5B2BD6');
+    }
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+      // Never persist privileged `owner` session flag to localStorage
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...progress, owner: 0 }));
     } catch {
       /* ignore quota errors */
     }
   }, [progress, effectiveThemeId, effectiveThemeMode]);
+
+  // App-wide Content Copy Protection (allows typing/copy/paste inside inputs & [data-allow-copy="true"])
+  useEffect(() => {
+    return installCopyProtection(document);
+  }, []);
 
   // Body data-screen & data-subj attribute for inspectability
   useEffect(() => {
@@ -380,6 +660,34 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [badgeToast]);
 
+  const mutedRef = useRef<boolean>(progress.muted);
+  mutedRef.current = progress.muted;
+
+  // One capture-phase click listener for soft bubble tap sounds across buttons, links, tabs, radios, and switches
+  useEffect(() => {
+    const onCaptureClick = (ev: MouseEvent) => {
+      if (mutedRef.current) return;
+      const rawTarget = ev.target;
+      if (!(rawTarget instanceof Element)) return;
+      const control = rawTarget.closest(
+        'button, a[href], [role="tab"], [role="radio"], [role="switch"]'
+      );
+      if (!control) return;
+      if (
+        (control as HTMLButtonElement).disabled ||
+        control.getAttribute('aria-disabled') === 'true'
+      ) {
+        return;
+      }
+      if (control.closest('.eyak-hall') || control.closest('[data-no-sound]')) {
+        return;
+      }
+      sfx('tap', false);
+    };
+    document.addEventListener('click', onCaptureClick, true);
+    return () => document.removeEventListener('click', onCaptureClick, true);
+  }, []);
+
   const playSound = useCallback(
     (name: SoundEffectName, streakN?: number) => {
       sfx(name, progress.muted, streakN);
@@ -391,62 +699,37 @@ export default function App() {
     setProgress((prev) => {
       const updated = updater(prev);
       const topics = getTopics(updated.subj);
-      const allTopicsBySubj: Partial<Record<SubjectId, ReturnType<typeof getTopics>>> = {
-        maths: getTopics('maths'),
-        fmaths: getTopics('fmaths'),
-        chem: getTopics('chem'),
-        phys: getTopics('phys'),
-        bio: getTopics('bio'),
-        agric: getTopics('agric'),
-        geog: getTopics('geog'),
-        econ: getTopics('econ'),
-        eng: getTopics('eng'),
-        civic: getTopics('civic'),
-        digitech: getTopics('digitech'),
-        dataproc: getTopics('dataproc'),
-      };
-      const prevGoal = computeGoalProgress(prev, getTopics(prev.subj));
-      const nextGoal = computeGoalProgress(updated, topics);
-      const { progress: badgedBase, newlyEarned } = evaluateNewBadges(
+      const allTopicsBySubj = getAllTopicsBySubj();
+      const { progress: finalProgress, newlyEarned } = evaluateNewBadges(
         updated,
         topics,
         today(),
         allTopicsBySubj
       );
-      let finalProgress = badgedBase;
 
-      if (
-        prev.subj === updated.subj &&
-        nextGoal.highestUnlockedStage > prevGoal.highestUnlockedStage
-      ) {
-        if (finalProgress.themeAutoProgress !== false) {
-          finalProgress = {
-            ...finalProgress,
-            themeId: nextGoal.highestUnlockedTheme.id,
-          };
-        }
-        setBadgeToast({
-          id: nextGoal.highestUnlockedTheme.id,
-          name: `Stage ${nextGoal.highestUnlockedStage}: ${nextGoal.highestUnlockedTheme.name}`,
-          desc: `Goal reached ${nextGoal.goalPct}% — new Mastery Theme unlocked!`,
-          icon: 'palette',
-          tier: 'gold',
-          xpBonus: 0,
-          ok: () => true,
-        });
-        sfx('shimmer', updated.muted);
-      }
+      const curScr = screenRef.current;
+      const deferNow =
+        curScr === 'lesson' ||
+        curScr === 'quiz' ||
+        (curScr === 'boss' && bossPhaseRef.current === 'fight') ||
+        curScr === 'cbt';
 
       if (newlyEarned.length > 0) {
-        setBadgeBatchTotal((curTotal) =>
-          badgeQueue.length > 0 ? curTotal + newlyEarned.length : newlyEarned.length
-        );
-        setBadgeQueue((cur) => [
-          ...cur,
-          ...newlyEarned.map((b) => ({ badge: b, isPreview: false })),
-        ]);
-        sfx('win', updated.muted);
-        sfx('shimmer', updated.muted);
+        if (deferNow) {
+          deferredMilestonesRef.current.badges = [
+            ...deferredMilestonesRef.current.badges,
+            ...newlyEarned,
+          ];
+        } else {
+          setBadgeBatchTotal((curTotal) =>
+            badgeQueue.length > 0 ? curTotal + newlyEarned.length : newlyEarned.length
+          );
+          setBadgeQueue((cur) => [
+            ...cur,
+            ...newlyEarned.map((b) => ({ badge: b, isPreview: false })),
+          ]);
+          sfx('win', updated.muted);
+        }
       }
       return finalProgress;
     });
@@ -455,15 +738,31 @@ export default function App() {
   const handleSelectTheme = useCallback(
     (id: MasteryThemeId) => {
       playSound('tap');
-      setProgress((prev) => ({ ...prev, themeId: id }));
+      setProgress((prev) => {
+        const targetTheme = getMasteryThemeById(id);
+        const checkState = {
+          ...prev,
+          owner: prev.owner || (billingMeta.isAdmin ? 1 : 0),
+        };
+        if (!isThemeUnlocked(targetTheme, checkState)) return prev;
+        return {
+          ...prev,
+          themeId: id,
+          flags: { ...prev.flags, themeTs: Date.now() },
+        };
+      });
     },
-    [playSound]
+    [playSound, billingMeta.isAdmin]
   );
 
   const handleChangeThemeMode = useCallback(
     (mode: ThemeAppearanceMode) => {
       playSound('tap');
-      setProgress((prev) => ({ ...prev, themeMode: mode }));
+      setProgress((prev) => ({
+        ...prev,
+        themeMode: mode,
+        flags: { ...prev.flags, themeTs: Date.now() },
+      }));
     },
     [playSound]
   );
@@ -602,6 +901,37 @@ export default function App() {
     setScreen('formulas');
   };
 
+  const openExamSetup = useCallback((returnTo: ScreenName) => {
+    setExamSetupReturnScreen(returnTo);
+    setScreen('examsetup');
+  }, []);
+
+  const handleCompleteExamSetup = useCallback(
+    (res: ExamSetupResult) => {
+      setProgress((prev) => {
+        const basePlan = prev.studyPlan || getDefaultStudyPlan(res.subjs);
+        return {
+          ...prev,
+          examTrack: res.examTrack,
+          jambSubjects: res.jambSubjects,
+          subjs: res.subjs,
+          subj: res.primarySubj,
+          studyPlan: {
+            ...basePlan,
+            examType: res.examTrack,
+            focusSubjects: res.subjs.slice(0, 6),
+          },
+          flags: {
+            ...prev.flags,
+            examSetupDone: 1,
+          },
+        };
+      });
+      setScreen(examSetupReturnScreen);
+    },
+    [examSetupReturnScreen]
+  );
+
   const handleCompleteOnboarding = (cfg: {
     name: string;
     subjs: SubjectId[];
@@ -612,11 +942,14 @@ export default function App() {
     const orderedSubjs = SUBJECT_IDS.filter((id) => cfg.subjs.includes(id));
     const finalSubjs = orderedSubjs.length > 0 ? orderedSubjs : cfg.subjs;
     const primarySubj = finalSubjs[0] || 'maths';
+    const d = today();
+    const nextScreenAfterSetup: ScreenName = cfg.classLevel !== 'all' ? 'topics' : 'dxintro';
     setProgress((prev) => ({
       ...prev,
       name: cfg.name,
       subjs: finalSubjs,
       subj: primarySubj,
+      trial: prev.trial || { startedDay: d, untilDay: d + FREE_TRIAL_DAYS - 1 },
       chemClass: cfg.classLevel,
       mathClass: cfg.classLevel,
       fmathClass: cfg.classLevel,
@@ -632,11 +965,8 @@ export default function App() {
       target: cfg.target,
       ob: 1,
     }));
-    if (cfg.classLevel !== 'all') {
-      setScreen('topics');
-    } else {
-      setScreen('dxintro');
-    }
+    setExamSetupReturnScreen(nextScreenAfterSetup);
+    setScreen('examsetup');
   };
 
   const handleAuthenticated = (cfg: {
@@ -648,18 +978,25 @@ export default function App() {
   }) => {
     setSessionUnlocked();
     if (cfg.isExisting) {
+      const d = today();
       setProgress((prev) => ({
         ...prev,
         name: cfg.name || prev.name || 'Scholar',
+        trial: prev.trial || { startedDay: d, untilDay: d + FREE_TRIAL_DAYS - 1 },
         ob: 1,
       }));
-      setScreen('home');
+      if (!progress.flags?.examSetupDone) {
+        setExamSetupReturnScreen('home');
+        setScreen('examsetup');
+      } else {
+        setScreen('home');
+      }
     } else {
       handleCompleteOnboarding({
         name: cfg.name,
-        subjs: cfg.subjs && cfg.subjs.length > 0 ? cfg.subjs : SUBJECT_IDS,
-        classLevel: cfg.classLevel || 'ss1',
-        target: cfg.target || 80,
+        subjs: cfg.subjs && cfg.subjs.length > 0 ? cfg.subjs : ['eng', 'maths'],
+        classLevel: cfg.classLevel || 'all',
+        target: cfg.target || 75,
       });
     }
   };
@@ -692,6 +1029,7 @@ export default function App() {
 
   const handleSignOut = () => {
     clearSessionUnlock();
+    setPaywallModal({ open: false, initialRef: null });
     setScreen('welcome');
   };
 
@@ -740,8 +1078,20 @@ export default function App() {
     const topic = getTopic(progress.subj, tid);
     if (!topic) return;
     const topics = getTopics(progress.subj);
+    if (isTopicLocked(progress, tid, topics)) {
+      handleOpenPaywall(`Unlock “${topic.name}” practice and all 600+ topics`);
+      return;
+    }
     const curMastery = mastery(progress, tid);
-    const startLvl = curMastery > 0.7 ? 4 : curMastery > 0.5 ? 3 : 2;
+    const drillCfg = getToughJambDrillConfig(
+      resolveExamTrack(progress),
+      progress.subj,
+      progress.jambSubjects
+    );
+    const startLvl = Math.max(
+      drillCfg.minStartLevel,
+      curMastery > 0.7 ? 4 : curMastery > 0.5 ? 3 : 2
+    );
     const firstQ = pickPractice(progress, topic, startLvl, []);
     if (!firstQ) return;
     setActiveTopicId(tid);
@@ -789,19 +1139,30 @@ export default function App() {
   const startTopicTest = (tid: string) => {
     const topic = getTopic(progress.subj, tid);
     if (!topic) return;
-    const list = bossList(progress, topic);
     const topics = getTopics(progress.subj);
+    if (isTopicLocked(progress, tid, topics)) {
+      handleOpenPaywall(`Unlock “${topic.name}” topic test and all 600+ topics`);
+      return;
+    }
+    const drillCfg = getToughJambDrillConfig(
+      resolveExamTrack(progress),
+      progress.subj,
+      progress.jambSubjects
+    );
+    const list = bossList(progress, topic);
     setActiveTopicId(tid);
     setBossSession({
       tid,
       phase: 'intro',
       list,
       i: 0,
-      hp: BOSS_HP,
+      hp: drillCfg.bossHp,
+      targetHp: drillCfg.bossHp,
       hits: 0,
       combo: 0,
       best: 0,
-      time: BOSS_TIME,
+      time: drillCfg.bossTimeSec,
+      totalTime: drillCfg.bossTimeSec,
       picked: null,
       result: null,
       pred0: predicted(progress, topics),
@@ -832,12 +1193,17 @@ export default function App() {
       return next;
     });
 
+    const drillCfg = getToughJambDrillConfig(
+      resolveExamTrack(progress),
+      progress.subj,
+      progress.jambSubjects
+    );
     setQuizSession((prev) => {
       if (!prev) return prev;
       let nextLvl = prev.lvl;
       if (prev.kind === 'practice') {
         if (ok && nextRun >= 2) nextLvl = Math.min(5, prev.lvl + 1);
-        else if (!ok) nextLvl = Math.max(1, prev.lvl - 1);
+        else if (!ok) nextLvl = Math.max(drillCfg.isToughJamb ? drillCfg.minStartLevel : 1, prev.lvl - 1);
       }
       return {
         ...prev,
@@ -887,6 +1253,7 @@ export default function App() {
         const seen = quizSession.seen || [];
         const nextQ = pickPractice(progress, topic, quizSession.lvl, seen);
         if (nextQ) {
+          playSound('step');
           setQuizSession((prev) =>
             prev
               ? {
@@ -913,6 +1280,7 @@ export default function App() {
 
     const nextQId = quizSession.list?.[nextI];
     if (nextQId) {
+      playSound('step');
       setQuizSession((prev) => (prev ? { ...prev, i: nextI, cur: nextQId, picked: null } : prev));
     } else {
       setScreen('sum');
@@ -921,11 +1289,10 @@ export default function App() {
 
   const handleBossPick = (q: Question, origIdx: number, ok: boolean) => {
     if (!bossSession || bossSession.picked !== null) return;
+    const nextCombo = ok ? bossSession.combo + 1 : 0;
     if (ok) {
-      playSound('hit');
+      playSound('right', nextCombo);
       buzz(25, progress.muted);
-      const nextCombo = bossSession.combo + 1;
-      if (nextCombo >= 2) spawnXpBurst(`${nextCombo}x Hit`, 'Combo');
     } else {
       playSound('wrong');
       buzz([35, 40, 35], progress.muted);
@@ -944,6 +1311,7 @@ export default function App() {
 
     setBossSession((prev) => {
       if (!prev) return prev;
+      const targetHp = prev.targetHp || BOSS_HP;
       const hits = prev.hits + (ok ? 1 : 0);
       const combo = ok ? prev.combo + 1 : 0;
       const best = Math.max(prev.best, combo);
@@ -954,19 +1322,20 @@ export default function App() {
         hits,
         combo,
         best,
-        hp: Math.max(0, BOSS_HP - hits),
+        hp: Math.max(0, targetHp - hits),
       };
     });
   };
 
   const handleBossNext = () => {
     if (!bossSession) return;
-    const won = bossSession.hits >= BOSS_HP;
+    const targetHp = bossSession.targetHp || BOSS_HP;
+    const won = bossSession.hits >= targetHp;
     const nextI = bossSession.i + 1;
     const outOfQs = nextI >= bossSession.list.length;
 
     if (won || outOfQs || bossSession.time <= 0) {
-      const passed = bossSession.hits >= BOSS_HP;
+      const passed = bossSession.hits >= targetHp;
       playSound(passed ? 'win' : 'lose');
       if (passed) {
         triggerConfetti();
@@ -996,6 +1365,7 @@ export default function App() {
       return;
     }
 
+    playSound('step');
     setBossSession((prev) =>
       prev ? { ...prev, i: nextI, picked: null, result: null } : prev
     );
@@ -1004,68 +1374,192 @@ export default function App() {
   const handleBossTick = useCallback(() => {
     setBossSession((prev) => {
       if (!prev || prev.phase !== 'fight' || prev.picked !== null) return prev;
+      const targetHp = prev.targetHp || BOSS_HP;
       const nextTime = prev.time - 1;
+      if (nextTime > 0 && nextTime <= 15) {
+        sfx('tick', mutedRef.current, nextTime);
+      }
       if (nextTime <= 0) {
-        return { ...prev, time: 0, phase: prev.hits >= BOSS_HP ? 'won' : 'lost' };
+        return { ...prev, time: 0, phase: prev.hits >= targetHp ? 'won' : 'lost' };
       }
       return { ...prev, time: nextTime };
     });
   }, []);
 
   const handleNavigateTab = (tab: MainTab) => {
+    if (tab === 'cbt') {
+      const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
+      if (!isPremiumStudent && !satOpen) {
+        handleOpenPaywall(
+          'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+        );
+        return;
+      }
+      setScreen('cbt');
+      return;
+    }
     if (tab === 'home') setScreen('home');
     else if (tab === 'subjects') setScreen('subjs');
     else if (tab === 'topics') setScreen('topics');
-    else if (tab === 'formulas') openFormulasStudio('home', null);
     else setScreen('more');
   };
 
+  const openCbtGated = () => {
+    const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
+    if (!isPremiumStudent && !satOpen) {
+      handleOpenPaywall(
+        'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+      );
+      return;
+    }
+    setScreen('cbt');
+  };
+
+  const openLabDirectoryGated = () => {
+    if (!isPremiumStudent) {
+      handleOpenPaywall(
+        'Virtual Practical Labs are locked during your 3-day starter trial. Subscribe from ₦1,000/month to unlock every practical lab.'
+      );
+      return;
+    }
+    setScreen('lab');
+  };
+
+  const openStudioGated = (returnTo: ScreenName) => {
+    if (!isPremiumStudent) {
+      handleOpenPaywall(
+        'Subject Studios & Practical Companions are locked during your 3-day starter trial. Subscribe from ₦1,000/month for 100% full access.'
+      );
+      return;
+    }
+    setStudioReturnScreen(returnTo);
+    setScreen('studio');
+  };
+
+  const openSandboxesGated = () => {
+    if (!isPremiumStudent) {
+      handleOpenPaywall(
+        'Interactive Try-it Labs are locked during your 3-day starter trial. Subscribe from ₦1,000/month for 100% full access.'
+      );
+      return;
+    }
+    setScreen('sandboxes');
+  };
+
   const openTopic = (tid: string) => {
+    const topics = getTopics(progress.subj);
+    if (isTopicLocked(progress, tid, topics)) {
+      const lockedTopic = getTopic(progress.subj, tid);
+      handleOpenPaywall(
+        lockedTopic
+          ? `Unlock “${lockedTopic.name}” and all 600+ topics across 49 subjects`
+          : 'Unlock all 600+ topics across 49 subjects'
+      );
+      return;
+    }
     setActiveTopicId(tid);
     setScreen('topic');
   };
 
   const openLesson = (tid: string) => {
+    const topics = getTopics(progress.subj);
+    if (isTopicLocked(progress, tid, topics)) {
+      const lockedTopic = getTopic(progress.subj, tid);
+      handleOpenPaywall(
+        lockedTopic
+          ? `Unlock “${lockedTopic.name}” lesson and all 600+ topics`
+          : 'Unlock all 600+ topics across 49 subjects'
+      );
+      return;
+    }
     setActiveTopicId(tid);
     setScreen('lesson');
   };
 
   const openLabPlayer = (labId: string, returnTo: ScreenName) => {
+    if (!isPremiumStudent) {
+      handleOpenPaywall(
+        'Virtual Practical Labs are locked during your 3-day starter trial. Subscribe from ₦1,000/month to unlock every practical lab.'
+      );
+      return;
+    }
     setActiveLabId(labId);
     setLabReturnScreen(returnTo);
     setScreen('labrun');
   };
 
-  const handleHydrateFromCloud = useCallback((merged: UserProgress) => {
-    setProgress(merged);
-  }, []);
+  const handleHydrateFromCloud = useCallback(
+    (remoteProgress: Record<string, unknown>) => {
+      setProgress((prev) => {
+        const merged = mergeCloudProgress(prev, remoteProgress);
+        return {
+          ...merged,
+          owner: prev.owner || (billingMeta.isAdmin ? 1 : 0),
+          devToken: prev.devToken,
+          trial: prev.trial || merged.trial,
+        };
+      });
+    },
+    [billingMeta.isAdmin]
+  );
 
-  const handleOpenWeakTopic = useCallback((subj: SubjectId, tid: string) => {
-    setProgress((prev) => ({
-      ...prev,
-      subj,
-      subjs: prev.subjs.includes(subj) ? prev.subjs : SUBJECT_IDS.filter((id) => id === subj || prev.subjs.includes(id)),
-    }));
-    setActiveTopicId(tid);
-    setScreen('notes');
-  }, []);
-
-  const handleLaunchPlannerTask = useCallback(
-    (subj: SubjectId, tid: string, stage: 'lesson' | 'practice' | 'boss') => {
+  const handleOpenWeakTopic = useCallback(
+    (subj: SubjectId, tid: string) => {
+      const subjTopics = getTopics(subj);
+      if (isTopicLocked(progress, tid, subjTopics)) {
+        const lockedTopic = getTopic(subj, tid);
+        handleOpenPaywall(
+          lockedTopic
+            ? `Unlock “${lockedTopic.name}” notes and full topic mastery`
+            : 'Unlock all 600+ topics across 49 subjects'
+        );
+        return;
+      }
       setProgress((prev) => ({
         ...prev,
         subj,
-        subjs: prev.subjs.includes(subj) ? prev.subjs : SUBJECT_IDS.filter((id) => id === subj || prev.subjs.includes(id)),
+        subjs: prev.subjs.includes(subj)
+          ? prev.subjs
+          : SUBJECT_IDS.filter((id) => id === subj || prev.subjs.includes(id)),
+      }));
+      setActiveTopicId(tid);
+      setScreen('notes');
+    },
+    [progress, handleOpenPaywall]
+  );
+
+  const handleLaunchPlannerTask = useCallback(
+    (subj: SubjectId, tid: string, stage: 'lesson' | 'practice' | 'boss') => {
+      const subjTopics = getTopics(subj);
+      if (isTopicLocked(progress, tid, subjTopics)) {
+        const lockedTopic = getTopic(subj, tid);
+        handleOpenPaywall(
+          lockedTopic
+            ? `Unlock “${lockedTopic.name}” in your study plan`
+            : 'Unlock all 600+ topics in your study plan'
+        );
+        return;
+      }
+      setProgress((prev) => ({
+        ...prev,
+        subj,
+        subjs: prev.subjs.includes(subj)
+          ? prev.subjs
+          : SUBJECT_IDS.filter((id) => id === subj || prev.subjs.includes(id)),
       }));
       setActiveTopicId(tid);
       if (stage === 'lesson') setScreen('lesson');
       else setScreen('topic');
     },
-    []
+    [progress, handleOpenPaywall]
   );
 
   const handleSaveStudyPlan = useCallback((cfg: StudyPlanConfig) => {
-    setProgress((prev) => ({ ...prev, studyPlan: cfg }));
+    setProgress((prev) => ({
+      ...prev,
+      studyPlan: cfg,
+      flags: { ...prev.flags, examDateSet: 1 },
+    }));
   }, []);
 
   const handleUpdateLeaderboardPrefs = useCallback(
@@ -1123,7 +1617,8 @@ export default function App() {
       missedQuestions: { q: Question; subj: SubjectId; pickedIdx: number }[];
       answeredResults: { q: Question; ok: boolean }[];
     }) => {
-      const xpEarned = Math.max(20, payload.report.rawCorrect * 8);
+      const satCampaign = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory);
+      const xpEarned = Math.max(20, payload.report.rawCorrect * 8) * satCampaign.bonusXpMultiplier;
       if (payload.report.accuracyPct >= 65) triggerConfetti();
       playSound(payload.report.accuracyPct >= 60 ? 'win' : 'done');
       spawnXpBurst(`CBT ${payload.report.scaledScore}/${payload.report.maxScale}`, `${payload.report.accuracyPct}% accuracy`);
@@ -1156,7 +1651,7 @@ export default function App() {
         };
       });
     },
-    [commitProgressWithBadges, playSound, spawnXpBurst, triggerConfetti]
+    [commitProgressWithBadges, playSound, progress.cbtHistory, spawnXpBurst, triggerConfetti]
   );
 
   const handleCompleteDuel = useCallback(
@@ -1200,7 +1695,7 @@ export default function App() {
   );
 
   const dueIds = dueList(progress, (id) => findQuestion(progress, progress.subj, id));
-  const showNav = screen !== 'welcome' && screen !== 'dxintro';
+  const showNav = screen !== 'welcome' && screen !== 'dxintro' && screen !== 'examsetup';
   const currentTopic = getTopic(progress.subj, activeTopicId) || getTopics(progress.subj)[0];
   const currentLesson = currentTopic ? getInteractiveLesson(progress.subj, currentTopic.id) : undefined;
   const currentLab = getLabById(activeLabId) || getLabById('bisect-line')!;
@@ -1217,64 +1712,8 @@ export default function App() {
   const isDigiTechSubj = progress.subj === 'digitech';
   const isDataProcSubj = progress.subj === 'dataproc';
   const fallbackLiveEntry: ActiveLiveContextEntry = React.useMemo(() => {
-    const mode:
-      | 'chem'
-      | 'math'
-      | 'fmath'
-      | 'phys'
-      | 'bio'
-      | 'agric'
-      | 'geog'
-      | 'econ'
-      | 'eng'
-      | 'civic'
-      | 'digitech'
-      | 'dataproc' = isDataProcSubj
-      ? 'dataproc'
-      : isDigiTechSubj
-        ? 'digitech'
-        : isCivicSubj
-          ? 'civic'
-          : isEngSubj
-            ? 'eng'
-            : isEconSubj
-              ? 'econ'
-              : isGeogSubj
-                ? 'geog'
-                : isAgricSubj
-                  ? 'agric'
-                  : isBioSubj
-                    ? 'bio'
-                    : isPhysSubj
-                      ? 'phys'
-                      : isChemSubj
-                        ? 'chem'
-                        : isFMathSubj
-                          ? 'fmath'
-                          : 'math';
-    const subjTitle = isDataProcSubj
-      ? 'Data Processing'
-      : isDigiTechSubj
-        ? 'Digital Technologies'
-        : isCivicSubj
-          ? 'Civic Education'
-          : isEngSubj
-            ? 'English Language'
-            : isEconSubj
-              ? 'Economics'
-              : isGeogSubj
-                ? 'Geography'
-                : isAgricSubj
-                  ? 'Agricultural Science'
-                  : isBioSubj
-                    ? 'Biology'
-                    : isPhysSubj
-                      ? 'Physics'
-                      : isChemSubj
-                        ? 'Chemistry'
-                        : isFMathSubj
-                          ? 'Further Mathematics'
-                          : 'Mathematics';
+    const mode = subjectToLiveCoachMode(progress.subj);
+    const subjTitle = SUBJECT_TUTOR_REGISTRY[progress.subj]?.name || 'English Language';
     if (screen === 'welcome') {
       return {
         stepKey: `scr:welcome:${mode}`,
@@ -1284,7 +1723,7 @@ export default function App() {
           partTitle: subjTitle,
           stepLabel: 'Onboarding',
           stepText:
-            'Signing in or registering a scholar profile across all 12 NERDC subjects (SS 1, SS 2, SS 3, or All Classes).',
+            'Signing in or registering a scholar profile across all 49 JAMB UTME and WAEC/NECO subjects.',
         },
       };
     }
@@ -1301,6 +1740,20 @@ export default function App() {
       };
     }
     if (screen === 'topics') {
+      const isMathSubj = progress.subj === 'maths';
+      const isLegacy12 =
+        isMathSubj ||
+        isFMathSubj ||
+        isChemSubj ||
+        isPhysSubj ||
+        isBioSubj ||
+        isAgricSubj ||
+        isGeogSubj ||
+        isEconSubj ||
+        isEngSubj ||
+        isCivicSubj ||
+        isDigiTechSubj ||
+        isDataProcSubj;
       const cls = isDataProcSubj
         ? progress.dataprocClass
         : isDigiTechSubj
@@ -1323,8 +1776,10 @@ export default function App() {
                           ? progress.chemClass
                           : isFMathSubj
                             ? progress.fmathClass
-                            : progress.mathClass;
-      const clsLabel = cls && cls !== 'all' ? cls.toUpperCase() : 'All Classes';
+                            : isMathSubj
+                              ? progress.mathClass
+                              : 'all';
+      const clsLabel = isLegacy12 && cls && cls !== 'all' ? cls.toUpperCase() : 'Full Syllabus';
       return {
         stepKey: `scr:topics:${mode}:${clsLabel}`,
         mode,
@@ -1332,35 +1787,35 @@ export default function App() {
           topicName: `${subjTitle} Topics Map`,
           partTitle: clsLabel,
           stepLabel: 'Curriculum Map',
-          stepText: isDataProcSubj
-            ? 'Browsing Data Processing NERDC First, Second, and Third Term topics across Information Systems, File Organization, Relational Databases & 3NF, Spreadsheets & SQL, Integrity, and the Data Processing Formula Studio.'
-            : isDigiTechSubj
-              ? 'Browsing Digital Technologies NERDC First, Second, and Third Term topics across Computer Architecture, Binary & Logic Gates, Software & Algorithms, Networks & Cloud, Cybersecurity & AI, and the Digital Tech Formula Studio.'
-              : isCivicSubj
-                ? 'Browsing Civic Education NERDC First, Second, and Third Term topics across Values & Citizenship, Constitutional Democracy, Human Rights, Governance, and Global Order.'
-                : isEngSubj
-                  ? 'Browsing English Language NERDC First, Second, and Third Term topics across Oral English, Lexis, Grammar, Comprehension, Writing, and the Rules Studio.'
-                  : isEconSubj
-                    ? 'Browsing Economics NERDC First, Second, and Third Term topics across Principles, Microeconomics, Quantitative Tools, Macroeconomics, Development, and the Economics Formula Studio.'
-                    : isGeogSubj
-                      ? 'Browsing Geography NERDC First, Second, and Third Term topics across Map Reading & GIS, Physical Landforms, Climatology, Human Geography, Nigeria & Africa, and the Geography Calculations Studio.'
-                      : isFMathSubj
-                        ? 'Browsing Further Mathematics NERDC First, Second, and Third Term topics across Pure Algebra, Calculus, Vectors & Matrices, Mechanics, Probability & Statistics, and the Further Maths Formula Studio.'
-                        : isAgricSubj || isBioSubj
-                          ? `Browsing ${subjTitle} NERDC First, Second, and Third Term topics and Practicals Laboratory experiments.`
-                          : `Browsing ${subjTitle} NERDC First, Second, and Third Term topics, Lab experiments, and Formula Studio.`,
+          stepText: !isLegacy12
+            ? `Browsing ${subjTitle} syllabus topics, guided lessons, chapter notes, and exam practice.`
+            : isDataProcSubj
+              ? 'Browsing Data Processing NERDC First, Second, and Third Term topics across Information Systems, File Organization, Relational Databases & 3NF, Spreadsheets & SQL, Integrity, and the Data Processing Formula Studio.'
+              : isDigiTechSubj
+                ? 'Browsing Digital Technologies NERDC First, Second, and Third Term topics across Computer Architecture, Binary & Logic Gates, Software & Algorithms, Networks & Cloud, Cybersecurity & AI, and the Digital Tech Formula Studio.'
+                : isCivicSubj
+                  ? 'Browsing Civic Education NERDC First, Second, and Third Term topics across Values & Citizenship, Constitutional Democracy, Human Rights, Governance, and Global Order.'
+                  : isEngSubj
+                    ? 'Browsing English Language NERDC First, Second, and Third Term topics across Oral English, Lexis, Grammar, Comprehension, Writing, and the Rules Studio.'
+                    : isEconSubj
+                      ? 'Browsing Economics NERDC First, Second, and Third Term topics across Principles, Microeconomics, Quantitative Tools, Macroeconomics, Development, and the Economics Formula Studio.'
+                      : isGeogSubj
+                        ? 'Browsing Geography NERDC First, Second, and Third Term topics across Map Reading & GIS, Physical Landforms, Climatology, Human Geography, Nigeria & Africa, and the Geography Calculations Studio.'
+                        : isFMathSubj
+                          ? 'Browsing Further Mathematics NERDC First, Second, and Third Term topics across Pure Algebra, Calculus, Vectors & Matrices, Mechanics, Probability & Statistics, and the Further Maths Formula Studio.'
+                          : isAgricSubj || isBioSubj
+                            ? `Browsing ${subjTitle} NERDC First, Second, and Third Term topics and Practicals Laboratory experiments.`
+                            : `Browsing ${subjTitle} NERDC First, Second, and Third Term topics, Lab experiments, and Formula Studio.`,
         },
       };
     }
     if (
       screen === 'lab' &&
-      !isFMathSubj &&
-      !isGeogSubj &&
-      !isEngSubj &&
-      !isEconSubj &&
-      !isCivicSubj &&
-      !isDigiTechSubj &&
-      !isDataProcSubj
+      (progress.subj === 'maths' ||
+        isChemSubj ||
+        isPhysSubj ||
+        isBioSubj ||
+        isAgricSubj)
     ) {
       return {
         stepKey: `scr:lab:${mode}`,
@@ -1523,6 +1978,7 @@ export default function App() {
     progress.geogClass,
     progress.mathClass,
     progress.physClass,
+    progress.subj,
     progress.name,
     progress.streak.n,
     quizSession,
@@ -1537,11 +1993,20 @@ export default function App() {
           format={progress.clockFormat || '12h'}
           onChangeFormat={handleChangeClockFormat}
         >
+        <EntitlementProvider
+          value={{
+            isPremium: isPremiumStudent,
+            trialDaysRemaining: trialStatus.daysRemaining,
+            isTrialExpired: trialStatus.isTrialExpired,
+            openPaywall: handleOpenPaywall,
+          }}
+        >
         <AppShell
         screen={screen}
         progress={progress}
         dueCount={dueIds.length}
         showNav={showNav}
+        isExamHall={screen === 'cbt' && isExamHallActive}
         badgeToast={badgeToast}
         xpBursts={xpBursts}
         confettiKey={confettiKey}
@@ -1550,6 +2015,12 @@ export default function App() {
         onNavigateTab={handleNavigateTab}
         onSelectSubject={handleSelectSubject}
         onManageSubjects={() => setScreen('subjs')}
+        onOpenStudio={
+          hasSubjectStudio(progress.subj)
+            ? () => openStudioGated(screen === 'topics' ? 'topics' : 'home')
+            : undefined
+        }
+        onOpenLab={openLabDirectoryGated}
         onSignOut={handleSignOut}
       >
       {screen === 'welcome' && (
@@ -1588,6 +2059,16 @@ export default function App() {
         />
       )}
 
+      {screen === 'examsetup' && (
+        <ExamSetupScreen
+          progress={progress}
+          muted={progress.muted}
+          isReconfigure={Boolean(progress.flags?.examSetupDone)}
+          onCompleteSetup={handleCompleteExamSetup}
+          onCancel={() => setScreen(examSetupReturnScreen)}
+        />
+      )}
+
       {screen === 'dxintro' && (
         <DxIntroScreen
           name={progress.name || 'Student'}
@@ -1605,6 +2086,7 @@ export default function App() {
           onSelectSubject={handleSelectSubject}
           onSelectClassAndBrowse={(cls) => handleSelectSubjectClass(cls, true)}
           onManageSubjects={() => setScreen('subjs')}
+          onOpenExamSetup={() => openExamSetup('home')}
           onOpenTopic={openTopic}
           onStartMission={(tid, stage) => {
             if (stage === 'lesson') openLesson(tid);
@@ -1613,17 +2095,22 @@ export default function App() {
           }}
           onOpenReview={() => setScreen('review')}
           onStartDiagnostic={() => startDiagnostic()}
-          onOpenLab={() => setScreen('lab')}
+          onOpenLab={openLabDirectoryGated}
+          onOpenStudio={
+            hasSubjectStudio(progress.subj)
+              ? () => openStudioGated('home')
+              : undefined
+          }
           onOpenFormulas={
-            progress.subj === 'bio' || progress.subj === 'agric' || progress.subj === 'civic'
-              ? undefined
-              : () => openFormulasStudio('home', null)
+            hasFormulaSheet(progress.subj)
+              ? () => openFormulasStudio('home', null)
+              : undefined
           }
           onOpenTopicsMap={() => setScreen('topics')}
-          onOpenCbt={() => setScreen('cbt')}
+          onOpenCbt={openCbtGated}
           onOpenMistakes={() => setScreen('mistakes')}
           onOpenPlanner={() => setScreen('planner')}
-          onOpenSandboxes={() => setScreen('sandboxes')}
+          onOpenSandboxes={openSandboxesGated}
           onOpenTheory={() => setScreen('theory')}
           onOpenTranscript={() => setScreen('transcript')}
           onOpenDuel={() => {
@@ -1632,6 +2119,7 @@ export default function App() {
           }}
           onOpenLeaderboard={() => setScreen('leaderboard')}
           onOpenQuestionBank={handleOpenQuestionBank}
+          onOpenPaywall={handleOpenPaywall}
         />
       )}
 
@@ -1642,11 +2130,16 @@ export default function App() {
           onSelectClass={(cls) => handleSelectSubjectClass(cls, false)}
           onManageSubjects={() => setScreen('subjs')}
           onOpenTopic={openTopic}
-          onOpenLab={() => setScreen('lab')}
+          onOpenLab={openLabDirectoryGated}
+          onOpenStudio={
+            hasSubjectStudio(progress.subj)
+              ? () => openStudioGated('topics')
+              : undefined
+          }
           onOpenFormulas={
-            progress.subj === 'bio' || progress.subj === 'agric' || progress.subj === 'civic'
-              ? undefined
-              : () => openFormulasStudio('topics', null)
+            hasFormulaSheet(progress.subj)
+              ? () => openFormulasStudio('topics', null)
+              : undefined
           }
         />
       )}
@@ -1663,9 +2156,9 @@ export default function App() {
           onStartTopicTest={() => startTopicTest(currentTopic.id)}
           onOpenLab={(labId) => openLabPlayer(labId, 'topic')}
           onOpenFormulas={
-            progress.subj === 'bio' || progress.subj === 'agric' || progress.subj === 'civic'
-              ? undefined
-              : (tid) => openFormulasStudio('topic', tid)
+            hasFormulaSheet(progress.subj)
+              ? (tid) => openFormulasStudio('topic', tid)
+              : undefined
           }
         />
       )}
@@ -1696,7 +2189,6 @@ export default function App() {
           progress={progress}
           onBack={() => setScreen('topic')}
           onCompleteLesson={() => {
-            spawnXpBurst('Lesson Complete', 'Ready to practise');
             commitProgressWithBadges((prev) => {
               const ts = tstate(prev, currentTopic.id);
               const firstTime = !ts.lesson;
@@ -1706,6 +2198,7 @@ export default function App() {
                 t: { ...prev.t, [currentTopic.id]: { ...ts, lesson: 1 } },
               };
             });
+            window.setTimeout(() => flushDeferredMilestones(progress.muted), 60);
           }}
           onStartPractice={() => startPractice(currentTopic.id)}
           onSound={(k) => {
@@ -1765,40 +2258,43 @@ export default function App() {
       )}
 
       {screen === 'lab' &&
-        progress.subj !== 'fmaths' &&
-        progress.subj !== 'geog' &&
-        progress.subj !== 'eng' &&
-        progress.subj !== 'econ' &&
-        progress.subj !== 'civic' &&
-        progress.subj !== 'digitech' &&
-        progress.subj !== 'dataproc' && (
+        (progress.subj === 'maths' ||
+          progress.subj === 'chem' ||
+          progress.subj === 'phys' ||
+          progress.subj === 'bio' ||
+          progress.subj === 'agric') && (
         <LabListScreen
           subj={progress.subj}
           flags={progress.flags}
           onBack={() => setScreen('topics')}
           onOpenLabItem={(id) => openLabPlayer(id, 'lab')}
           onOpenFormulas={
-            progress.subj === 'bio' || progress.subj === 'agric'
-              ? undefined
-              : () => openFormulasStudio('lab', null)
+            hasFormulaSheet(progress.subj)
+              ? () => openFormulasStudio('lab', null)
+              : undefined
           }
         />
       )}
 
       {screen === 'labrun' &&
-        progress.subj !== 'fmaths' &&
-        progress.subj !== 'geog' &&
-        progress.subj !== 'eng' &&
-        progress.subj !== 'econ' &&
-        progress.subj !== 'civic' &&
-        progress.subj !== 'digitech' &&
-        progress.subj !== 'dataproc' &&
+        (progress.subj === 'maths' ||
+          progress.subj === 'chem' ||
+          progress.subj === 'phys' ||
+          progress.subj === 'bio' ||
+          progress.subj === 'agric') &&
         currentLab && (
         <LabPlayerScreen
           lab={currentLab}
           muted={progress.muted}
           onBack={() => setScreen(labReturnScreen)}
           onCompleteLab={handleCompleteLab}
+        />
+      )}
+
+      {screen === 'studio' && (
+        <SubjectStudioScreen
+          subj={progress.subj}
+          onBack={() => setScreen(studioReturnScreen)}
         />
       )}
 
@@ -1810,7 +2306,7 @@ export default function App() {
           progress={progress}
           initialTopicId={formulaTopicFilterId}
           onBack={() => setScreen(formulaReturnScreen)}
-          onOpenLab={() => setScreen('lab')}
+          onOpenLab={openLabDirectoryGated}
           onOpenTopic={(tid) => openTopic(tid)}
           onRecordFormulaAttempt={handleRecordFormulaAttempt}
           onCelebrate={triggerConfetti}
@@ -1831,19 +2327,18 @@ export default function App() {
           progress={progress}
           effectiveThemeId={effectiveThemeId}
           appearanceMode={effectiveThemeMode}
-          themeLockMode={themeLockMode}
-          themeAutoProgress={themeAutoProgress}
+          isPremium={isPremiumStudent}
+          isAdmin={billingMeta.isAdmin}
           clockFormat={progress.clockFormat || '12h'}
-          goalSnapshot={goalSnapshot}
           onSelectTheme={handleSelectTheme}
           onChangeAppearanceMode={handleChangeThemeMode}
-          onChangeThemeLockMode={handleChangeThemeLockMode}
-          onToggleThemeAutoProgress={handleToggleThemeAutoProgress}
           onChangeClockFormat={handleChangeClockFormat}
+          onOpenPaywall={handleOpenPaywall}
           onToggleMuted={() =>
             setProgress((prev) => ({ ...prev, muted: !prev.muted }))
           }
           onOpenSubjects={() => setScreen('subjs')}
+          onOpenExamSetup={() => openExamSetup('more')}
           onOpenTranscript={() => setScreen('transcript')}
           onOpenLeaderboard={() => setScreen('leaderboard')}
           onOpenQuestionBank={handleOpenQuestionBank}
@@ -1862,6 +2357,8 @@ export default function App() {
           progress={progress}
           onCompleteCbt={handleCompleteCbt}
           onOpenWeakTopic={handleOpenWeakTopic}
+          onExamHallChange={setIsExamHallActive}
+          onOpenPaywall={handleOpenPaywall}
           onBack={() => setScreen('home')}
         />
       )}
@@ -1920,7 +2417,7 @@ export default function App() {
           progress={progress}
           onBack={() => setScreen('home')}
           onUpdateLeaderboardPrefs={handleUpdateLeaderboardPrefs}
-          onOpenCbt={() => setScreen('cbt')}
+          onOpenCbt={openCbtGated}
           onOpenDuel={() => {
             setActiveDuelCode(null);
             setScreen('duel');
@@ -1939,6 +2436,37 @@ export default function App() {
           }}
           onToggleSubject={(sid) => {
             setProgress((prev) => {
+              const track = resolveExamTrack(prev);
+              if (track === 'jamb') {
+                if (!isJambSubject(sid) || sid === 'eng') return prev;
+                const currentJamb = prev.subjs.filter((s) => isJambSubject(s));
+                const has = currentJamb.includes(sid);
+                if (has) {
+                  if (currentJamb.length <= 2) return prev;
+                  const trimmed = currentJamb.filter((x) => x !== sid);
+                  const ordered = SUBJECT_IDS.filter((id) => id === 'eng' || trimmed.includes(id));
+                  const nextSubj = ordered.includes(prev.subj) ? prev.subj : ordered[0];
+                  return {
+                    ...prev,
+                    subjs: ordered,
+                    jambSubjects: normalizeJambQuartet(ordered),
+                    subj: nextSubj,
+                  };
+                }
+                const electives = currentJamb.filter((x) => x !== 'eng');
+                const nextElectives =
+                  electives.length >= 3 ? [...electives.slice(1), sid] : [...electives, sid];
+                const ordered = SUBJECT_IDS.filter(
+                  (id) => id === 'eng' || nextElectives.includes(id)
+                );
+                const nextSubj = ordered.includes(prev.subj) ? prev.subj : ordered[0];
+                return {
+                  ...prev,
+                  subjs: ordered,
+                  jambSubjects: normalizeJambQuartet(ordered),
+                  subj: nextSubj,
+                };
+              }
               const has = prev.subjs.includes(sid);
               if (has && prev.subjs.length <= 1) return prev;
               const rawSubjs = has ? prev.subjs.filter((x) => x !== sid) : [...prev.subjs, sid];
@@ -1950,18 +2478,38 @@ export default function App() {
           onUpdateTarget={(t) =>
             setProgress((prev) => ({ ...prev, target: t }))
           }
+          onOpenExamSetup={() => openExamSetup('subjs')}
           onOpenReview={() => setScreen('review')}
           onOpenQuestionBank={handleOpenQuestionBank}
           onBack={() => setScreen('more')}
         />
       )}
       </AppShell>
+      </EntitlementProvider>
       </ClockFormatProvider>
       <QuestionBankManagerModal
         open={qbankModal.open}
         initialSubject={qbankModal.subject}
         initialTab={qbankModal.tab}
         onClose={() => setQbankModal((prev) => ({ ...prev, open: false }))}
+      />
+      <PaywallModal
+        open={paywallModal.open || isTrialLockedOut}
+        blocking={isTrialLockedOut}
+        trialDaysRemaining={trialStatus.daysRemaining}
+        onSignOut={handleSignOut}
+        reason={paywallModal.reason}
+        progress={progress}
+        paystackEnabled={billingMeta.paystackEnabled}
+        initialReference={paywallModal.initialRef}
+        onActivated={(pro) => {
+          playSound('win');
+          setProgress((prev) => ({ ...prev, pro }));
+        }}
+        onClose={() => {
+          if (isTrialLockedOut) return;
+          setPaywallModal((prev) => ({ ...prev, open: false, initialRef: null }));
+        }}
       />
       <BadgeUnlockCelebration
         badge={badgeQueue[0]?.badge || null}
@@ -1972,7 +2520,9 @@ export default function App() {
           setBadgeQueue((cur) => cur.slice(1));
         }}
       />
-      {showNav && <FloatingLiveCoach muted={progress.muted} />}
+      {isPremiumStudent && showNav && !(screen === 'cbt' && isExamHallActive) && (
+        <FloatingLiveCoach muted={progress.muted} />
+      )}
       <OfflineIndicator />
     </LiveCoachProvider>
     </CloudSyncProvider>

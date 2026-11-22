@@ -29,7 +29,7 @@ import {
   useQuestionBankCounts,
 } from '../utils/questionBankDb';
 import { Icon } from './Icons';
-import { SmoothProgressBar } from './ULessonMotion';
+import { LiquidCapsuleBar, SmoothProgressBar } from './ULessonMotion';
 
 export type QuestionBankTab = 'overview' | 'aloc' | 'gemini' | 'browse';
 
@@ -426,7 +426,7 @@ export function QuestionBankManagerModal({
 
       setAlocStatus('done');
       setAlocMessage(
-        `ALOC sync finished: ${totalSaved.toLocaleString()} new past questions stored offline (${totalDupes.toLocaleString()} duplicates deduplicated).`
+        `Import finished: ${totalSaved.toLocaleString()} new practice questions saved offline (${totalDupes.toLocaleString()} duplicates skipped).`
       );
       refresh();
     } catch (err) {
@@ -497,7 +497,7 @@ export function QuestionBankManagerModal({
           if (!okToContinue) {
             setGeminiStatus('idle');
             setGeminiMessage(
-              `Queue stopped. Saved ${grandSaved.toLocaleString()} new questions to IndexedDB.`
+              `Batch stopped. Saved ${grandSaved.toLocaleString()} new questions offline.`
             );
             return;
           }
@@ -700,7 +700,7 @@ export function QuestionBankManagerModal({
     if (!confirmClearTarget) return;
     if (confirmClearTarget === 'ALL') {
       await clearAllQuestionsInDb();
-      setIoNotice({ kind: 'ok', text: 'Cleared all questions from IndexedDB offline bank.' });
+      setIoNotice({ kind: 'ok', text: 'Cleared all questions from the offline library.' });
     } else {
       const removed = await clearSubjectQuestionsInDb(confirmClearTarget);
       const label = BANK_SUBJECT_MAP[confirmClearTarget]?.uiName || confirmClearTarget;
@@ -742,7 +742,7 @@ export function QuestionBankManagerModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[1040px] max-h-[92vh] rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-2xl flex flex-col overflow-hidden">
+      <div className="ul-liquid-modal w-full max-w-[1040px] max-h-[92vh] rounded-2xl bg-[var(--card)] border border-[var(--line)] shadow-2xl flex flex-col overflow-hidden">
         {/* Top Header */}
         <header className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[var(--line)] bg-[var(--bg)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
           <div className="flex items-start justify-between gap-2.5 min-w-0 flex-1">
@@ -760,7 +760,7 @@ export function QuestionBankManagerModal({
                   </span>
                 </div>
                 <p className="text-[12px] sm:text-[12.5px] text-[var(--dim)] leading-snug mt-0.5">
-                  IndexedDB Offline Engine · ALOC Past Questions + Gemini Structured JSON Batch Generator
+                  Offline question library · Import, build and browse exam-style practice sets
                 </p>
               </div>
             </div>
@@ -814,36 +814,25 @@ export function QuestionBankManagerModal({
         </header>
 
         {/* Tab Bar */}
-        <nav
-          aria-label="Question Bank sections"
-          className="px-4 sm:px-6 pt-3 pb-2.5 border-b border-[var(--line)] bg-[var(--card)] flex items-center gap-1.5 overflow-x-auto shrink-0"
-        >
-          {(
-            [
-              { id: 'overview', label: '12-Subject Sync Grid', icon: 'grid' },
-              { id: 'aloc', label: 'Source A · ALOC Past Qs', icon: 'key' },
-              { id: 'gemini', label: 'Source B · Gemini Generator', icon: 'bolt' },
-              { id: 'browse', label: `Browse & Drill (${totalCount.toLocaleString()})`, icon: 'books' },
-            ] as const
-          ).map((item) => {
-            const active = tab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`min-h-[38px] px-3.5 rounded-xl text-[12.5px] font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
-                  active
-                    ? 'bg-[var(--gold)] text-[var(--on-acc)] shadow-xs'
-                    : 'bg-[var(--bg)] text-[var(--dim)] border border-[var(--line)] hover:text-[var(--ink)] hover:border-[var(--acc-line)]'
-                }`}
-              >
-                <Icon name={item.icon} size={14} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+        <div className="px-4 sm:px-6 pt-3 pb-2.5 border-b border-[var(--line)] bg-[var(--card)] overflow-x-auto shrink-0">
+          <LiquidCapsuleBar
+            roleType="nav"
+            size="md"
+            ariaLabel="Question Bank sections"
+            items={[
+              { id: 'overview' as QuestionBankTab, label: 'Subject overview', icon: 'grid' },
+              { id: 'aloc' as QuestionBankTab, label: 'External feed', icon: 'key' },
+              { id: 'gemini' as QuestionBankTab, label: 'Smart batch builder', icon: 'bolt' },
+              {
+                id: 'browse' as QuestionBankTab,
+                label: `Browse & practise (${totalCount.toLocaleString()})`,
+                icon: 'books',
+              },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+        </div>
 
         {/* Global IO Notice Banner */}
         {ioNotice && (
@@ -875,12 +864,10 @@ export function QuestionBankManagerModal({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <div className="font-[var(--display)] font-bold text-[15.5px] text-[var(--ink)]">
-                      IndexedDB Offline Storage Capacity
+                      Offline library capacity
                     </div>
                     <div className="text-[12.5px] text-[var(--dim)]">
-                      Object store <code className="mono font-bold text-[var(--ink)]">questions</code> indexed by{' '}
-                      <code className="mono">subject</code>, <code className="mono">examType</code>,{' '}
-                      <code className="mono">topic</code> &amp; unique normalized text hash — zero 5MB localStorage limit.
+                      Questions are organised by subject, exam type and topic with automatic duplicate removal for fast offline study.
                     </div>
                   </div>
                   <div className="text-right shrink-0">
@@ -982,13 +969,10 @@ export function QuestionBankManagerModal({
             <div className="flex flex-col gap-4">
               <section className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-4 sm:p-5 flex flex-col gap-4">
                 <div>
-                  <span className="eyebrow text-[var(--gold)]">Source A · Official Past Questions</span>
-                  <h3 className="h18 text-[var(--ink)]">ALOC v1 Batch Fetcher</h3>
+                  <span className="eyebrow text-[var(--gold)]">External question feed</span>
+                  <h3 className="h18 text-[var(--ink)]">Batch importer</h3>
                   <p className="text-[13px] text-[var(--dim)] mt-0.5">
-                    Streams real JAMB, WAEC, and NECO past papers from{' '}
-                    <code className="mono text-[12px] text-[var(--ink)]">https://dev.aloc.com.ng/api/v1/questions</code>{' '}
-                    using <code className="mono text-[12px]">X-API-Key</code>, <code className="mono text-[12px]">limit=15</code>, and{' '}
-                    <code className="mono text-[12px]">cursor</code> pagination. Every question is deduplicated before saving to IndexedDB.
+                    Fetches exam-style questions in small batches and removes duplicates automatically before saving them offline on this device.
                   </p>
                 </div>
 
@@ -1181,12 +1165,10 @@ export function QuestionBankManagerModal({
               <section className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-4 sm:p-5 flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div>
-                    <span className="eyebrow text-[var(--gold)]">Source B · Structured JSON Output (25 Qs / Call)</span>
-                    <h3 className="h18 text-[var(--ink)]">Gemini Batch Question Generator</h3>
+                    <span className="eyebrow text-[var(--gold)]">Smart batch builder (25 questions per batch)</span>
+                    <h3 className="h18 text-[var(--ink)]">Exam-style question builder</h3>
                     <p className="text-[13px] text-[var(--dim)] mt-0.5">
-                      Generates authentic NERDC/JAMB/WAEC/NECO questions in batches of 25 via server-side Gemini{' '}
-                      <code className="mono text-[12px]">responseSchema</code> with automatic retry &amp; exponential backoff on rate limits.
-                      Clean LaTeX (<code className="mono text-[12px]">$...$</code>) is enforced for Maths, F.Maths, Chem, and Phys.
+                      Creates fresh syllabus-matched practice questions in batches of 25 with clear maths notation and automatic retry if the server is busy.
                     </p>
                   </div>
                 </div>
@@ -1542,7 +1524,7 @@ export function QuestionBankManagerModal({
               {/* Question List */}
               {browseLoading ? (
                 <div className="py-10 text-center text-[13.5px] text-[var(--dim)]">
-                  Querying IndexedDB…
+                  Loading offline library…
                 </div>
               ) : browseRows.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-[var(--line)] p-8 text-center flex flex-col items-center gap-3">
@@ -1551,8 +1533,8 @@ export function QuestionBankManagerModal({
                     No offline questions stored for this filter yet
                   </div>
                   <p className="text-[13px] text-[var(--dim)] max-w-[440px]">
-                    Fetch real past questions via ALOC (Source A), run the Gemini Batch Generator (Source B), or click{' '}
-                    <strong>Import Bank (JSON)</strong> to preload questions offline.
+                    Import questions from the external feed, run the smart batch builder, or click{' '}
+                    <strong>Import Bank</strong> to add questions offline.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                     <button
@@ -1561,7 +1543,7 @@ export function QuestionBankManagerModal({
                       className="btn-tactile indigo min-h-[38px] text-[13px] px-4"
                     >
                       <Icon name="bolt" size={14} />
-                      <span>Open Gemini Generator</span>
+                      <span>Open batch builder</span>
                     </button>
                     <button
                       type="button"
@@ -1569,7 +1551,7 @@ export function QuestionBankManagerModal({
                       className="btn-tactile paper min-h-[38px] text-[13px] px-4"
                     >
                       <Icon name="key" size={14} />
-                      <span>Open ALOC Fetcher</span>
+                      <span>Open external feed</span>
                     </button>
                   </div>
                 </div>

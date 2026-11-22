@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useActiveLiveCoachEntry, type LiveCoachMode } from '../context/LiveCoachContext';
+import {
+  liveCoachModeToSubjectId,
+  useActiveLiveCoachEntry,
+  type LiveCoachMode,
+} from '../context/LiveCoachContext';
 import {
   buildAgricCoachSystemPrompt,
   buildBiologyCoachSystemPrompt,
@@ -16,6 +20,7 @@ import {
   float32ToPcm16Base64,
   pcm16Base64ToFloat32,
 } from '../utils/chemVoiceLogic';
+import { SUBJECT_TUTOR_REGISTRY } from '../utils/tutorRegistry';
 import {
   LIVE_POS_STORAGE_KEY,
   clampLivePos,
@@ -28,9 +33,16 @@ import {
   type LivePoint,
   type LiveRatio,
 } from '../utils/liveDragLogic';
+import { sfx, startTeacherCallRing } from '../utils/sound';
 import { Icon } from './Icons';
 
 type LiveStatus = 'closed' | 'connecting' | 'ready';
+
+function formatCallDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 interface TranscriptTurn {
   id: number;
@@ -38,8 +50,8 @@ interface TranscriptTurn {
   text: string;
 }
 
-const DEFAULT_PILL_W = 118;
-const DEFAULT_PILL_H = 42;
+const DEFAULT_PILL_W = 108;
+const DEFAULT_PILL_H = 38;
 const PANEL_W = 372;
 const PANEL_EST_H = 414;
 
@@ -61,7 +73,7 @@ function readInitialPos(): { pos: LivePoint; ratio: LiveRatio | null } {
           ry: Math.min(1, Math.max(0, parsed.ry)),
         };
         return {
-          pos: ratioToLivePos(ratio, vw, vh, DEFAULT_PILL_W, DEFAULT_PILL_H),
+          pos: ratioToLivePos(ratio, vw, vh, vw < 640 ? 42 : DEFAULT_PILL_W, DEFAULT_PILL_H),
           ratio,
         };
       }
@@ -69,8 +81,9 @@ function readInitialPos(): { pos: LivePoint; ratio: LiveRatio | null } {
   } catch {
     /* ignore storage errors */
   }
+  const initW = vw < 640 ? 42 : DEFAULT_PILL_W;
   return {
-    pos: computeDefaultLivePos(vw, vh, DEFAULT_PILL_W, DEFAULT_PILL_H),
+    pos: computeDefaultLivePos(vw, vh, initW, DEFAULT_PILL_H),
     ratio: null,
   };
 }
@@ -78,40 +91,9 @@ function readInitialPos(): { pos: LivePoint; ratio: LiveRatio | null } {
 export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   const activeEntry = useActiveLiveCoachEntry();
   const { context, mode, stepKey } = activeEntry;
-  const isMath = mode === 'math';
-  const isFMath = mode === 'fmath';
-  const isPhys = mode === 'phys';
-  const isBio = mode === 'bio';
-  const isAgric = mode === 'agric';
-  const isGeog = mode === 'geog';
-  const isEcon = mode === 'econ';
-  const isEng = mode === 'eng';
-  const isCivic = mode === 'civic';
-  const isDigiTech = mode === 'digitech';
-  const isDataProc = mode === 'dataproc';
-  const coachName = isDataProc
-    ? 'Mrs. Kemi'
-    : isDigiTech
-      ? 'Engr. Tunde'
-      : isCivic
-        ? 'Barrister Kunle'
-        : isEng
-          ? 'Miss Adaeze'
-          : isEcon
-            ? 'Dr. Ngozi'
-            : isGeog
-              ? 'Dr. Ibrahim'
-              : isAgric
-                ? 'Dr. Fatima'
-                : isBio
-                  ? 'Dr. Amaka'
-                  : isPhys
-                    ? 'Dr. Faraday'
-                    : isFMath
-                      ? 'Prof. Chinedu'
-                      : isMath
-                        ? 'Master Chike'
-                        : 'Prof. Spark';
+  const activeSubjId = liveCoachModeToSubjectId(mode);
+  const activeTutorMeta = SUBJECT_TUTOR_REGISTRY[activeSubjId];
+  const coachName = activeTutorMeta.tutorName;
 
   // ── Draggable Position & Measured Size State ──
   const initDrag = useRef(readInitialPos()).current;
@@ -151,6 +133,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [promptInput, setPromptInput] = useState('');
   const [transcripts, setTranscripts] = useState<TranscriptTurn[]>([]);
+  const [callSeconds, setCallSeconds] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const connectedModeRef = useRef<LiveCoachMode>(mode);
@@ -162,6 +145,10 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   const nextStartTimeRef = useRef(0);
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const turnIdRef = useRef(1);
+  const retryTimerRef = useRef<number | null>(null);
+  const stopRingRef = useRef<(() => void) | null>(null);
+  const mutedLiveRef = useRef<boolean>(muted);
+  mutedLiveRef.current = muted;
 
   // Track exact pill dimensions as it switches between "Go Live" and active pill states
   useLayoutEffect(() => {
@@ -365,7 +352,19 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
     setProfSpeaking(false);
   }, []);
 
+  const stopCallRinging = useCallback(() => {
+    if (stopRingRef.current) {
+      stopRingRef.current();
+      stopRingRef.current = null;
+    }
+  }, []);
+
   const closeLiveSession = useCallback(() => {
+    stopCallRinging();
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     stopMicCapture();
     clearScheduledLiveAudio();
     if (wsRef.current) {
@@ -386,7 +385,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
       outputCtxRef.current = null;
     }
     setLiveStatus('closed');
-  }, [clearScheduledLiveAudio, stopMicCapture]);
+  }, [clearScheduledLiveAudio, stopCallRinging, stopMicCapture]);
 
   useEffect(() => {
     return () => {
@@ -405,9 +404,22 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
   useEffect(() => {
     if (muted) {
+      stopCallRinging();
       clearScheduledLiveAudio();
     }
-  }, [muted, clearScheduledLiveAudio]);
+  }, [muted, clearScheduledLiveAudio, stopCallRinging]);
+
+  // Live call elapsed timer while connected to the teacher
+  useEffect(() => {
+    if (!liveOpen || liveStatus !== 'ready') {
+      if (!liveOpen) setCallSeconds(0);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setCallSeconds((s) => s + 1);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [liveOpen, liveStatus]);
 
   const appendTranscript = useCallback((who: 'you' | 'prof', chunk: string) => {
     const clean = chunk.trim();
@@ -465,11 +477,16 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   }, []);
 
   const startLiveSession = useCallback(
-    (targetMode: LiveCoachMode = mode, opts?: { preserveExpanded?: boolean }) => {
+    (targetMode: LiveCoachMode = mode, opts?: { preserveExpanded?: boolean; retryAttempt?: number }) => {
+      const retryAttempt = opts?.retryAttempt ?? 0;
       window.dispatchEvent(new CustomEvent('rtc:stop-tts'));
       closeLiveSession();
       setLiveError(null);
-      setTranscripts([]);
+      if (retryAttempt === 0) {
+        setTranscripts([]);
+        setCallSeconds(0);
+        stopRingRef.current = startTeacherCallRing(mutedLiveRef.current);
+      }
       setLiveOpen(true);
       if (!opts?.preserveExpanded) {
         setPanelExpanded(true);
@@ -488,65 +505,37 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
       const ws = new WebSocket(`${proto}//${window.location.host}/api/chem/live`);
       wsRef.current = ws;
 
-      const useMath = targetMode === 'math';
-      const useFMath = targetMode === 'fmath';
-      const usePhys = targetMode === 'phys';
-      const useBio = targetMode === 'bio';
-      const useAgric = targetMode === 'agric';
-      const useGeog = targetMode === 'geog';
-      const useEcon = targetMode === 'econ';
-      const useEng = targetMode === 'eng';
-      const useCivic = targetMode === 'civic';
-      const useDigiTech = targetMode === 'digitech';
-      const useDataProc = targetMode === 'dataproc';
+      const targetSubjId = liveCoachModeToSubjectId(targetMode);
+      const targetMeta = SUBJECT_TUTOR_REGISTRY[targetSubjId];
       ws.onopen = () => {
         if (wsRef.current !== ws) return;
-        const systemInstruction = useDataProc
-          ? buildDataProcCoachSystemPrompt(context)
-          : useDigiTech
-            ? buildDigiTechCoachSystemPrompt(context)
-            : useCivic
-              ? buildCivicCoachSystemPrompt(context)
-              : useEng
-                ? buildEnglishCoachSystemPrompt(context)
-                : useEcon
-                  ? buildEconomicsCoachSystemPrompt(context)
-                  : useGeog
-                    ? buildGeogCoachSystemPrompt(context)
-                    : useAgric
-                      ? buildAgricCoachSystemPrompt(context)
-                      : useBio
-                        ? buildBiologyCoachSystemPrompt(context)
-                        : usePhys
-                          ? buildPhysicsCoachSystemPrompt(context)
-                          : useFMath
-                            ? buildFMathCoachSystemPrompt(context)
-                            : useMath
-                              ? buildMathCoachSystemPrompt(context)
-                              : buildMadScientistSystemPrompt(context);
-        const greetPrompt = useDataProc
-          ? `Introduce yourself once as Mrs. Kemi in your Data Processing & SQL Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 warm, razor-sharp sentences, and invite them to ask anything!`
-          : useDigiTech
-            ? `Introduce yourself once as Engineer Tunde in your Digital Technologies Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 energetic, clear sentences, and invite them to ask anything!`
-            : useCivic
-              ? `Introduce yourself once as Barrister Kunle in your Civic & Constitutional Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 principled, engaging sentences, and invite them to ask anything!`
-              : useEng
-                ? `Introduce yourself once as Miss Adaeze in your English & Diction Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 warm, articulate sentences, and invite them to ask anything!`
-                : useEcon
-                  ? `Introduce yourself once as Dr. Ngozi in your Economics Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 crisp, insightful sentences, and invite them to ask anything!`
-                  : useGeog
-                    ? `Introduce yourself once as Dr. Ibrahim in your Geography & Cartography Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 vivid sentences, and invite them to ask anything!`
-                    : useAgric
-                      ? `Introduce yourself once as Dr. Fatima at your Agronomy & Farm Research Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 warm, field-tested sentences, and invite them to ask anything!`
-                      : useBio
-                        ? `Introduce yourself once as Dr. Amaka at your Biology & Microscopy Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 warm, vivid sentences, and invite them to ask anything!`
-                        : usePhys
-                          ? `Introduce yourself once as Dr. Faraday at your Physics bench, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 lucid sentences, and invite them to ask anything!`
-                          : useFMath
-                            ? `Introduce yourself once as Professor Chinedu at your Further Mathematics Studio, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 razor-sharp sentences, and invite them to ask anything!`
-                            : useMath
-                              ? `Introduce yourself once as Master Chike at your Mathematics chalkboard, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 crisp sentences, and invite them to ask anything!`
-                              : `Introduce yourself once as Professor Spark in your Chemistry laboratory, briefly orient the student on "${context.topicName}" (${context.partTitle || 'current view'}) in 2 vivid sentences, and invite them to ask anything!`;
+        const systemInstruction =
+          targetSubjId === 'dataproc'
+            ? buildDataProcCoachSystemPrompt(context)
+            : targetSubjId === 'digitech'
+              ? buildDigiTechCoachSystemPrompt(context)
+              : targetSubjId === 'civic'
+                ? buildCivicCoachSystemPrompt(context)
+                : targetSubjId === 'eng'
+                  ? buildEnglishCoachSystemPrompt(context)
+                  : targetSubjId === 'econ'
+                    ? buildEconomicsCoachSystemPrompt(context)
+                    : targetSubjId === 'geog'
+                      ? buildGeogCoachSystemPrompt(context)
+                      : targetSubjId === 'agric'
+                        ? buildAgricCoachSystemPrompt(context)
+                        : targetSubjId === 'bio'
+                          ? buildBiologyCoachSystemPrompt(context)
+                          : targetSubjId === 'phys'
+                            ? buildPhysicsCoachSystemPrompt(context)
+                            : targetSubjId === 'fmaths'
+                              ? buildFMathCoachSystemPrompt(context)
+                              : targetSubjId === 'maths'
+                                ? buildMathCoachSystemPrompt(context)
+                                : targetSubjId === 'chem'
+                                  ? buildMadScientistSystemPrompt(context)
+                                  : `You are an experienced Nigerian ${targetMeta.name} (${targetMeta.roleTitle}) coaching a student preparing for JAMB UTME and WAEC/NECO. ${targetMeta.voiceStyle} Current topic: "${context.topicName}" (${context.partTitle || 'Overview'}). Context: ${context.stepText}. Keep answers plain, clear, warm, accurate, and grounded in Nigerian examples. NEVER introduce yourself by name or welcome the student to a studio — jump straight into teaching.`;
+        const greetPrompt = `Do NOT introduce yourself, state your name, or welcome the student to any studio. Jump straight into "${context.topicName}" (${context.partTitle || 'current view'}) in 1–2 crisp, helpful sentences and ask what part they want to tackle right now.`;
         ws.send(
           JSON.stringify({
             type: 'init',
@@ -562,9 +551,12 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
         try {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'ready') {
+            stopCallRinging();
+            sfx('callConnect', mutedLiveRef.current);
             setLiveError(null);
             setLiveStatus('ready');
           } else if (msg.type === 'audio' && typeof msg.audio === 'string') {
+            stopCallRinging();
             schedulePcm24kChunk(msg.audio);
           } else if (msg.type === 'inputTranscript' && typeof msg.text === 'string') {
             appendTranscript('you', msg.text);
@@ -573,9 +565,11 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
           } else if (msg.type === 'interrupted') {
             clearScheduledLiveAudio();
           } else if (msg.type === 'error' && typeof msg.error === 'string') {
+            stopCallRinging();
             setLiveError(msg.error);
             setLiveStatus('closed');
           } else if (msg.type === 'closed') {
+            stopCallRinging();
             setLiveStatus('closed');
             stopMicCapture();
           }
@@ -586,12 +580,22 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
       ws.onerror = () => {
         if (wsRef.current !== ws) return;
-        setLiveError('Could not connect to Live Studio WebSocket. Tap Reconnect to try again.');
+        if (retryAttempt < 1) {
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null;
+            startLiveSession(targetMode, { preserveExpanded: true, retryAttempt: retryAttempt + 1 });
+          }, 1200);
+          return;
+        }
+        stopCallRinging();
+        setLiveError('Call could not connect right now. Check your network and tap Call again.');
         setLiveStatus('closed');
       };
 
       ws.onclose = () => {
         if (wsRef.current !== ws) return;
+        if (retryTimerRef.current !== null) return;
+        stopCallRinging();
         setLiveStatus('closed');
         stopMicCapture();
       };
@@ -603,6 +607,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
       context,
       mode,
       schedulePcm24kChunk,
+      stopCallRinging,
       stopMicCapture,
     ]
   );
@@ -714,8 +719,10 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
   const endLiveCompletely = () => {
     closeLiveSession();
+    sfx('callEnd', mutedLiveRef.current);
     setLiveOpen(false);
     setPanelExpanded(false);
+    setCallSeconds(0);
   };
 
   const popoverPlacement = computePopoverPlacement(
@@ -730,67 +737,51 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
   return (
     <>
-      {/* Expanded Floating Live Coach Panel (smartly anchored inside viewport) */}
+      {/* Expanded Floating Teacher Call Panel (smartly anchored inside viewport) */}
       {liveOpen && panelExpanded && (
         <section
           ref={panelRef}
-          aria-label={
-            isDataProc
-              ? 'Mrs. Kemi Live Data Processing Coach'
-              : isDigiTech
-                ? 'Engineer Tunde Live Digital Technologies Coach'
-                : isCivic
-                  ? 'Barrister Kunle Live Civic Education Coach'
-                  : isEng
-                    ? 'Miss Adaeze Live English Coach'
-                    : isEcon
-                      ? 'Dr. Ngozi Live Economics Coach'
-                      : isGeog
-                        ? 'Dr. Ibrahim Live Geography Coach'
-                        : isAgric
-                          ? 'Dr. Fatima Live Agricultural Science Coach'
-                          : isBio
-                            ? 'Dr. Amaka Live Biology Coach'
-                            : isPhys
-                              ? 'Dr. Faraday Live Physics Coach'
-                              : isFMath
-                                ? 'Professor Chinedu Live Further Mathematics Coach'
-                                : isMath
-                                  ? 'Master Chike Live Mathematics Coach'
-                                  : 'Professor Spark Live Chemistry Lab'
-          }
+          data-live-coach-dock="true"
+          aria-label={`Live call with ${activeTutorMeta.tutorName}`}
           style={{
             transform: `translate3d(${popoverPlacement.left}px, ${popoverPlacement.top}px, 0)`,
           }}
           className="fixed top-0 left-0 z-50 w-[min(372px,calc(100vw-20px))] rounded-2xl bg-[#0F172A]/96 backdrop-blur-xl text-[#F8FAFC] border border-white/14 shadow-[0_24px_48px_-12px_rgba(2,6,23,0.65)] flex flex-col overflow-hidden"
         >
-          {/* Draggable Studio Header */}
+          {/* Draggable Teacher Call Header */}
           <div
             onPointerDown={handlePointerDown}
             className={`px-3.5 py-2.5 bg-white/[0.04] border-b border-white/10 flex items-center justify-between gap-2 select-none touch-none ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-slate-400 shrink-0" aria-hidden="true">
-                <Icon name="grip" size={15} />
-              </span>
+            <div className="flex items-center gap-2.5 min-w-0">
               <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
+                aria-hidden="true"
+                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                   liveStatus === 'ready'
-                    ? 'bg-emerald-400'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/35'
                     : liveStatus === 'connecting'
-                      ? 'bg-amber-400 animate-pulse'
-                      : 'bg-rose-400'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-400/35'
+                      : 'bg-rose-500/20 text-rose-300 border border-rose-400/35'
                 }`}
-              />
+              >
+                <Icon name={liveStatus === 'connecting' ? 'phoneCall' : 'phone'} size={15} />
+              </span>
               <div className="min-w-0">
-                <div className="text-[12px] font-bold text-white truncate">
-                  {liveStatus === 'ready'
-                    ? `${coachName} · Live`
-                    : liveStatus === 'connecting'
-                      ? `Connecting to ${coachName}...`
-                      : `${coachName} · Disconnected`}
+                <div className="text-[12.5px] font-bold text-white truncate flex items-center gap-1.5">
+                  <span className="truncate">
+                    {liveStatus === 'ready'
+                      ? `On call · ${coachName}`
+                      : liveStatus === 'connecting'
+                        ? `Calling ${coachName}...`
+                        : `${coachName} · Call ended`}
+                  </span>
+                  {liveStatus === 'ready' && (
+                    <span className="text-[11px] font-mono text-emerald-300 tabular-nums shrink-0">
+                      {formatCallDuration(callSeconds)}
+                    </span>
+                  )}
                 </div>
                 <div className="text-[11.5px] text-slate-400 truncate">
                   {context.topicName}
@@ -806,18 +797,19 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
               <button
                 type="button"
                 onClick={() => setPanelExpanded(false)}
-                aria-label="Minimize Live Coach panel"
-                title="Minimize to floating dock (keeps Live active)"
+                aria-label="Minimize teacher call panel"
+                title="Minimize call to floating bar (keeps call active)"
                 className="w-8 h-8 rounded-lg bg-white/8 hover:bg-white/14 border border-white/10 text-slate-200 flex items-center justify-center cursor-pointer transition"
               >
                 <Icon name="minus" size={14} />
               </button>
               <button
                 type="button"
+                data-no-sound="true"
                 onClick={endLiveCompletely}
-                aria-label="End Live session"
-                title="End Live session"
-                className="w-8 h-8 rounded-lg bg-rose-500/90 hover:bg-rose-500 text-white flex items-center justify-center cursor-pointer transition"
+                aria-label="Hang up teacher call"
+                title="Hang up call"
+                className="w-8 h-8 rounded-lg bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition"
               >
                 <Icon name="x" size={14} />
               </button>
@@ -826,27 +818,29 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
           {/* Body */}
           <div className="p-3.5 flex flex-col gap-3">
-            {/* Mic & Reconnect Row */}
+            {/* Mic & Call Again Row */}
             <div className="flex items-center justify-between gap-2">
               <span className="text-[12px] font-medium text-slate-300 truncate">
                 {liveStatus === 'closed'
-                  ? 'Session disconnected'
+                  ? 'Call disconnected'
                   : liveStatus === 'connecting'
-                    ? `Connecting to ${coachName}...`
+                    ? `Ringing ${coachName}...`
                     : profSpeaking
                       ? `${coachName} is speaking...`
                       : micActive
-                        ? 'Listening to your mic...'
-                        : 'Voice & text Q&A ready'}
+                        ? 'Listening to your voice...'
+                        : 'Connected — turn on mic or type'}
               </span>
 
               {liveStatus === 'closed' ? (
                 <button
                   type="button"
+                  data-no-sound="true"
                   onClick={() => startLiveSession(mode)}
-                  className="min-h-[34px] px-3.5 rounded-xl bg-white text-slate-950 text-[12.5px] font-bold cursor-pointer whitespace-nowrap hover:bg-slate-100 transition"
+                  className="min-h-[34px] px-3.5 rounded-xl bg-emerald-500 text-white text-[12.5px] font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap hover:bg-emerald-400 transition"
                 >
-                  Reconnect
+                  <Icon name="phone" size={13} />
+                  <span>Call again</span>
                 </button>
               ) : (
                 <button
@@ -880,29 +874,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
               {transcripts.length === 0 ? (
                 <p className="text-slate-300 text-[12.5px] leading-snug">
                   {liveStatus === 'connecting'
-                    ? isDataProc
-                      ? 'Connecting to the Database & SQL Studio...'
-                      : isDigiTech
-                        ? 'Booting the Digital Architecture Studio...'
-                        : isCivic
-                          ? 'Opening the Civic & Constitutional Chambers...'
-                          : isEng
-                            ? 'Opening the English & Diction Studio...'
-                            : isEcon
-                              ? 'Opening the Economics Policy Studio...'
-                              : isGeog
-                                ? 'Unfolding the Topographical Atlas...'
-                                : isAgric
-                                  ? 'Preparing the Agronomy & Farm Studio...'
-                                  : isBio
-                                    ? 'Focusing the Biology microscope...'
-                                    : isPhys
-                                      ? 'Powering up the Physics bench...'
-                                      : isFMath
-                                        ? 'Setting up the Calculus & Vector Studio...'
-                                        : isMath
-                                          ? 'Chalking up the board...'
-                                          : 'Igniting the Bunsen burner...'
+                    ? activeTutorMeta.connectingLine
                     : `${coachName} is ready for "${context.topicName}". Turn on your mic or tap a prompt below!`}
                 </p>
               ) : (
@@ -926,78 +898,11 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
             {/* Quick Prompts */}
             <div className="flex flex-wrap gap-1.5">
-              {(isDataProc
-                ? [
-                    'Trace this on a real database table!',
-                    'Top trap to watch?',
-                    'Quiz me right now!',
-                  ]
-                : isDigiTech
-                  ? [
-                      'Walk through the bits & hardware!',
-                      'Top trap to watch?',
-                      'Quiz me right now!',
-                    ]
-                  : isCivic
-                    ? [
-                        'Give a real civic case example!',
-                        'Top trap to watch?',
-                        'Quiz me right now!',
-                      ]
-                    : isEng
-                      ? [
-                          'Give a clear sentence example!',
-                          'Top trap to watch?',
-                          'Quiz me right now!',
-                        ]
-                      : isEcon
-                        ? [
-                            'Explain with a real market example!',
-                            'Top trap to watch?',
-                            'Quiz me right now!',
-                          ]
-                        : isGeog
-                          ? [
-                              'Connect this to Nigeria’s map!',
-                              'Top trap to watch?',
-                              'Quiz me right now!',
-                            ]
-                          : isAgric
-                            ? [
-                                'Connect this to a real farm!',
-                                'Top trap to watch?',
-                                'Quiz me right now!',
-                              ]
-                            : isBio
-                              ? [
-                                  'Walk me through the mechanism!',
-                                  'Top trap to watch?',
-                                  'Quiz me right now!',
-                                ]
-                              : isPhys
-                                ? [
-                                    'Explain with a real-world Physics demo!',
-                                    'Top trap to watch?',
-                                    'Quiz me right now!',
-                                  ]
-                                : isFMath
-                                  ? [
-                                      'Show the fastest calculus/vector step!',
-                                      'Top trap to watch?',
-                                      'Quiz me right now!',
-                                    ]
-                                  : isMath
-                                    ? [
-                                        'Show the cleanest method here!',
-                                        'Top trap to watch?',
-                                        'Quiz me right now!',
-                                      ]
-                                    : [
-                                        'Explain with a lab analogy!',
-                                        'Top trap to watch?',
-                                        'Quiz me right now!',
-                                      ]
-              ).map((q) => (
+              {[
+                activeTutorMeta.quickPrompt,
+                'Top trap to watch?',
+                'Quiz me right now!',
+              ].map((q) => (
                 <button
                   key={q}
                   type="button"
@@ -1042,10 +947,11 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
         </section>
       )}
 
-      {/* Persistent Draggable Floating "Go Live" Dock */}
+      {/* Persistent Draggable Floating "Call teacher" Dock */}
       <div
         ref={pillRef}
         data-testid="floating-live-pill"
+        data-live-coach-dock="true"
         style={{
           transform: `translate3d(${effectivePos.x}px, ${effectivePos.y}px, 0)`,
         }}
@@ -1056,6 +962,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
         {!liveOpen ? (
           <button
             type="button"
+            data-no-sound="true"
             onPointerDown={handlePointerDown}
             onKeyDown={handleKeyDownNudge}
             onClick={(e) => {
@@ -1067,23 +974,20 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
               }
               startLiveSession(mode);
             }}
-            aria-label={`Go Live with ${coachName} (draggable anywhere on screen)`}
+            aria-label={`Call ${coachName} live teacher`}
             aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight"
-            title={`Go Live with ${coachName} · Drag to move anywhere`}
-            className={`min-h-[38px] pl-2.5 pr-3 rounded-full bg-[#0F172A]/88 hover:bg-[#0F172A] backdrop-blur-md border border-white/14 text-white font-[var(--display)] font-bold text-[12.5px] shadow-[0_8px_20px_-6px_rgba(2,6,23,0.42)] flex items-center gap-1.5 whitespace-nowrap transition-[background-color,box-shadow,transform] duration-150 ${
+            title={`Call ${coachName} · Drag to move`}
+            className={`h-[42px] w-[42px] sm:h-[38px] sm:w-auto sm:pl-3 sm:pr-3.5 rounded-full bg-emerald-600 hover:bg-emerald-500 border border-emerald-800 text-white font-[var(--display)] font-bold text-[12.5px] shadow-[0_2.5px_0_#065F46] active:translate-y-[1px] active:shadow-[0_1px_0_#065F46] flex items-center justify-center gap-1.5 whitespace-nowrap transition-[background-color,box-shadow,transform] duration-150 ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
           >
-            <span className="text-slate-400/85 flex items-center" aria-hidden="true">
-              <Icon name="grip" size={13} />
-            </span>
-            <Icon name="radio" size={14} className="text-emerald-400" />
-            <span>Go Live</span>
+            <Icon name="phone" size={15} className="shrink-0" />
+            <span className="hidden sm:inline">Call teacher</span>
           </button>
         ) : (
           <div
             onPointerDown={handlePointerDown}
-            className={`min-h-[38px] pl-2 pr-2 rounded-full bg-[#0F172A]/92 backdrop-blur-md border text-white shadow-[0_8px_20px_-6px_rgba(2,6,23,0.48)] flex items-center gap-1.5 whitespace-nowrap ${
+            className={`min-h-[40px] pl-2 pr-2 rounded-full bg-[#0F172A]/95 backdrop-blur-md border text-white shadow-[0_10px_24px_-8px_rgba(2,6,23,0.52)] flex items-center gap-1.5 whitespace-nowrap ${
               liveStatus === 'closed'
                 ? 'border-rose-400/50'
                 : liveStatus === 'connecting'
@@ -1108,10 +1012,10 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
               aria-expanded={panelExpanded}
               aria-label={
                 panelExpanded
-                  ? `Hide ${coachName} Live panel`
-                  : `Expand ${coachName} Live panel`
+                  ? `Hide ${coachName} call panel`
+                  : `Show ${coachName} call panel`
               }
-              className={`min-h-[34px] pl-1 pr-2 rounded-full hover:bg-white/10 flex items-center gap-2 font-[var(--display)] font-bold text-[12.5px] cursor-pointer whitespace-nowrap transition ${
+              className={`min-h-[34px] pl-1.5 pr-2 rounded-full hover:bg-white/10 flex items-center gap-2 font-[var(--display)] font-bold text-[12.5px] cursor-pointer whitespace-nowrap transition ${
                 liveStatus === 'closed'
                   ? 'text-rose-300'
                   : liveStatus === 'connecting'
@@ -1122,15 +1026,15 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
               <span className="text-slate-400 flex items-center" aria-hidden="true">
                 <Icon name="grip" size={14} />
               </span>
-              <Icon name="radio" size={15} />
+              <Icon name={liveStatus === 'connecting' ? 'phoneCall' : 'phone'} size={15} />
               <span>
                 {liveStatus === 'closed'
-                  ? 'Disconnected'
+                  ? 'Call ended'
                   : liveStatus === 'connecting'
-                    ? 'Connecting...'
+                    ? 'Calling...'
                     : panelExpanded
-                      ? 'Live Open'
-                      : `Live · ${coachName}`}
+                      ? `On call · ${formatCallDuration(callSeconds)}`
+                      : `${coachName} · ${formatCallDuration(callSeconds)}`}
               </span>
               {profSpeaking && (
                 <span className="inline-flex items-end gap-0.5 h-3" aria-hidden="true">
@@ -1147,10 +1051,10 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={toggleMicrophone}
                 aria-pressed={micActive}
-                aria-label={micActive ? 'Mute Live microphone' : 'Turn on Live microphone'}
+                aria-label={micActive ? 'Mute call microphone' : 'Turn on call microphone'}
                 className={`w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${
                   micActive
-                    ? 'bg-rose-500 text-white'
+                    ? 'bg-emerald-500 text-white'
                     : 'bg-white/10 text-slate-200 hover:bg-white/18'
                 }`}
               >
@@ -1160,11 +1064,12 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
             <button
               type="button"
+              data-no-sound="true"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={endLiveCompletely}
-              aria-label="End Live session"
-              title="End Live session"
-              className="w-7 h-7 rounded-full bg-rose-500 hover:bg-rose-400 text-white flex items-center justify-center cursor-pointer shrink-0 transition"
+              aria-label="Hang up teacher call"
+              title="Hang up call"
+              className="w-7 h-7 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer shrink-0 transition"
             >
               <Icon name="x" size={13} />
             </button>

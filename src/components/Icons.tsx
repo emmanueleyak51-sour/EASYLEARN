@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { DiagramSpec } from '../types';
 import { renderDiagram } from '../data/diagrams';
 import { LIC, CLAB_IC, PLAB_IC, BLAB_IC, ALAB_IC } from '../data/labs';
+import { sanitizeEducationalHtml } from '../utils/securityPolicy';
 import { AnimatedNumber } from './AnimatedNumber';
+import eyakCrestUrl from '../assets/images/eyak_crest_logo_1795316062898.jpg';
 
 const IC_PATHS: Record<string, string> = {
   home: '<path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
@@ -64,6 +66,14 @@ const IC_PATHS: Record<string, string> = {
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/><ellipse cx="12" cy="12" rx="4.2" ry="9"/>',
   cpu: '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
+  flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  spark: '<path d="M12 2l2.1 6.2L20 10.5l-5.9 2.3L12 19l-2.1-6.2L4 10.5l5.9-2.3L12 2z"/><path d="M19 3l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2z"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  printer: '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
+  bars: '<rect x="3" y="12" width="4" height="8" rx="1" fill="currentColor" stroke="none"/><rect x="10" y="8" width="4" height="12" rx="1" fill="currentColor" stroke="none"/><rect x="17" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none"/>',
+  trendUp: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  phoneCall: '<path d="M15.05 5A5 5 0 0 1 19 8.95M15.05 1A9 9 0 0 1 23 8.94m-1 7.98v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
 };
 
 export function Icon({ name, size = 20, className = '' }: { name: string; size?: number; className?: string }) {
@@ -85,16 +95,56 @@ export function Icon({ name, size = 20, className = '' }: { name: string; size?:
   );
 }
 
-export function CrestSvg({ size = 40 }: { size?: number }) {
+export function CrestSvg({ size = 40, className = '' }: { size?: number; className?: string }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const radius = Math.max(10, Math.round(size * 0.28));
+
+  if (imgFailed) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 64 64"
+        fill="none"
+        aria-hidden="true"
+        className={`shrink-0 select-none ${className}`}
+      >
+        <rect width="64" height="64" rx="18" fill="#0D042E" />
+        <path
+          d="M16 42 C24 30, 32 34, 48 18 C44 34, 36 42, 30 48 C26 40, 20 38, 16 42 Z"
+          fill="#EDE9FE"
+        />
+        <polygon points="30,14 42,20 30,25 18,20" fill="#7C3AED" />
+        <circle cx="30" cy="29" r="5.5" fill="#DDD6FE" />
+        <polygon
+          points="49,10 50.8,14.2 55.2,14.6 51.8,17.5 52.8,21.8 49,19.5 45.2,21.8 46.2,17.5 42.8,14.6 47.2,14.2"
+          fill="#FACC15"
+        />
+        <path
+          d="M16 46 C26 55, 44 53, 52 38"
+          stroke="#FACC15"
+          strokeWidth="3.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <rect width="64" height="64" rx="18" fill="var(--crest-bg)" />
-      <g stroke="var(--hero-badge)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="32" cy="32" r="21" strokeOpacity=".28" strokeDasharray="3 5" />
-        <path d="M32 14l4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1z" fill="var(--hero-badge)" fillOpacity=".16" />
-        <circle cx="32" cy="32" r="3.2" fill="var(--hero-badge)" />
-      </g>
-    </svg>
+    <span
+      aria-hidden="true"
+      style={{ width: size, height: size, borderRadius: radius }}
+      className={`relative inline-flex items-center justify-center overflow-hidden shrink-0 select-none bg-[#0B0326] ring-1 ring-white/20 shadow-[0_4px_12px_-2px_rgba(59,12,163,0.45)] ${className}`}
+    >
+      <img
+        src={eyakCrestUrl}
+        alt="Eyak crest"
+        referrerPolicy="no-referrer"
+        draggable={false}
+        onError={() => setImgFailed(true)}
+        className="w-full h-full object-cover scale-[1.08] pointer-events-none select-none"
+      />
+    </span>
   );
 }
 
@@ -204,14 +254,15 @@ export function RingGauge({
   );
 }
 
-export function MiniRing({ value, size = 44 }: { value: number; size?: number }) {
+export function MiniRing({ value, size = 38 }: { value: number; size?: number }) {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
     const raf = window.requestAnimationFrame(() => setMounted(true));
     return () => window.cancelAnimationFrame(raf);
   }, []);
 
-  const r = (size - 6) / 2;
+  const strokeW = size <= 40 ? 3 : 3.5;
+  const r = (size - strokeW * 2) / 2;
   const c = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(100, value));
   const off = mounted ? c * (1 - clamped / 100) : c;
@@ -219,14 +270,14 @@ export function MiniRing({ value, size = 44 }: { value: number; size?: number })
   return (
     <div className="relative inline-grid place-items-center shrink-0">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" className="col-start-1 row-start-1">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth={3.5} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth={strokeW} />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
           stroke={done ? 'var(--green)' : 'var(--gold)'}
-          strokeWidth={3.5}
+          strokeWidth={strokeW}
           strokeLinecap="round"
           strokeDasharray={c.toFixed(1)}
           strokeDashoffset={off.toFixed(1)}
@@ -234,7 +285,13 @@ export function MiniRing({ value, size = 44 }: { value: number; size?: number })
           className="transition-[stroke-dashoffset] duration-500 ease-out"
         />
       </svg>
-      <span className="col-start-1 row-start-1 text-[11px] font-extrabold tabular-nums text-[var(--ink)]">{clamped}%</span>
+      <span
+        className={`col-start-1 row-start-1 ${
+          size <= 40 ? 'text-[10px]' : 'text-[11px]'
+        } font-extrabold tabular-nums text-[var(--ink)]`}
+      >
+        {clamped}%
+      </span>
     </div>
   );
 }
@@ -264,7 +321,12 @@ export function LabGlyph({ id, size = 24 }: { id: string; size?: number }) {
 }
 
 export function RichHtml({ html, className = '' }: { html: string; className?: string }) {
-  return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <span
+      className={className}
+      dangerouslySetInnerHTML={{ __html: sanitizeEducationalHtml(html) }}
+    />
+  );
 }
 
 export function DiagramFigure({ g, cap }: { g?: DiagramSpec; cap?: string }) {
@@ -275,7 +337,7 @@ export function DiagramFigure({ g, cap }: { g?: DiagramSpec; cap?: string }) {
   return (
     <figure key={sig} className="fig anim-rise">
       <div dangerouslySetInnerHTML={{ __html: svgHtml }} />
-      {cap && <figcaption dangerouslySetInnerHTML={{ __html: cap }} />}
+      {cap && <figcaption dangerouslySetInnerHTML={{ __html: sanitizeEducationalHtml(cap) }} />}
     </figure>
   );
 }

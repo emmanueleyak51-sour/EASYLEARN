@@ -95,7 +95,7 @@ export function CloudSyncProvider({
   children,
 }: {
   progress: UserProgress;
-  onHydrateFromCloud: (merged: UserProgress) => void;
+  onHydrateFromCloud: (remoteProgress: Record<string, unknown>) => void;
   children: React.ReactNode;
 }) {
   const [user, setUser] = useState<User | null>(null);
@@ -126,8 +126,9 @@ export function CloudSyncProvider({
         streakCount: Math.min(3650, Math.max(0, Math.floor(snap.streak?.n || 0))),
         activeSubj: SUBJECT_IDS.includes(snap.subj) ? snap.subj : 'maths',
       };
-      if (snap.studyPlan?.examType === 'jamb' || snap.studyPlan?.examType === 'waec') {
-        profilePayload.examType = snap.studyPlan.examType;
+      const resolvedExam = snap.examTrack || snap.studyPlan?.examType;
+      if (resolvedExam === 'jamb' || resolvedExam === 'waec' || resolvedExam === 'both') {
+        profilePayload.examType = resolvedExam;
       }
       if (
         typeof snap.studyPlan?.examDateIso === 'string' &&
@@ -220,9 +221,9 @@ export function CloudSyncProvider({
         }>(u, '/api/cloud/sync');
 
         if (res.exists && res.progress && typeof res.progress === 'object') {
-          const merged = mergeCloudProgress(progressRef.current, res.progress);
-          onHydrateFromCloud(merged);
-          await pushProgressToCloud(u, merged);
+          onHydrateFromCloud(res.progress);
+          const mergedForPush = mergeCloudProgress(progressRef.current, res.progress);
+          await pushProgressToCloud(u, mergedForPush);
           initialSyncDoneUidRef.current = u.uid;
           return;
         }
@@ -259,6 +260,9 @@ export function CloudSyncProvider({
     progress.duelHistory?.length,
     progress.leaderboardCampusGoal,
     progress.leaderboardPublic,
+    progress.themeMode,
+    progress.themeId,
+    progress.clockFormat,
     pushProgressToCloud,
   ]);
 

@@ -13,20 +13,8 @@ import {
 } from './engFormulaLogic';
 
 test('English Language curriculum has 32 NERDC SS1-SS3 topics, zero labs, and 224 valid MCQs', () => {
-  assert.deepEqual(SUBJECT_IDS, [
-    'maths',
-    'fmaths',
-    'chem',
-    'phys',
-    'bio',
-    'agric',
-    'geog',
-    'econ',
-    'eng',
-    'civic',
-    'digitech',
-    'dataproc',
-  ]);
+  assert.equal(SUBJECT_IDS.length, 49);
+  assert.ok(SUBJECT_IDS.includes('eng'));
   const eng = SUBJECTS.eng;
   assert.ok(eng, 'English subject exists');
   assert.equal(eng.topics.length, 32, '32 English topics');

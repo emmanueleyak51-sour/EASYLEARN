@@ -7,10 +7,12 @@ import {
 } from '../../utils/chemVoiceLogic';
 import { findQuestion, getTopics } from '../../data/curriculum';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
-import { AdirePattern, DiagramFigure, Icon } from '../Icons';
+import { DiagramFigure, Icon } from '../Icons';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { AnimatedNumber } from '../AnimatedNumber';
 import { SplitWorkbench, SubscreenTopBar } from '../AppShell';
+import { SmoothProgressBar } from '../ULessonMotion';
 import { StudyToolsDrawer } from '../StudyToolsDrawer';
 
 export function TopicTestScreen({
@@ -38,6 +40,9 @@ export function TopicTestScreen({
   const [eliminated, setEliminated] = useState<Record<number, boolean>>({});
   const [toolsOpen, setToolsOpen] = useState(false);
   const currentQid = session.list[session.i];
+  const targetHp = session.targetHp || BOSS_HP;
+  const totalTime = session.totalTime || BOSS_TIME;
+  const isToughJamb = targetHp > BOSS_HP || totalTime < BOSS_TIME;
 
   useEffect(() => {
     setEliminated({});
@@ -92,66 +97,57 @@ export function TopicTestScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, [onNextQuestion, onPickAnswer, progress, session.i, session.list, session.phase, session.picked, topic.id]);
 
+  const voiceMode = subjectToLiveCoachMode(progress.subj);
+
   if (session.phase === 'intro') {
     return (
       <div className="max-w-[600px] mx-auto py-4 flex flex-col gap-5 anim-rise">
-        <SubscreenTopBar title="Topic Test" subtitle={topic.name} onBack={onExit} />
-        <section className="adire-panel rounded-[26px] p-7 flex flex-col gap-4">
-          <AdirePattern />
-          <div className="relative z-10 flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-white/15 text-[var(--hero-badge)] flex items-center justify-center shrink-0">
-              <Icon name="bolt" size={26} />
+        <SubscreenTopBar title="Topic test" subtitle={topic.name} onBack={onExit} />
+        <section className="rtc-eq-plate p-6 sm:p-7 flex flex-col gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-[16px] tile-peach flex items-center justify-center shrink-0">
+              <Icon name="bolt" size={24} />
             </div>
             <div>
-              <span className="eyebrow text-[var(--hero-badge)]">Topic mastery test</span>
-              <h1 className="h28 text-white">{topic.boss}</h1>
+              <span className="eyebrow text-[#FFE1D1]">
+                {isToughJamb ? 'Tough JAMB condition · Topic test' : 'Topic test'}
+              </span>
+              <h1 className="h28 text-white">{topic.name}</h1>
             </div>
           </div>
-          <p className="relative z-10 text-[16px] text-white/90 leading-relaxed">
-            Answer <strong>{BOSS_HP} out of {session.list.length}</strong> mastery questions correctly within <strong>{mmss(BOSS_TIME)}</strong> to pass {topic.name}.
+          <p className="text-[15.5px] text-white/90 leading-relaxed">
+            Get <strong>{targetHp} out of {session.list.length}</strong> questions right within{' '}
+            <strong>{mmss(totalTime)}</strong> to pass this topic.
           </p>
-          <div className="relative z-10 grid grid-cols-3 gap-2.5 pt-1">
-            <div className="rounded-xl bg-white/12 p-3 text-center">
-              <div className="text-[11px] font-bold uppercase text-white/75">Questions</div>
-              <div className="font-[var(--display)] font-extrabold text-[20px] text-white">{session.list.length}</div>
+          {isToughJamb && (
+            <div className="rounded-[14px] bg-white/12 border border-white/20 px-3.5 py-2.5 text-[13px] text-white/95 leading-snug">
+              Trained stricter than UTME so your real exam score matches or beats your practice score. Read every word carefully — options A–D include close look-alike traps.
             </div>
-            <div className="rounded-xl bg-white/12 p-3 text-center">
-              <div className="text-[11px] font-bold uppercase text-white/75">Pass mark</div>
-              <div className="font-[var(--display)] font-extrabold text-[20px] text-[var(--hero-badge)]">{BOSS_HP}</div>
+          )}
+          <div className="grid grid-cols-3 gap-2.5 pt-1">
+            <div className="rounded-[16px] tile-peach p-3 text-center">
+              <div className="text-[12px] font-bold opacity-80">Questions</div>
+              <div className="font-[var(--display)] font-bold text-[20px] tabular-nums">
+                {session.list.length}
+              </div>
             </div>
-            <div className="rounded-xl bg-white/12 p-3 text-center">
-              <div className="text-[11px] font-bold uppercase text-white/75">Timer</div>
-              <div className="font-[var(--display)] font-extrabold text-[20px] text-white">{mmss(BOSS_TIME)}</div>
+            <div className="rounded-[16px] tile-mint p-3 text-center">
+              <div className="text-[12px] font-bold opacity-80">Pass mark</div>
+              <div className="font-[var(--display)] font-bold text-[20px] tabular-nums">
+                {targetHp}
+              </div>
+            </div>
+            <div className="rounded-[16px] tile-sky p-3 text-center">
+              <div className="text-[12px] font-bold opacity-80">Time limit</div>
+              <div className="font-[var(--display)] font-bold text-[20px] tabular-nums">
+                {mmss(totalTime)}
+              </div>
             </div>
           </div>
         </section>
 
         <ChemMadScientistBar
-          mode={
-            progress.subj === 'dataproc'
-              ? 'dataproc'
-              : progress.subj === 'digitech'
-                ? 'digitech'
-                : progress.subj === 'civic'
-                  ? 'civic'
-                  : progress.subj === 'eng'
-                    ? 'eng'
-                    : progress.subj === 'econ'
-                      ? 'econ'
-                      : progress.subj === 'geog'
-                        ? 'geog'
-                        : progress.subj === 'agric'
-                          ? 'agric'
-                          : progress.subj === 'bio'
-                            ? 'bio'
-                            : progress.subj === 'phys'
-                              ? 'phys'
-                              : progress.subj === 'chem'
-                                ? 'chem'
-                                : progress.subj === 'fmaths'
-                                  ? 'fmath'
-                                  : 'math'
-          }
+          mode={voiceMode}
           variant="compact"
           muted={progress.muted}
           sessionKey={`boss-session|${progress.subj}|${topic.id}`}
@@ -160,10 +156,10 @@ export function TopicTestScreen({
           context={{
             topicName: topic.name,
             sectionName: topic.sec,
-            stepLabel: topic.boss,
+            stepLabel: `Topic test · ${topic.name}`,
             stepText: extractTopicTestIntroSpeechScript(
               topic,
-              BOSS_HP,
+              targetHp,
               session.list.length,
               progress.subj
             ),
@@ -173,8 +169,8 @@ export function TopicTestScreen({
         />
 
         <button type="button" onClick={onStartFight} className="btn-tactile indigo w-full">
-          <span>Start timed test</span>
-          <Icon name="go" size={18} />
+          <span>Start topic test</span>
+          <Icon name="go" size={18} className="ul-arrow" />
         </button>
       </div>
     );
@@ -184,7 +180,7 @@ export function TopicTestScreen({
     const won = session.phase === 'won';
     const topics = getTopics(progress.subj);
     const newPred = predicted(progress, topics);
-    const shareText = `I just ${won ? 'passed' : 'tackled'} ${topic.boss} (${topic.name}) on EYAK with ${session.hits}/${session.list.length} right! Mastery score: ${newPred}%.`;
+    const shareText = `I just ${won ? 'passed' : 'practised'} the ${topic.name} topic test on EYAK with ${session.hits}/${session.list.length} correct! Subject mastery: ${newPred}%.`;
 
     const handleCopyShare = async () => {
       try {
@@ -199,42 +195,54 @@ export function TopicTestScreen({
     return (
       <div className="max-w-[620px] mx-auto py-4 flex flex-col gap-5 anim-rise">
         <section
-          className={`rounded-[26px] p-7 text-center flex flex-col items-center gap-3 ${
-            won
-              ? 'adire-panel'
-              : 'rtc-card border-[var(--bad-line)]'
+          className={`p-6 sm:p-7 text-center flex flex-col items-center gap-4 ${
+            won ? 'rtc-eq-plate' : 'rtc-card border-[var(--bad-line)]'
           }`}
         >
-          {won && <AdirePattern />}
           <div
-            className={`relative z-10 w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg anim-stamp ${
-              won ? 'bg-[var(--hero-badge)] text-[#141C33]' : 'bg-[var(--bad-soft)] text-[var(--coral-ink)]'
+            className={`w-14 h-14 rounded-[18px] flex items-center justify-center ${
+              won ? 'tile-peach' : 'bg-[var(--bad-soft)] text-[var(--coral-ink)]'
             }`}
           >
-            <Icon name={won ? 'crown' : 'rev'} size={34} />
+            <Icon name={won ? 'crown' : 'rev'} size={30} />
           </div>
-          <div className="relative z-10 flex flex-col gap-1">
-            <span className={`eyebrow ${won ? 'text-[var(--hero-badge)]' : 'text-[var(--coral-ink)]'}`}>
-              {won ? 'Topic passed!' : 'Not this time'}
+          <div className="flex flex-col gap-1">
+            <span className={`eyebrow ${won ? 'text-[#FFE1D1]' : 'text-[var(--coral-ink)]'}`}>
+              {won ? 'Topic passed' : 'Not passed yet'}
             </span>
             <h1 className={`h34 tabular-nums ${won ? 'text-white' : 'text-[var(--ink)]'}`}>
-              <AnimatedNumber value={session.hits} /> / {BOSS_HP} target hits
+              <AnimatedNumber value={session.hits} duration={680} /> / {targetHp} needed
             </h1>
-            <p className={`text-[15px] max-w-md mx-auto ${won ? 'text-white/85' : 'text-[var(--dim)]'}`}>
+            <p className={`text-[15px] max-w-md mx-auto ${won ? 'text-white/90' : 'text-[var(--dim)]'}`}>
               {won
-                ? `${topic.name} is now marked complete, and your mastery score stands at ${newPred}%.`
-                : 'Review the questions you missed and try this topic test again when ready.'}
+                ? `${topic.name} is now marked complete, and your subject mastery stands at ${newPred}%.`
+                : 'Read through the questions you missed and try this topic test again when you are ready.'}
             </p>
           </div>
 
-          <div className="relative z-10 grid grid-cols-2 gap-3 w-full max-w-xs pt-2">
-            <div className={`rounded-xl p-3 ${won ? 'bg-white/12 text-white' : 'bg-[var(--bg)] text-[var(--ink)]'}`}>
-              <div className="text-[11px] font-bold uppercase opacity-75">Best combo</div>
-              <div className="font-[var(--display)] font-extrabold text-[20px]">{session.best}x</div>
+          <div className="w-full max-w-md">
+            <SmoothProgressBar
+              value={Math.min(targetHp, session.hits)}
+              max={targetHp}
+              tone="emerald"
+              heightClass="h-3"
+              trackClass={won ? 'bg-white/20' : 'bg-[var(--deep)]'}
+              ariaLabel="Pass mark progress"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 w-full max-w-xs pt-1">
+            <div className={`rounded-[16px] p-3 ${won ? 'tile-mint' : 'bg-[var(--bg)] text-[var(--ink)]'}`}>
+              <div className="text-[12px] font-bold opacity-80">In a row</div>
+              <div className="font-[var(--display)] font-bold text-[20px] tabular-nums">
+                {session.best}
+              </div>
             </div>
-            <div className={`rounded-xl p-3 ${won ? 'bg-white/12 text-white' : 'bg-[var(--bg)] text-[var(--ink)]'}`}>
-              <div className="text-[11px] font-bold uppercase opacity-75">Time left</div>
-              <div className="font-[var(--display)] font-extrabold text-[20px] tabular-nums">{mmss(session.time)}</div>
+            <div className={`rounded-[16px] p-3 ${won ? 'tile-sky' : 'bg-[var(--bg)] text-[var(--ink)]'}`}>
+              <div className="text-[12px] font-bold opacity-80">Time left</div>
+              <div className="font-[var(--display)] font-bold text-[20px] tabular-nums">
+                {mmss(session.time)}
+              </div>
             </div>
           </div>
         </section>
@@ -243,24 +251,24 @@ export function TopicTestScreen({
           {won && (
             <button type="button" onClick={handleCopyShare} className="btn-tactile paper w-full">
               <Icon name="check" size={18} />
-              <span>{copied ? 'Result summary copied to clipboard!' : 'Copy result to share'}</span>
+              <span>{copied ? 'Result copied!' : 'Copy result to share'}</span>
             </button>
           )}
           {!won && (
             <button type="button" onClick={onRetry} className="btn-tactile indigo w-full">
-              <span>Retry topic test</span>
-              <Icon name="go" size={18} />
+              <span>Try topic test again</span>
+              <Icon name="go" size={18} className="ul-arrow" />
             </button>
           )}
           <button type="button" onClick={onExit} className={`btn-tactile ${won ? 'indigo' : 'paper'} w-full`}>
-            <span>Back to topic hub</span>
+            <span>Back to topic</span>
           </button>
         </div>
       </div>
     );
   }
 
-  // Fight phase
+  // Active test phase
   const qid = session.list[session.i];
   const q = findQuestion(progress, progress.subj, qid);
   if (!q) {
@@ -276,7 +284,7 @@ export function TopicTestScreen({
   return (
     <div className="flex flex-col gap-4 anim-rise">
       <SubscreenTopBar
-        title={topic.boss}
+        title={`Topic test · ${topic.name}`}
         subtitle={`Question ${session.i + 1} of ${session.list.length}`}
         onBack={onExit}
         right={
@@ -284,52 +292,72 @@ export function TopicTestScreen({
             <button
               type="button"
               onClick={() => setToolsOpen(true)}
-              className="min-h-[32px] px-2.5 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[11.5px] font-bold text-[var(--ink)] flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              className="min-h-[34px] px-3 rounded-[14px] bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--gold)] text-[12px] font-bold text-[var(--ink)] flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
               <Icon name="sigma" size={13} className="text-[var(--gold)]" />
-              <span>Calc &amp; Pad</span>
+              <span>Calculator</span>
             </button>
             {session.combo >= 2 && (
-              <span
-                key={session.combo}
-                className="px-2.5 py-1 rounded-full bg-[var(--hero-badge)] text-[#141C33] text-[12px] font-extrabold anim-streak-pop"
-              >
-                {session.combo}x streak
+              <span className="px-2.5 py-1 rounded-[12px] tile-peach text-[12px] font-bold tabular-nums whitespace-nowrap">
+                {session.combo} in a row
               </span>
             )}
             <span
-              className={`px-3 py-1 rounded-full border text-[13px] font-extrabold tabular-nums ${
+              className={`min-h-[34px] px-3 rounded-[14px] border text-[13px] font-bold mono tabular-nums inline-flex items-center gap-1.5 whitespace-nowrap ${
                 lowTime
                   ? 'bg-[var(--bad-soft)] border-[var(--coral)] text-[var(--coral-ink)] anim-timer-urgent'
                   : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)]'
               }`}
             >
-              {mmss(session.time)}
+              <Icon name="clock" size={13.5} className={lowTime ? 'text-[var(--coral-ink)]' : 'text-[var(--gold)]'} />
+              <span>{mmss(session.time)}</span>
             </span>
           </div>
         }
       />
 
-      {/* Hits Meter */}
-      <div className="rounded-2xl bg-[var(--card)] border border-[var(--line)] p-3 flex items-center justify-between gap-4">
-        <span className="text-[13px] font-bold text-[var(--dim)]">Target hits ({session.hits}/{BOSS_HP})</span>
-        <div className="flex items-center gap-1.5">
-          {Array.from({ length: BOSS_HP }, (_, idx) => (
-            <span
-              key={idx}
-              className={`w-6 h-3 rounded-full transition ${
-                idx < session.hits ? 'bg-[var(--green)]' : 'bg-[var(--line)]'
-              }`}
-            />
-          ))}
+      {/* Pass mark progress meter (12px tall) */}
+      <div className="rtc-card px-4 py-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-[13px] font-bold whitespace-nowrap">
+          <span className="text-[var(--dim)]">
+            {isToughJamb ? 'Tough JAMB pass mark' : 'Pass mark'}
+          </span>
+          <span className="font-[var(--display)] font-bold text-[var(--ink)] tabular-nums">
+            {session.hits}/{targetHp} correct
+          </span>
+        </div>
+        <div className="flex-1 max-w-[260px]">
+          <SmoothProgressBar
+            value={Math.min(targetHp, session.hits)}
+            max={targetHp}
+            tone="emerald"
+            heightClass="h-3"
+            trackClass="bg-[var(--deep)]"
+            ariaLabel="Topic test pass mark"
+          />
         </div>
       </div>
 
       <SplitWorkbench
         hasRightPane={!!q.g}
         left={
-          <div key={q.id} className="flex flex-col gap-4 anim-q-enter">
-            <div className="rtc-card rounded-2xl p-5 flex flex-col gap-4">
+          <div key={q.id} className="flex flex-col gap-4 anim-q-fwd">
+            <div className="rtc-card p-5 sm:p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-[var(--line)]">
+                <div className="flex items-center gap-2 text-[12.5px] font-bold min-w-0">
+                  <span className="font-[var(--display)] font-bold text-[var(--gold)] tabular-nums">
+                    Question {session.i + 1}
+                  </span>
+                  <span className="text-[var(--dim)]" aria-hidden="true">·</span>
+                  <span className="text-[var(--ink)] truncate">{topic.name}</span>
+                </div>
+                {!answered && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--dim)] shrink-0">
+                    <kbd className="eyak-kbd">A</kbd>–<kbd className="eyak-kbd">D</kbd>
+                    <span>answer</span>
+                  </span>
+                )}
+              </div>
               <div
                 className="qt text-[var(--ink)]"
                 dangerouslySetInnerHTML={{ __html: typesetMathHtml(q.q, progress.subj) }}
@@ -349,7 +377,7 @@ export function TopicTestScreen({
                 let stateCls = '';
                 if (answered) {
                   if (isRightOpt) stateCls = 'ok';
-                  else if (isThisPicked) stateCls = 'no anim-shake';
+                  else if (isThisPicked) stateCls = 'no';
                   else stateCls = 'opt-eliminated';
                 }
                 const optLetter = String.fromCharCode(65 + dispIdx);
@@ -359,10 +387,13 @@ export function TopicTestScreen({
                     type="button"
                     disabled={answered}
                     onClick={() => onPickAnswer(q, origIdx, origIdx === q.a)}
-                    className={`opt-tile two-col ${stateCls}`}
+                    className={`opt-tile ${stateCls}`}
                   >
+                    <span className="opt-bubble">
+                      <span>{optLetter}</span>
+                    </span>
                     <span
-                      className="opt"
+                      className="opt flex-1 text-left"
                       dangerouslySetInnerHTML={{
                         __html: typesetMathHtml(q.o[origIdx], progress.subj),
                       }}
@@ -376,8 +407,8 @@ export function TopicTestScreen({
                       onClick={() => onPickAnswer(q, origIdx, origIdx === q.a)}
                       className={`opt-tile flex-1 ${stateCls} ${isCrossed ? 'opacity-45' : ''}`}
                     >
-                      <span className="w-7 h-7 rounded-lg bg-[var(--deep)] border border-[var(--line)] font-extrabold text-[13px] flex items-center justify-center shrink-0">
-                        {optLetter}
+                      <span className="opt-bubble">
+                        <span>{optLetter}</span>
                       </span>
                       <span
                         className={`flex-1 ${isCrossed ? 'line-through text-[var(--dim)]' : ''}`}
@@ -385,9 +416,6 @@ export function TopicTestScreen({
                           __html: typesetMathHtml(q.o[origIdx], progress.subj),
                         }}
                       />
-                      {answered && isRightOpt && (
-                        <Icon name="check" size={18} className="text-[var(--green)] shrink-0 anim-check-draw" />
-                      )}
                     </button>
 
                     {!answered && (
@@ -397,13 +425,13 @@ export function TopicTestScreen({
                         aria-label={
                           isCrossed
                             ? `Restore option ${optLetter}`
-                            : `Eliminate option ${optLetter}`
+                            : `Cross out option ${optLetter}`
                         }
-                        title={isCrossed ? 'Restore option' : 'Cross out distractor'}
+                        title={isCrossed ? 'Restore option' : 'Cross out wrong option'}
                         onClick={() =>
                           setEliminated((prev) => ({ ...prev, [origIdx]: !prev[origIdx] }))
                         }
-                        className={`w-10 rounded-2xl border flex items-center justify-center transition cursor-pointer shrink-0 ${
+                        className={`w-11 rounded-[22px] border-2 flex items-center justify-center transition cursor-pointer shrink-0 ${
                           isCrossed
                             ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--coral-ink)]'
                             : 'bg-[var(--card)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)] hover:border-[var(--acc-line)]'
@@ -420,46 +448,37 @@ export function TopicTestScreen({
             {answered && (
               <div className="flex flex-col gap-3 anim-explain-reveal">
                 <div
-                  className={`rounded-2xl border p-4 flex flex-col gap-2 ${
+                  className={`rounded-[22px] border-2 p-4 sm:p-5 flex flex-col gap-2 ${
                     isRight
                       ? 'bg-[var(--ok-soft)] border-[var(--ok-line)]'
                       : 'bg-[var(--bad-soft)] border-[var(--bad-line)]'
                   }`}
                 >
-                  <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)]">
-                    {isRight ? 'Hit landed!' : 'Missed — keep pushing!'}
+                  <div className="flex items-center gap-2">
+                    <Icon
+                      name={isRight ? 'check' : 'x'}
+                      size={18}
+                      className={isRight ? 'text-[var(--green)]' : 'text-[var(--coral-ink)]'}
+                    />
+                    <div className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
+                      {isRight ? 'Correct!' : 'Not quite — see why:'}
+                    </div>
                   </div>
+                  {!isRight && q.w && q.w[session.picked!] && (
+                    <div
+                      className="fb text-[14px] text-[var(--ink)] leading-relaxed bg-[var(--card)]/85 rounded-[16px] p-3 border border-[var(--bad-line)]"
+                      dangerouslySetInnerHTML={{
+                        __html: typesetMathHtml(q.w[session.picked!], progress.subj),
+                      }}
+                    />
+                  )}
                   <div
-                    className="fb text-[14px] text-[var(--ink)] leading-relaxed"
+                    className="fb text-[14.5px] text-[var(--ink)] leading-relaxed"
                     dangerouslySetInnerHTML={{ __html: typesetMathHtml(q.e, progress.subj) }}
                   />
                 </div>
                 <ChemMadScientistBar
-                  mode={
-                    progress.subj === 'dataproc'
-                      ? 'dataproc'
-                      : progress.subj === 'digitech'
-                        ? 'digitech'
-                        : progress.subj === 'civic'
-                          ? 'civic'
-                          : progress.subj === 'eng'
-                            ? 'eng'
-                            : progress.subj === 'econ'
-                              ? 'econ'
-                              : progress.subj === 'geog'
-                                ? 'geog'
-                                : progress.subj === 'agric'
-                                  ? 'agric'
-                                  : progress.subj === 'bio'
-                                    ? 'bio'
-                                    : progress.subj === 'phys'
-                                      ? 'phys'
-                                      : progress.subj === 'chem'
-                                        ? 'chem'
-                                        : progress.subj === 'fmaths'
-                                          ? 'fmath'
-                                          : 'math'
-                  }
+                  mode={voiceMode}
                   variant="compact"
                   muted={progress.muted}
                   sessionKey={`boss-session|${progress.subj}|${topic.id}`}
@@ -468,7 +487,7 @@ export function TopicTestScreen({
                   context={{
                     topicName: topic.name,
                     sectionName: topic.sec,
-                    stepLabel: `${topic.boss} · Q${session.i + 1} Explanation`,
+                    stepLabel: `Topic test · Question ${session.i + 1} explanation`,
                     stepText: extractQuestionSpeechScript(q, topic.name, session.picked, order),
                     examTrap: topic.trap,
                   }}
@@ -479,8 +498,8 @@ export function TopicTestScreen({
         }
         right={
           q.g ? (
-            <div className="rtc-card rounded-[20px] p-4 flex flex-col gap-3">
-              <span className="eyebrow text-[var(--dim)] px-1">Question Diagram</span>
+            <div className="rtc-card p-4 flex flex-col gap-3">
+              <span className="eyebrow text-[var(--dim)] px-1">Question diagram</span>
               <DiagramFigure g={q.g} />
             </div>
           ) : undefined
@@ -489,7 +508,7 @@ export function TopicTestScreen({
           answered ? (
             <button type="button" onClick={onNextQuestion} className="btn-tactile indigo w-full">
               <span>Continue</span>
-              <Icon name="go" size={18} />
+              <Icon name="go" size={18} className="ul-arrow" />
             </button>
           ) : undefined
         }

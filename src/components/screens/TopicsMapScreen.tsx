@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Variants } from 'motion/react';
 import type { ChemClassId, SubjectId, Topic, UserProgress } from '../../types';
+import { isUtmeSingleBlockSubject, isWaecOnlySubject } from '../../utils/examSubjects';
+import { SUBJECT_TUTOR_REGISTRY } from '../../utils/tutorRegistry';
+import { hasFormulaSheet, SUBJECT_STUDIO_META } from '../../utils/subjectStudioMeta';
 import {
   CHEM_CLASSES,
   CHEM_NERDC_MAP,
@@ -85,16 +88,25 @@ import {
   type DataProcDomainId,
 } from '../../data/dataprocNerdc2027';
 import { getInteractiveLesson, getTopics } from '../../data/curriculum';
-import { SUBJECT_INFO, isTopicLocked, mpct, nextMission, tstate, tstatus } from '../../utils/engine';
+import {
+  SUBJECT_INFO,
+  computeTopicsProgressPct,
+  isPro,
+  isTopicLocked,
+  mpct,
+  nextMission,
+  tstate,
+  tstatus,
+} from '../../utils/engine';
 import { Icon, MiniRing } from '../Icons';
-import { MotivationBanner } from '../MotivationBanner';
 import {
   FLUID_SCREEN_EXIT,
   FLUID_SCREEN_SPRING,
-  LIQUID_CAPSULE_SPRING,
+  LiquidCapsuleBar,
   SlidingTabs,
+  SmoothCollapse,
   SmoothProgressBar,
-  usePostMountLayoutGate,
+  SmoothViewSwitch,
 } from '../ULessonMotion';
 import { computeSubjectSwitchDirection } from '../../utils/screenTransitionLogic';
 
@@ -254,6 +266,7 @@ export function TopicsMapScreen({
   onOpenTopic,
   onOpenLab,
   onOpenFormulas,
+  onOpenStudio,
 }: {
   progress: UserProgress;
   onSelectSubject: (s: SubjectId) => void;
@@ -262,6 +275,7 @@ export function TopicsMapScreen({
   onOpenTopic: (tid: string) => void;
   onOpenLab: () => void;
   onOpenFormulas?: () => void;
+  onOpenStudio?: () => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [domainFilter, setDomainFilter] = useState<string>('all');
@@ -274,6 +288,7 @@ export function TopicsMapScreen({
   }, [progress.subj]);
 
   const prefersReduced = useReducedMotion();
+  const isSingleBlock = isUtmeSingleBlockSubject(progress.subj);
   const isFMath = progress.subj === 'fmaths';
   const isChem = progress.subj === 'chem';
   const isPhys = progress.subj === 'phys';
@@ -285,29 +300,31 @@ export function TopicsMapScreen({
   const isCivic = progress.subj === 'civic';
   const isDigiTech = progress.subj === 'digitech';
   const isDataProc = progress.subj === 'dataproc';
-  const activeClass: ChemClassId = isFMath
-    ? progress.fmathClass || 'all'
-    : isChem
-      ? progress.chemClass || 'all'
-      : isPhys
-        ? progress.physClass || 'all'
-        : isBio
-          ? progress.bioClass || 'all'
-          : isAgric
-            ? progress.agricClass || 'all'
-            : isGeog
-              ? progress.geogClass || 'all'
-              : isEcon
-                ? progress.econClass || 'all'
-                : isEng
-                  ? progress.engClass || 'all'
-                  : isCivic
-                    ? progress.civicClass || 'all'
-                    : isDigiTech
-                      ? progress.digitechClass || 'all'
-                      : isDataProc
-                        ? progress.dataprocClass || 'all'
-                        : progress.mathClass || 'all';
+  const activeClass: ChemClassId = isSingleBlock
+    ? 'all'
+    : isFMath
+      ? progress.fmathClass || 'all'
+      : isChem
+        ? progress.chemClass || 'all'
+        : isPhys
+          ? progress.physClass || 'all'
+          : isBio
+            ? progress.bioClass || 'all'
+            : isAgric
+              ? progress.agricClass || 'all'
+              : isGeog
+                ? progress.geogClass || 'all'
+                : isEcon
+                  ? progress.econClass || 'all'
+                  : isEng
+                    ? progress.engClass || 'all'
+                    : isCivic
+                      ? progress.civicClass || 'all'
+                      : isDigiTech
+                        ? progress.digitechClass || 'all'
+                        : isDataProc
+                          ? progress.dataprocClass || 'all'
+                          : progress.mathClass || 'all';
   const classList = isFMath
     ? FMATH_CLASSES
     : isChem
@@ -354,83 +371,105 @@ export function TopicsMapScreen({
                       : isDataProc
                         ? getDataProcClassMeta(activeClass)
                         : getMathClassMeta(activeClass);
-  const domainTabs = isFMath
-    ? FMATH_DOMAIN_TABS
-    : isChem
-      ? CHEM_DOMAIN_TABS
-      : isPhys
-        ? PHYS_DOMAIN_TABS
-        : isBio
-          ? BIO_DOMAIN_TABS
-          : isAgric
-            ? AGRIC_DOMAIN_TABS
-            : isGeog
-              ? GEOG_DOMAIN_TABS
-              : isEcon
-                ? ECON_DOMAIN_TABS
-                : isEng
-                  ? ENG_DOMAIN_TABS
-                  : isCivic
-                    ? CIVIC_DOMAIN_TABS
-                    : isDigiTech
-                      ? DIGITECH_DOMAIN_TABS
-                      : isDataProc
-                        ? DATAPROC_DOMAIN_TABS
-                        : MATH_DOMAIN_TABS;
-
-  const getNerdcMeta = (tid: string) =>
-    isFMath
-      ? FMATH_NERDC_MAP[tid]
-      : isChem
-        ? CHEM_NERDC_MAP[tid]
-        : isPhys
-          ? PHYS_NERDC_MAP[tid]
-          : isBio
-            ? BIO_NERDC_MAP[tid]
-            : isAgric
-              ? AGRIC_NERDC_MAP[tid]
-              : isGeog
-                ? GEOG_NERDC_MAP[tid]
-                : isEcon
-                  ? ECON_NERDC_MAP[tid]
-                  : isEng
-                    ? ENG_NERDC_MAP[tid]
-                    : isCivic
-                      ? CIVIC_NERDC_MAP[tid]
-                      : isDigiTech
-                        ? DIGITECH_NERDC_MAP[tid]
-                        : isDataProc
-                          ? DATAPROC_NERDC_MAP[tid]
-                          : MATH_NERDC_MAP[tid];
 
   const allSubjectTopics = getTopics(progress.subj);
+
+  const singleBlockDomainTabs = useMemo(() => {
+    if (!isSingleBlock) return [];
+    const seen = new Set<string>();
+    const tabs: { id: string; label: string }[] = [{ id: 'all', label: 'All sections' }];
+    for (const t of allSubjectTopics) {
+      if (t.sec && !seen.has(t.sec)) {
+        seen.add(t.sec);
+        tabs.push({ id: t.sec, label: t.sec });
+      }
+    }
+    return tabs.length > 2 ? tabs : [];
+  }, [isSingleBlock, allSubjectTopics]);
+
+  const domainTabs = isSingleBlock
+    ? singleBlockDomainTabs
+    : isFMath
+      ? FMATH_DOMAIN_TABS
+      : isChem
+        ? CHEM_DOMAIN_TABS
+        : isPhys
+          ? PHYS_DOMAIN_TABS
+          : isBio
+            ? BIO_DOMAIN_TABS
+            : isAgric
+              ? AGRIC_DOMAIN_TABS
+              : isGeog
+                ? GEOG_DOMAIN_TABS
+                : isEcon
+                  ? ECON_DOMAIN_TABS
+                  : isEng
+                    ? ENG_DOMAIN_TABS
+                    : isCivic
+                      ? CIVIC_DOMAIN_TABS
+                      : isDigiTech
+                        ? DIGITECH_DOMAIN_TABS
+                        : isDataProc
+                          ? DATAPROC_DOMAIN_TABS
+                          : MATH_DOMAIN_TABS;
+
+  const getNerdcMeta = (tid: string) =>
+    isSingleBlock
+      ? undefined
+      : isFMath
+        ? FMATH_NERDC_MAP[tid]
+        : isChem
+          ? CHEM_NERDC_MAP[tid]
+          : isPhys
+            ? PHYS_NERDC_MAP[tid]
+            : isBio
+              ? BIO_NERDC_MAP[tid]
+              : isAgric
+                ? AGRIC_NERDC_MAP[tid]
+                : isGeog
+                  ? GEOG_NERDC_MAP[tid]
+                  : isEcon
+                    ? ECON_NERDC_MAP[tid]
+                    : isEng
+                      ? ENG_NERDC_MAP[tid]
+                      : isCivic
+                        ? CIVIC_NERDC_MAP[tid]
+                        : isDigiTech
+                          ? DIGITECH_NERDC_MAP[tid]
+                          : isDataProc
+                            ? DATAPROC_NERDC_MAP[tid]
+                            : MATH_NERDC_MAP[tid];
+
   const classScopedTopics = useMemo(
     () =>
-      isFMath
-        ? filterFMathTopicsByClass(allSubjectTopics, activeClass)
-        : isChem
-          ? filterChemTopicsByClass(allSubjectTopics, activeClass)
-          : isPhys
-            ? filterPhysTopicsByClass(allSubjectTopics, activeClass)
-            : isBio
-              ? filterBioTopicsByClass(allSubjectTopics, activeClass)
-              : isAgric
-                ? filterAgricTopicsByClass(allSubjectTopics, activeClass)
-                : isGeog
-                  ? filterGeogTopicsByClass(allSubjectTopics, activeClass)
-                  : isEcon
-                    ? filterEconTopicsByClass(allSubjectTopics, activeClass)
-                    : isEng
-                      ? filterEngTopicsByClass(allSubjectTopics, activeClass)
-                      : isCivic
-                        ? filterCivicTopicsByClass(allSubjectTopics, activeClass)
-                        : isDigiTech
-                          ? filterDigiTechTopicsByClass(allSubjectTopics, activeClass)
-                          : isDataProc
-                            ? filterDataProcTopicsByClass(allSubjectTopics, activeClass)
-                            : filterMathTopicsByClass(allSubjectTopics, activeClass),
+      isSingleBlock
+        ? allSubjectTopics
+        : isFMath
+          ? filterFMathTopicsByClass(allSubjectTopics, activeClass)
+          : isChem
+            ? filterChemTopicsByClass(allSubjectTopics, activeClass)
+            : isPhys
+              ? filterPhysTopicsByClass(allSubjectTopics, activeClass)
+              : isBio
+                ? filterBioTopicsByClass(allSubjectTopics, activeClass)
+                : isAgric
+                  ? filterAgricTopicsByClass(allSubjectTopics, activeClass)
+                  : isGeog
+                    ? filterGeogTopicsByClass(allSubjectTopics, activeClass)
+                    : isEcon
+                      ? filterEconTopicsByClass(allSubjectTopics, activeClass)
+                      : isEng
+                        ? filterEngTopicsByClass(allSubjectTopics, activeClass)
+                        : isCivic
+                          ? filterCivicTopicsByClass(allSubjectTopics, activeClass)
+                          : isDigiTech
+                            ? filterDigiTechTopicsByClass(allSubjectTopics, activeClass)
+                            : isDataProc
+                              ? filterDataProcTopicsByClass(allSubjectTopics, activeClass)
+                              : filterMathTopicsByClass(allSubjectTopics, activeClass),
     [
       allSubjectTopics,
+      isSingleBlock,
       isFMath,
       isChem,
       isPhys,
@@ -468,13 +507,18 @@ export function TopicsMapScreen({
   const filteredTopics = useMemo(() => {
     return classScopedTopics.filter((t) => {
       if (activeClass === 'all' && domainFilter !== 'all') {
-        const meta = getNerdcMeta(t.id);
-        if (meta?.domain !== domainFilter) return false;
+        if (isSingleBlock) {
+          if (t.sec !== domainFilter) return false;
+        } else {
+          const meta = getNerdcMeta(t.id);
+          if (meta?.domain !== domainFilter) return false;
+        }
       }
       return matchesTopicSearch(t, normalizedQuery);
     });
   }, [
     classScopedTopics,
+    isSingleBlock,
     isFMath,
     isChem,
     isPhys,
@@ -511,8 +555,9 @@ export function TopicsMapScreen({
     isDataProc,
   ]);
 
-  const mission = nextMission(progress, classScopedTopics);
+  const mission = nextMission(progress, classScopedTopics, allSubjectTopics);
   const recommended = mission?.t.id;
+  const studentIsPro = isPro(progress);
 
   const sections: { name: string; sub?: string; items: Topic[] }[] = useMemo(() => {
     if (activeClass !== 'all') {
@@ -644,7 +689,12 @@ export function TopicsMapScreen({
   }, [progress.subj, activeClass, domainFilter, sections.length]);
 
   const toggleSection = (secName: string) => {
-    setOpenSections((prev) => ({ ...prev, [secName]: !prev[secName] }));
+    if (expandAll) {
+      setExpandAll(false);
+      setOpenSections((prev) => ({ ...prev, [secName]: !prev[secName] }));
+    } else {
+      setOpenSections((prev) => (prev[secName] ? { [secName]: false } : { [secName]: true }));
+    }
   };
 
   const handleToggleExpandAll = () => {
@@ -665,12 +715,8 @@ export function TopicsMapScreen({
     setOpenSections(updated);
   };
 
-  const totalPassed = classScopedTopics.filter((t) => tstate(progress, t.id).boss).length;
-  const overallPct = classScopedTopics.length
-    ? Math.round((totalPassed / classScopedTopics.length) * 100)
-    : 0;
+  const overallPct = computeTopicsProgressPct(progress, classScopedTopics);
 
-  const domainLayoutReady = usePostMountLayoutGate();
   const subjTransRef = useRef<{ subj: SubjectId; dir: -1 | 0 | 1 }>({
     subj: progress.subj,
     dir: 0,
@@ -687,25 +733,72 @@ export function TopicsMapScreen({
   };
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Calm, Reassuring Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+    <div className="flex flex-col gap-3.5">
+      {/* Calm, Reassuring Page Header + Subject Tool Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
         <div>
-          <span className="eyebrow text-[var(--gold)]">{classMeta.kicker}</span>
-          <h1 className="h28 text-[var(--ink)]">{classMeta.fullTitle}</h1>
-          <p className="text-[14px] text-[var(--dim)] mt-0.5">
-            Guided step-by-step path · One short ~8 min topic at a time ({overallPct}% mastered)
+          <span className="eyebrow text-[var(--gold)]">Topics</span>
+          <h1 className="h28 text-[var(--ink)]">{SUBJECT_INFO[progress.subj].name}</h1>
+          <p className="text-[13px] text-[var(--dim)] mt-0.5 tabular-nums">
+            One short topic at a time · {overallPct}% progress
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onManageSubjects}
-          className="self-start sm:self-auto min-h-[36px] px-3.5 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
-        >
-          <Icon name={SUBJECT_INFO[progress.subj].icon} size={14} />
-          <span>Switch subject</span>
-          <Icon name="go" size={14} />
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {SUBJECT_STUDIO_META[progress.subj] && onOpenStudio && (
+            <button
+              type="button"
+              onClick={onOpenStudio}
+              className="min-h-[38px] px-3.5 rounded-xl bg-[var(--acc-soft)] border-2 border-[var(--acc-line)] hover:bg-[var(--card)] text-[12.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            >
+              <Icon name={SUBJECT_STUDIO_META[progress.subj]!.icon} size={14} />
+              <span>{SUBJECT_STUDIO_META[progress.subj]!.title}</span>
+              <Icon name="go" size={13} />
+            </button>
+          )}
+          {(progress.subj === 'maths' || isChem || isPhys || isBio || isAgric) && (
+            <button
+              type="button"
+              onClick={onOpenLab}
+              className="min-h-[38px] px-3.5 rounded-xl bg-[var(--acc-soft)] border-2 border-[var(--acc-line)] hover:bg-[var(--card)] text-[12.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            >
+              <Icon
+                name={
+                  isChem
+                    ? 'flask'
+                    : isAgric
+                      ? 'leaf'
+                      : isBio
+                        ? 'dna'
+                        : isPhys
+                          ? 'atom'
+                          : 'pen'
+                }
+                size={14}
+              />
+              <span>Labs</span>
+              <Icon name="go" size={13} />
+            </button>
+          )}
+          {onOpenFormulas && hasFormulaSheet(progress.subj) && (
+              <button
+                type="button"
+                onClick={onOpenFormulas}
+                className="min-h-[38px] px-3.5 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+              >
+                <Icon name={isEng ? 'book' : 'sigma'} size={14} />
+                <span>{isEng ? 'Grammar rules' : 'Formulas'}</span>
+              </button>
+            )}
+          <button
+            type="button"
+            onClick={onManageSubjects}
+            className="min-h-[38px] px-3.5 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--dim)] hover:text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+          >
+            <Icon name={SUBJECT_INFO[progress.subj].icon} size={14} />
+            <span>Switch subject</span>
+            <Icon name="go" size={14} />
+          </button>
+        </div>
       </div>
 
       <div className="relative overflow-x-clip">
@@ -717,31 +810,24 @@ export function TopicsMapScreen({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="flex flex-col gap-5 will-change-transform"
+            className="flex flex-col gap-3.5 will-change-transform"
           >
             <LayoutGroup id={`topics-subj-${progress.subj}`}>
-      {/* Rotating Scholar Motivation Strip */}
-      <MotivationBanner
-        variant="compact"
-        studentName={progress.name}
-        subj={progress.subj}
-      />
-
       {/* Spotlight: Your Next 8-Minute Step (Eliminates Decision Paralysis) */}
       {mission && !normalizedQuery && (
-        <section className="rtc-card rounded-2xl border-[var(--acc-line)] bg-gradient-to-r from-[var(--acc-soft)]/35 via-[var(--card)] to-[var(--card)] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <MiniRing value={mpct(progress, mission.t.id)} size={52} />
+        <section className="rtc-card rounded-2xl border-[var(--acc-line)] bg-gradient-to-r from-[var(--acc-soft)]/35 via-[var(--card)] to-[var(--card)] px-3.5 py-3 sm:px-4 sm:py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <MiniRing value={mpct(progress, mission.t.id)} size={40} />
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[12px] font-bold text-[var(--gold)]">
-                <span>Your Next 8-Minute Step</span>
+              <div className="flex items-center gap-1.5 text-[11.5px] font-bold text-[var(--gold)]">
+                <span>Next topic</span>
                 <span aria-hidden="true" className="text-[var(--dim)]">·</span>
                 <span className="text-[var(--green)] font-semibold">
-                  No rush — focus only on this one
+                  Take it one step at a time
                 </span>
               </div>
-              <h2 className="h20 text-[var(--ink)] mt-0.5 truncate">{mission.t.name}</h2>
-              <p className="text-[13.5px] text-[var(--dim)] truncate">
+              <h2 className="h18 text-[var(--ink)] mt-0.5 truncate">{mission.t.name}</h2>
+              <p className="text-[12.5px] text-[var(--dim)] truncate">
                 {mission.t.sec} · {mission.t.parts.length} short chapters + 6 practice questions
               </p>
             </div>
@@ -750,34 +836,46 @@ export function TopicsMapScreen({
           <button
             type="button"
             onClick={() => onOpenTopic(mission.t.id)}
-            className="btn-tactile indigo min-h-[44px] px-5 whitespace-nowrap shrink-0"
+            className="btn-tactile indigo min-h-[40px] px-4 text-[13.5px] whitespace-nowrap shrink-0"
           >
             <span>Continue this topic</span>
-            <Icon name="go" size={17} className="ul-arrow" />
+            <Icon name="go" size={15} className="ul-arrow" />
           </button>
         </section>
       )}
 
-      {/* Class Switcher + Live Search + Domain Filter */}
-      <section className="rtc-card rounded-2xl p-4 flex flex-col gap-3.5">
+      {/* Class Switcher (only for class-tabbed subjects) + Live Search + Section Filter */}
+      <section className="rtc-card rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2.5">
         <div className="flex flex-col min-[880px]:flex-row min-[880px]:items-center justify-between gap-3">
-          {/* Clean Class Tabs (without intimidating topic-count walls) */}
-          <div className="overflow-x-auto">
-            <SlidingTabs
-              items={classList.map((cls) => ({
-                id: cls.id,
-                label: cls.shortLabel,
-              }))}
-              value={activeClass}
-              onChange={(nextCls) => {
-                onSelectClass?.(nextCls);
-                if (nextCls !== 'all') setDomainFilter('all');
-              }}
-              ariaLabel={`Select ${SUBJECT_INFO[progress.subj].name} class`}
-              variant="indigo"
-              className="min-w-[340px] sm:min-w-[390px]"
-            />
-          </div>
+          {isSingleBlock ? (
+            <div className="flex flex-col gap-0.5">
+              <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)]">
+                {isWaecOnlySubject(progress.subj)
+                  ? 'Full WAEC/NECO syllabus'
+                  : 'Full JAMB and WAEC syllabus'}
+              </div>
+              <div className="text-[12.5px] text-[var(--dim)]">
+                {allSubjectTopics.length} topics arranged in one clear syllabus block
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <SlidingTabs
+                items={classList.map((cls) => ({
+                  id: cls.id,
+                  label: cls.shortLabel,
+                }))}
+                value={activeClass}
+                onChange={(nextCls) => {
+                  onSelectClass?.(nextCls);
+                  if (nextCls !== 'all') setDomainFilter('all');
+                }}
+                ariaLabel={`Select ${SUBJECT_INFO[progress.subj].name} class`}
+                variant="indigo"
+                className="min-w-[340px] sm:min-w-[390px]"
+              />
+            </div>
+          )}
 
           {/* Search Input */}
           <div className="relative flex-1 min-[880px]:max-w-[380px]">
@@ -786,31 +884,7 @@ export function TopicsMapScreen({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               aria-label={`Search ${SUBJECT_INFO[progress.subj].name} topics`}
-              placeholder={
-                isFMath
-                  ? 'Jump to binomial, integral, vector, matrix, Poisson...'
-                  : isGeog
-                    ? 'Jump to contour, longitude, Harmattan, Kainji, GIS...'
-                    : isChem
-                      ? 'Jump to any topic, law, reagent...'
-                      : isBio
-                        ? 'Jump to cell, osmosis, enzyme, Mendel...'
-                        : isAgric
-                          ? 'Jump to soil, NPK, cassava, poultry, aquaculture...'
-                          : isEcon
-                            ? 'Jump to elasticity, monopoly, GDP, ECOWAS...'
-                            : isPhys
-                              ? 'Jump to motion, lens, Ohm, circuit...'
-                              : isEng
-                                ? 'Jump to concord, vowel, stress, idiom...'
-                                : isCivic
-                                  ? 'Jump to federalism, UDHR, INEC, FRSC, rule of law...'
-                                  : isDigiTech
-                                    ? 'Jump to ALU, binary, NAND, OSI, IPv4, encryption...'
-                                    : isDataProc
-                                      ? 'Jump to SQL, 3NF, primary key, VLOOKUP, ACID...'
-                                      : 'Jump to topic, theorem, formula...'
-              }
+              placeholder={SUBJECT_TUTOR_REGISTRY[progress.subj]?.searchPlaceholder || 'Search any topic...'}
               className="w-full min-h-[40px] pl-3.5 pr-9 rounded-xl bg-[var(--bg)] border border-[var(--line)] focus:border-[var(--gold)] focus:bg-[var(--card)] text-[14px] font-medium text-[var(--ink)] outline-none transition"
             />
             {searchQuery && (
@@ -826,41 +900,18 @@ export function TopicsMapScreen({
           </div>
         </div>
 
-        {/* Branch Filter + Focus/Expand Toggle */}
+        {/* Branch / Section Filter + Focus/Expand Toggle */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-[var(--line)]/70">
-          {activeClass === 'all' ? (
-            <div
-              className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-[var(--bg)] border border-[var(--line)] overflow-x-auto max-w-full"
-              role="group"
-              aria-label={`Filter by ${SUBJECT_INFO[progress.subj].name} branch`}
-            >
-              {domainTabs.map((d) => {
-                const active = domainFilter === d.id;
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setDomainFilter(d.id)}
-                    className={`relative min-h-[30px] px-3 rounded-[9px] text-[12px] font-semibold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
-                      active
-                        ? 'text-[var(--ink)] font-bold'
-                        : 'text-[var(--dim)] hover:text-[var(--ink)]'
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId={domainLayoutReady ? `topics-domain-capsule-${progress.subj}` : undefined}
-                        aria-hidden="true"
-                        transition={prefersReduced ? { duration: 0 } : LIQUID_CAPSULE_SPRING}
-                        className="pointer-events-none absolute inset-0 rounded-[9px] bg-[var(--card)] border border-[var(--acc-line)] shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                      />
-                    )}
-                    <span className="relative z-10">{d.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+          {activeClass === 'all' && domainTabs.length > 0 ? (
+            <LiquidCapsuleBar
+              roleType="group"
+              size="sm"
+              ariaLabel={`Filter by ${SUBJECT_INFO[progress.subj].name} branch`}
+              items={domainTabs}
+              value={domainFilter}
+              onChange={setDomainFilter}
+              className="overflow-x-auto max-w-full"
+            />
           ) : (
             <span className="text-[12.5px] font-semibold text-[var(--dim)]">
               Showing your current term open first so you can focus calmly.
@@ -879,144 +930,7 @@ export function TopicsMapScreen({
         </div>
       </section>
 
-      {/* Compact Lab & Formula Studio Quick Bar (omitted for Civic Education — no Lab, no Formulas) */}
-      {!isCivic && (
-        <div
-          className={`grid grid-cols-1 ${
-            !isFMath &&
-            !isGeog &&
-            !isEng &&
-            !isEcon &&
-            !isDigiTech &&
-            !isDataProc &&
-            !isBio &&
-            !isAgric &&
-            onOpenFormulas
-              ? 'min-[820px]:grid-cols-2'
-              : ''
-          } gap-3.5`}
-        >
-          {!isFMath && !isGeog && !isEng && !isEcon && !isDigiTech && !isDataProc && (
-            <button
-              type="button"
-              onClick={onOpenLab}
-              className="study-card rtc-eq-plate w-full text-left rounded-2xl text-white p-4 flex items-center justify-between gap-4 hover:border-white/25 cursor-pointer"
-            >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <div className="ul-icon-box w-11 h-11 rounded-xl bg-white/10 border border-white/15 text-amber-300 flex items-center justify-center shrink-0">
-                  <Icon
-                    name={
-                      isChem
-                        ? 'flask'
-                        : isAgric
-                          ? 'leaf'
-                          : isBio
-                            ? 'dna'
-                            : isPhys
-                              ? 'atom'
-                              : 'pen'
-                    }
-                    size={22}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="font-[var(--display)] font-bold text-[16px] text-white truncate">
-                    {isChem
-                      ? 'Chemistry Practicals Lab'
-                      : isAgric
-                        ? 'Agricultural Science Practicals Lab'
-                        : isBio
-                          ? 'Biology Practicals Lab'
-                          : isPhys
-                            ? 'Physics Practicals Lab'
-                            : 'Maths Constructions Lab'}
-                  </h2>
-                  <p className="text-[12.5px] text-slate-300 truncate">
-                    {isChem
-                      ? 'Interactive apparatus, meniscus readings & live curves'
-                      : isAgric
-                        ? 'Soil horizons, NPK trials, feed rations & farm assays'
-                        : isBio
-                          ? 'Microscopy, osmosis, food tests & enzyme kinetics'
-                          : isPhys
-                            ? 'Interactive vernier, optics, circuits & meters'
-                            : 'Compass, ruler, protractor & locus animations'}
-                  </p>
-                </div>
-              </div>
-              <Icon name="go" size={18} className="text-amber-300 shrink-0 ul-arrow" />
-            </button>
-          )}
-
-          {!isBio && !isAgric && onOpenFormulas && (
-            <button
-              type="button"
-              onClick={onOpenFormulas}
-              className="study-card rtc-card w-full text-left rounded-2xl hover:border-[var(--acc-line)] p-4 flex items-center justify-between gap-4 cursor-pointer"
-            >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <div className="ul-icon-box w-11 h-11 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] flex items-center justify-center shrink-0">
-                  <Icon
-                    name={
-                      isDataProc
-                        ? 'database'
-                        : isDigiTech
-                          ? 'cpu'
-                          : isEng
-                            ? 'book'
-                            : isEcon
-                              ? 'chart'
-                              : isGeog
-                                ? 'globe'
-                                : isFMath
-                                  ? 'integral'
-                                  : 'sigma'
-                    }
-                    size={22}
-                  />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="font-[var(--display)] font-bold text-[16.5px] text-[var(--ink)] truncate">
-                    {isDataProc
-                      ? 'Data Processing SQL & Formula Studio'
-                      : isDigiTech
-                        ? 'Digital Tech Formula & Binary Studio'
-                        : isEng
-                          ? 'English Grammar & Rules Studio'
-                          : isEcon
-                            ? 'Economics Formula Studio'
-                            : isGeog
-                              ? 'Geography Calculations Studio'
-                              : isFMath
-                                ? 'Further Maths Formula Studio'
-                                : isChem
-                                  ? 'Chemistry Formula Studio'
-                                  : isPhys
-                                    ? 'Physics Formula Studio'
-                                    : 'Mathematics Formula Studio'}
-                  </h2>
-                  <p className="text-[13px] text-[var(--dim)] truncate">
-                    {isDataProc
-                      ? '20 core formulas & SQL rules: relational algebra, 1NF–3NF, Excel & check-digit drills'
-                      : isDigiTech
-                        ? '20 core formulas: binary/hex, storage units, ALU clock, logic & subnetting drills'
-                        : isEng
-                          ? 'Concord laws, stress patterns & quick usage drills'
-                          : isEcon
-                            ? '24 quantitative formulas: elasticity, costs, CPI, multiplier & drills'
-                            : isGeog
-                              ? '20 quantitative formulas: map scale, gradient, longitude time & climate drills'
-                              : isFMath
-                                ? '25 core formulas: calculus, vectors, matrices, mechanics & probability drills'
-                                : 'Interactive equation rearranger & calculation drills'}
-                  </p>
-                </div>
-              </div>
-              <Icon name="go" size={18} className="text-[var(--gold)] shrink-0 ul-arrow" />
-            </button>
-          )}
-        </div>
-      )}
+      {/* Syllabus Units — cleanly separated from subject tools */}
 
       {/* Empty Search State */}
       {sections.length === 0 && (
@@ -1049,9 +963,12 @@ export function TopicsMapScreen({
       )}
 
       {/* Calm Progressive-Disclosure Accordion Units */}
-      <div key={`${progress.subj}-${activeClass}-${domainFilter}`} className="flex flex-col gap-3.5 anim-tab-panel">
+      <SmoothViewSwitch
+        viewKey={`${activeClass}-${domainFilter}`}
+        className="flex flex-col gap-2.5"
+      >
         {sections.map((sec) => {
-          const secPassed = sec.items.filter((t) => tstate(progress, t.id).boss).length;
+          const secPct = computeTopicsProgressPct(progress, sec.items);
           const hasRecommended = sec.items.some((t) => t.id === recommended);
           const isOpen = !!normalizedQuery || !!openSections[sec.name];
 
@@ -1060,57 +977,65 @@ export function TopicsMapScreen({
               key={sec.name}
               className={`rounded-2xl border transition-colors ${
                 isOpen
-                  ? 'rtc-card p-4 sm:p-5'
-                  : 'bg-[var(--card)]/85 border-[var(--line)] hover:border-[var(--acc-line)] px-4 py-3.5'
-              } flex flex-col gap-3.5`}
+                  ? 'rtc-card p-3 sm:p-4'
+                  : 'bg-[var(--card)]/85 border-[var(--line)] hover:border-[var(--acc-line)] px-3.5 py-2.5'
+              } flex flex-col`}
             >
               <button
                 type="button"
                 aria-expanded={isOpen}
                 onClick={() => toggleSection(sec.name)}
-                className="w-full text-left flex items-center justify-between gap-3 cursor-pointer"
+                className="w-full text-left flex items-center justify-between gap-2.5 cursor-pointer"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="h20 text-[var(--ink)]">{sec.name}</h2>
+                    <h2 className="h18 text-[var(--ink)]">{sec.name}</h2>
                     {hasRecommended && !isOpen && (
-                      <span className="text-[11.5px] font-extrabold text-[var(--gold)]">
+                      <span className="text-[11px] font-extrabold text-[var(--gold)]">
                         · Active unit
                       </span>
                     )}
                   </div>
-                  <p className="text-[12.5px] text-[var(--dim)] mt-0.5">
+                  <p className="text-[12px] text-[var(--dim)] mt-0.5 leading-snug">
                     {sec.sub ? `${sec.sub} · ` : ''}
                     {sec.items.length} {sec.items.length === 1 ? 'short topic' : 'bite-sized topics'} (~8 min each)
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="hidden sm:block w-24">
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <div className="hidden sm:block w-20">
                     <SmoothProgressBar
-                      value={secPassed}
-                      max={Math.max(1, sec.items.length)}
+                      value={secPct}
+                      max={100}
                       tone="emerald"
-                      heightClass="h-1.5"
+                      heightClass="h-2.5"
                     />
                   </div>
-                  <span className="text-[12.5px] font-bold text-[var(--dim)] tabular-nums whitespace-nowrap shrink-0">
-                    {secPassed}/{sec.items.length} done
+                  <span
+                    className={`text-[12.5px] font-extrabold tabular-nums whitespace-nowrap shrink-0 ${
+                      secPct >= 70
+                        ? 'text-[var(--green)]'
+                        : secPct > 0
+                          ? 'text-[var(--gold)]'
+                          : 'text-[var(--dim)]'
+                    }`}
+                  >
+                    {secPct}%
                   </span>
-                  <span className="w-7 h-7 rounded-lg bg-[var(--bg)] border border-[var(--line)] text-[var(--dim)] flex items-center justify-center shrink-0">
+                  <span className="w-6 h-6 rounded-md bg-[var(--bg)] border border-[var(--line)] text-[var(--dim)] flex items-center justify-center shrink-0">
                     <Icon
                       name="go"
-                      size={14}
+                      size={13}
                       className={`chevron-turn ${isOpen ? 'is-open' : ''}`}
                     />
                   </span>
                 </div>
               </button>
 
-              {isOpen && (
-                <div className="stagger-grid grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-[var(--line)]">
+              <SmoothCollapse open={isOpen}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2.5 mt-2.5 border-t border-[var(--line)]">
                   {sec.items.map((t) => {
-                    const locked = isTopicLocked(progress, t.id);
+                    const locked = isTopicLocked(progress, t.id, allSubjectTopics);
                     const pctVal = mpct(progress, t.id);
                     const st = tstate(progress, t.id);
                     const status = tstatus(progress, t.id);
@@ -1124,18 +1049,20 @@ export function TopicsMapScreen({
                         key={t.id}
                         type="button"
                         onClick={() => onOpenTopic(t.id)}
-                        className={`study-card text-left rounded-2xl border p-4 flex items-center gap-3.5 cursor-pointer ${
+                        className={`study-card text-left rounded-xl border px-3 py-2.5 sm:px-3.5 sm:py-3 flex items-center gap-2.5 sm:gap-3 cursor-pointer ${
                           st.boss
                             ? 'bg-[var(--ok-soft)]/55 border-[var(--ok-line)]'
-                            : isNext
-                              ? 'bg-[var(--acc-soft)]/40 border-[var(--acc-line)] hover:border-[var(--gold)]'
-                              : 'bg-[var(--bg)]/55 border-[var(--line)] hover:bg-[var(--card)] hover:border-[var(--acc-line)]'
+                            : locked
+                              ? 'bg-[var(--bg)]/45 border-[var(--line)] hover:border-[var(--acc-line)]'
+                              : isNext
+                                ? 'bg-[var(--acc-soft)]/40 border-[var(--acc-line)] hover:border-[var(--gold)]'
+                                : 'bg-[var(--bg)]/55 border-[var(--line)] hover:bg-[var(--card)] hover:border-[var(--acc-line)]'
                         }`}
                       >
-                        <MiniRing value={pctVal} size={46} />
+                        <MiniRing value={pctVal} size={38} />
                         <div className="min-w-0 flex-1">
                           {meta && activeClass === 'all' && (
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--dim)] mb-0.5 truncate">
+                            <div className="flex items-center gap-1 text-[10.5px] font-semibold text-[var(--dim)] mb-0.5 truncate">
                               <span className="font-bold text-[var(--ink)]">
                                 {meta.classId.toUpperCase().replace('SS', 'SS ')}
                               </span>
@@ -1143,13 +1070,27 @@ export function TopicsMapScreen({
                               <span>{meta.termLabel}</span>
                             </div>
                           )}
-                          <div className="font-[var(--display)] font-bold text-[15.5px] text-[var(--ink)] leading-snug">
+                          <div className="font-[var(--display)] font-bold text-[14px] sm:text-[14.5px] text-[var(--ink)] leading-snug">
                             {t.name}
                           </div>
-                          <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[12px] font-semibold">
-                            <span className={st.boss ? 'text-[var(--green)] font-bold' : 'text-[var(--gold)] font-bold'}>
-                              {isNext && !st.boss ? 'Up next' : status}
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[11.5px] font-semibold">
+                            <span
+                              className={
+                                st.boss
+                                  ? 'text-[var(--green)] font-bold'
+                                  : locked
+                                    ? 'text-[var(--dim)] font-bold'
+                                    : 'text-[var(--gold)] font-bold'
+                              }
+                            >
+                              {locked ? 'Premium' : isNext && !st.boss ? 'Up next' : status}
                             </span>
+                            {!studentIsPro && !locked && !st.boss && (
+                              <>
+                                <span aria-hidden="true" className="text-[var(--dim)]">·</span>
+                                <span className="text-[var(--green)] font-bold">Free</span>
+                              </>
+                            )}
                             <span aria-hidden="true" className="text-[var(--dim)]">·</span>
                             <span className="text-[var(--dim)]">~8 min</span>
                             {hasSim && (
@@ -1162,7 +1103,7 @@ export function TopicsMapScreen({
                         </div>
                         <Icon
                           name={locked ? 'lock' : st.boss ? 'check' : 'go'}
-                          size={17}
+                          size={15}
                           className={`ul-arrow ${
                             st.boss
                               ? 'text-[var(--green)] shrink-0'
@@ -1175,11 +1116,11 @@ export function TopicsMapScreen({
                     );
                   })}
                 </div>
-              )}
+              </SmoothCollapse>
             </section>
           );
         })}
-      </div>
+      </SmoothViewSwitch>
             </LayoutGroup>
           </motion.div>
         </AnimatePresence>

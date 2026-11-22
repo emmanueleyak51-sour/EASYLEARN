@@ -1,29 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_MASTERY_THEME_ID,
   MASTERY_THEMES,
   getMasteryThemeById,
   getThemePreview,
 } from '../data/masteryThemes';
 import { getTopics } from '../data/curriculum';
-import { makeBlankProgress, recordAnswer } from './engine';
+import { makeBlankProgress, today } from './engine';
 import {
   computeGoalProgress,
+  hasPremiumThemeAccess,
   isThemeUnlocked,
   resolveEffectiveThemeId,
   resolveEffectiveThemeMode,
 } from './masteryThemeLogic';
 
-test('MASTERY_THEMES defines 10 stages from 0% to 100% of goal, each with Light and Dark palettes', () => {
+test('MASTERY_THEMES defines Playful grape as standard free theme and reserves the remaining 9 for Premium', () => {
   assert.equal(MASTERY_THEMES.length, 10);
-  MASTERY_THEMES.forEach((theme, idx) => {
-    assert.equal(theme.stage, idx + 1);
-    if (idx > 0) {
-      assert.ok(
-        theme.unlockGoalPct > MASTERY_THEMES[idx - 1].unlockGoalPct,
-        `Stage ${theme.stage} threshold (${theme.unlockGoalPct}) must exceed Stage ${idx}`
-      );
-    }
+  assert.equal(MASTERY_THEMES[0].id, DEFAULT_MASTERY_THEME_ID);
+  assert.equal(MASTERY_THEMES[0].premiumOnly, false);
+
+  for (let i = 1; i < MASTERY_THEMES.length; i++) {
+    const theme = MASTERY_THEMES[i];
+    assert.equal(theme.premiumOnly, true, `${theme.id} must be reserved for Premium`);
+  }
+
+  MASTERY_THEMES.forEach((theme) => {
     const light = getThemePreview(theme, 'light');
     const dark = getThemePreview(theme, 'dark');
     assert.notEqual(light.bg, dark.bg, `${theme.id} light and dark backgrounds must differ`);
@@ -31,109 +34,105 @@ test('MASTERY_THEMES defines 10 stages from 0% to 100% of goal, each with Light 
     assert.match(light.bg, /^#[EF][0-9A-F]{5}$/i, `${theme.id} light bg (${light.bg}) is daylight`);
     assert.match(dark.bg, /^#[01][0-9A-F]{5}$/i, `${theme.id} dark bg (${dark.bg}) is nocturnal`);
   });
-  assert.equal(MASTERY_THEMES[0].unlockGoalPct, 0);
-  assert.equal(MASTERY_THEMES[9].unlockGoalPct, 100);
 });
 
-test('resolveEffectiveThemeMode defaults to light and switches cleanly to dark across any stage', () => {
+test('resolveEffectiveThemeMode allows both Light and Dark mode for all students while locking extra colour themes', () => {
+  const curDay = 20500;
   const blank = makeBlankProgress();
   assert.equal(blank.themeMode, 'light');
-  assert.equal(resolveEffectiveThemeMode({}), 'light');
-  assert.equal(resolveEffectiveThemeMode({ themeMode: 'light' }), 'light');
-  assert.equal(resolveEffectiveThemeMode({ themeMode: 'dark' }), 'dark');
+  assert.equal(blank.themeAutoProgress, false);
+  assert.equal(resolveEffectiveThemeMode({}, curDay), 'light');
+  assert.equal(resolveEffectiveThemeMode({ themeMode: 'light' }, curDay), 'light');
+  // Every student (including unsubscribed starter-trial students) can freely use Dark mode on Playful grape
+  assert.equal(resolveEffectiveThemeMode({ themeMode: 'dark' }, curDay), 'dark');
 });
 
-test('fresh blank progress starts at 0% goal progress and Stage 1 (no Bayesian prior leak)', () => {
-  const blank = makeBlankProgress();
-  const engTopics = getTopics('eng');
-  const snap = computeGoalProgress(blank, engTopics);
-  assert.equal(snap.goalPct, 0);
-  assert.equal(snap.highestUnlockedStage, 1);
-  assert.equal(snap.highestUnlockedTheme.id, 'stage-1-adire');
-  assert.equal(snap.nextTheme?.stage, 2);
-});
+test('standard students always stay on Playful grape even if a legacy stage theme was previously saved or syllabus is 100%', () => {
+  const curDay = today();
+  const standardUser = makeBlankProgress();
 
-test('goal progress increases monotonically as lessons, practice, and topic tests are completed up to 100%', () => {
-  let p = makeBlankProgress();
-  p.subj = 'eng';
-  p.target = 75;
-  const topics = getTopics('eng');
+  assert.equal(hasPremiumThemeAccess(standardUser, curDay), false);
+  assert.equal(isThemeUnlocked(getMasteryThemeById('stage-1-adire'), standardUser, curDay), true);
+  assert.equal(isThemeUnlocked(getMasteryThemeById('stage-9-starlight'), standardUser, curDay), false);
+  assert.equal(isThemeUnlocked(getMasteryThemeById('stage-10-chancellor'), standardUser, curDay), false);
 
-  const s0 = computeGoalProgress(p, topics);
-  assert.equal(s0.goalPct, 0);
-
-  // Complete 4 lessons
-  for (let i = 0; i < 4; i++) {
-    const tid = topics[i].id;
-    p = {
-      ...p,
-      t: { ...p.t, [tid]: { att: [], lesson: 1, practice: 0, boss: 0 } },
-    };
-  }
-  const sLessons = computeGoalProgress(p, topics);
-  assert.ok(sLessons.goalPct > s0.goalPct, 'completing lessons advances goalPct');
-
-  // Answer questions accurately and pass half of topics
-  for (let i = 0; i < Math.floor(topics.length / 2); i++) {
-    const t = topics[i];
-    const q = { ...t.qs[0], id: `${t.id}-1`, t: t.id };
-    p = recordAnswer(p, q, true, 'boss');
-    p = {
-      ...p,
-      t: {
-        ...p.t,
-        [t.id]: { ...p.t[t.id], lesson: 1, practice: 1, boss: 1 },
-      },
-    };
-  }
-  const sHalf = computeGoalProgress(p, topics);
-  assert.ok(sHalf.goalPct >= 48, `half syllabus passed should reach >=48% (got ${sHalf.goalPct}%)`);
-  assert.ok(sHalf.highestUnlockedStage >= 5, 'Stage 5+ should be unlocked halfway');
-
-  // Pass all topics -> 100% goal & Stage 10 unlocked
-  for (const t of topics) {
-    p = {
-      ...p,
-      t: {
-        ...p.t,
-        [t.id]: { att: [[1, 5]], lesson: 1, practice: 1, boss: 1 },
-      },
-    };
-  }
-  const sFull = computeGoalProgress(p, topics);
-  assert.equal(sFull.goalPct, 100);
-  assert.equal(sFull.highestUnlockedStage, 10);
-  assert.equal(sFull.highestUnlockedTheme.id, 'stage-10-chancellor');
-  assert.equal(sFull.nextTheme, null);
-});
-
-test('unlocked Test Mode allows selecting all 10 themes while Goal-Lock Mode enforces earned milestones', () => {
-  const stage10 = getMasteryThemeById('stage-10-chancellor');
-  const stage4 = getMasteryThemeById('stage-4-lagoon'); // 36%
-
-  // In 'unlocked' test mode, Stage 10 is selectable even at 0% goal
-  assert.equal(isThemeUnlocked(stage10, 0, 'unlocked'), true);
+  // Even if localStorage previously stored stage-9-starlight or stage-10-chancellor, effective theme is Playful grape
   assert.equal(
-    resolveEffectiveThemeId({ themeId: 'stage-10-chancellor', themeLockMode: 'unlocked' }, 0),
-    'stage-10-chancellor'
+    resolveEffectiveThemeId({ themeId: 'stage-9-starlight', pro: null, owner: 0 }, curDay),
+    'stage-1-adire'
   );
-
-  // Switch to 'goal' lock mode at 0% -> Stage 10 and Stage 4 lock, effective theme clamps to Stage 1
-  assert.equal(isThemeUnlocked(stage10, 0, 'goal'), false);
-  assert.equal(isThemeUnlocked(stage4, 0, 'goal'), false);
   assert.equal(
-    resolveEffectiveThemeId({ themeId: 'stage-10-chancellor', themeLockMode: 'goal' }, 0),
+    resolveEffectiveThemeId({ themeId: 'stage-10-chancellor', pro: null, owner: 0 }, curDay),
     'stage-1-adire'
   );
 
-  // At 40% goal in 'goal' lock mode -> Stage 4 (36%) is unlocked, Stage 10 clamps to Stage 4
-  assert.equal(isThemeUnlocked(stage4, 40, 'goal'), true);
+  // Completing 100% of topics does not unlock Premium themes without Premium status
+  const topics = getTopics('eng');
+  let mastered = makeBlankProgress();
+  for (const t of topics) {
+    mastered = {
+      ...mastered,
+      t: { ...mastered.t, [t.id]: { att: [[1, 5]], lesson: 1, practice: 1, boss: 1 } },
+    };
+  }
+  const snap = computeGoalProgress(mastered, topics);
+  assert.equal(snap.goalPct, 100);
   assert.equal(
-    resolveEffectiveThemeId({ themeId: 'stage-4-lagoon', themeLockMode: 'goal' }, 40),
-    'stage-4-lagoon'
+    resolveEffectiveThemeId({ ...mastered, themeId: 'stage-10-chancellor' }, curDay),
+    'stage-1-adire'
   );
-  assert.equal(
-    resolveEffectiveThemeId({ themeId: 'stage-10-chancellor', themeLockMode: 'goal' }, 40),
-    'stage-4-lagoon'
-  );
+});
+
+test('Premium students (active pro pass or owner) can unlock and select any of the 10 colour themes', () => {
+  const curDay = 20500;
+  const premiumStudent = {
+    themeId: 'stage-9-starlight' as const,
+    pro: {
+      pid: 'season',
+      until: curDay + 30,
+      code: 'EYAK-ABCD-2345',
+      on: curDay,
+      sig: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    },
+    owner: 0,
+  };
+
+  assert.equal(hasPremiumThemeAccess(premiumStudent, curDay), true);
+  for (const theme of MASTERY_THEMES) {
+    assert.equal(isThemeUnlocked(theme, premiumStudent, curDay), true);
+  }
+  assert.equal(resolveEffectiveThemeId(premiumStudent, curDay), 'stage-9-starlight');
+
+  // Unsigned client-forged pro object without server sig is rejected
+  const unsignedStudent = {
+    themeId: 'stage-9-starlight' as const,
+    pro: { pid: 'season', until: curDay + 30, code: 'FORGED', on: curDay },
+    owner: 0,
+  };
+  assert.equal(hasPremiumThemeAccess(unsignedStudent, curDay), false);
+  assert.equal(resolveEffectiveThemeId(unsignedStudent, curDay), 'stage-1-adire');
+
+  // Expired pass reverts cleanly to Playful grape
+  const expiredStudent = {
+    themeId: 'stage-9-starlight' as const,
+    pro: {
+      pid: 'weekly',
+      until: curDay - 1,
+      code: 'EYAK-EXPD-9999',
+      on: curDay - 8,
+      sig: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    },
+    owner: 0,
+  };
+  assert.equal(hasPremiumThemeAccess(expiredStudent, curDay), false);
+  assert.equal(resolveEffectiveThemeId(expiredStudent, curDay), 'stage-1-adire');
+
+  // Owner account also has full access
+  const ownerStudent = {
+    themeId: 'stage-10-chancellor' as const,
+    pro: null,
+    owner: 1,
+  };
+  assert.equal(hasPremiumThemeAccess(ownerStudent, curDay), true);
+  assert.equal(resolveEffectiveThemeId(ownerStudent, curDay), 'stage-10-chancellor');
 });

@@ -157,6 +157,8 @@ export function buildCompactProgressMap(progress: UserProgress): Record<string, 
     target: Math.min(100, Math.max(50, Number(progress.target) || 70)),
     subj: progress.subj,
     subjs: (progress.subjs || []).slice(0, 12),
+    examTrack: progress.examTrack || null,
+    jambSubjects: (progress.jambSubjects || []).slice(0, 4),
     xp: toSafeNonNegInt(progress.xp, 10_000_000),
     streak: {
       d: toSafeNonNegInt(progress.streak?.d, 100_000),
@@ -176,6 +178,10 @@ export function buildCompactProgressMap(progress: UserProgress): Record<string, 
     duelHistory: (progress.duelHistory || []).slice(-25),
     leaderboardCampusGoal: sanitizeCampusGoal(progress.leaderboardCampusGoal ?? 'National Scholar'),
     leaderboardPublic: progress.leaderboardPublic !== false,
+    pro:
+      progress.pro && typeof progress.pro.sig === 'string' && progress.pro.sig.length >= 16
+        ? progress.pro
+        : null,
   };
 
   return sanitizeFirestoreValue(raw, false) as Record<string, unknown>;
@@ -227,10 +233,44 @@ export function mergeCloudProgress(
     ? (remote.cbtHistory as UserProgress['cbtHistory'])
     : undefined;
 
+  const localThemeTs = toSafeNonNegInt(local.flags?.themeTs, Number.MAX_SAFE_INTEGER);
+  const remoteThemeTs = toSafeNonNegInt(remoteFlags?.themeTs, Number.MAX_SAFE_INTEGER);
+  const preferRemoteTheme =
+    remoteThemeTs > localThemeTs ||
+    (localThemeTs === 0 &&
+      remoteThemeTs === 0 &&
+      local.themeMode !== 'dark' &&
+      remote.themeMode === 'dark');
+
+  const validRemoteMode =
+    remote.themeMode === 'dark' || remote.themeMode === 'light' ? remote.themeMode : undefined;
+  const validRemoteThemeId =
+    typeof remote.themeId === 'string' && remote.themeId.startsWith('stage-')
+      ? (remote.themeId as UserProgress['themeId'])
+      : undefined;
+  const validRemoteClock =
+    remote.clockFormat === '12h' || remote.clockFormat === '24h'
+      ? remote.clockFormat
+      : undefined;
+
   return {
     ...local,
+    owner: local.owner,
+    devToken: local.devToken,
+    trial: local.trial,
     name: local.name || (typeof remote.name === 'string' ? remote.name : local.name),
     subj: (local.subj || (typeof remote.subj === 'string' ? remote.subj : 'maths')) as SubjectId,
+    examTrack:
+      local.examTrack ||
+      (remote.examTrack === 'jamb' || remote.examTrack === 'waec' || remote.examTrack === 'both'
+        ? remote.examTrack
+        : undefined),
+    jambSubjects:
+      local.jambSubjects && local.jambSubjects.length > 0
+        ? local.jambSubjects
+        : Array.isArray(remote.jambSubjects)
+          ? (remote.jambSubjects as SubjectId[])
+          : undefined,
     xp: Math.max(local.xp, remoteXp),
     streak:
       remote.streak &&
@@ -238,9 +278,22 @@ export function mergeCloudProgress(
       (remote.streak as { n: number }).n > local.streak.n
         ? (remote.streak as { d: number; n: number })
         : local.streak,
+    themeMode: preferRemoteTheme
+      ? validRemoteMode ?? local.themeMode ?? 'light'
+      : local.themeMode ?? validRemoteMode ?? 'light',
+    themeId: preferRemoteTheme
+      ? validRemoteThemeId ?? local.themeId
+      : local.themeId ?? validRemoteThemeId,
+    clockFormat: local.clockFormat ?? validRemoteClock ?? '12h',
     t: mergedT,
     badges: { ...remoteBadges, ...local.badges },
-    flags: { ...remoteFlags, ...local.flags },
+    flags: {
+      ...remoteFlags,
+      ...local.flags,
+      ...(Math.max(localThemeTs, remoteThemeTs) > 0
+        ? { themeTs: Math.max(localThemeTs, remoteThemeTs) }
+        : {}),
+    },
     mistakes: { ...remoteMistakes, ...(local.mistakes || {}) },
     theoryScores: { ...remoteTheory, ...(local.theoryScores || {}) },
     studyPlan: local.studyPlan || (remote.studyPlan as UserProgress['studyPlan']) || undefined,
@@ -259,5 +312,27 @@ export function mergeCloudProgress(
         : typeof remote.leaderboardPublic === 'boolean'
           ? remote.leaderboardPublic
           : true,
+    pro: (() => {
+      const lPro =
+        local.pro && typeof local.pro.sig === 'string' && local.pro.sig.length >= 16
+          ? local.pro
+          : null;
+      const rRaw =
+        remote.pro && typeof remote.pro === 'object' && !Array.isArray(remote.pro)
+          ? (remote.pro as Record<string, unknown>)
+          : null;
+      const rPro =
+        rRaw &&
+        typeof rRaw.pid === 'string' &&
+        typeof rRaw.until === 'number' &&
+        typeof rRaw.on === 'number' &&
+        typeof rRaw.code === 'string' &&
+        typeof rRaw.sig === 'string' &&
+        rRaw.sig.length >= 16
+          ? (rRaw as NonNullable<UserProgress['pro']>)
+          : null;
+      if (lPro && rPro) return rPro.until > lPro.until ? rPro : lPro;
+      return lPro || rPro || null;
+    })(),
   };
 }

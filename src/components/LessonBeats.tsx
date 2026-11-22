@@ -18,13 +18,14 @@ import { DiagramFigure, Icon, RichHtml } from './Icons';
 import { ExplorerCanvas } from './Explorers';
 
 export const BEAT_META: Record<Beat['k'], { label: string; icon: string }> = {
+  predict: { label: 'Predict', icon: 'target' },
   teach: { label: 'Learn', icon: 'book' },
-  idea: { label: 'The Idea', icon: 'book' },
-  explore: { label: 'Explore It', icon: 'target' },
+  idea: { label: 'The idea', icon: 'book' },
+  explore: { label: 'Try it', icon: 'target' },
   dayo: { label: 'With Senior Dayo', icon: 'chat' },
-  fade: { label: 'Worked Example', icon: 'pen' },
-  spot: { label: 'Spot the Mistake', icon: 'bolt' },
-  check: { label: 'Your Turn', icon: 'pen' },
+  fade: { label: 'Worked example', icon: 'pen' },
+  spot: { label: 'Spot the mistake', icon: 'bolt' },
+  check: { label: 'Your turn', icon: 'pen' },
 };
 
 export interface BeatLocalState {
@@ -218,21 +219,21 @@ function TeachBlockView({ block, subj }: { block: TeachBlock; subj?: SubjectId }
     case 'eg':
       return (
         <div className="eg">
-          <span className="tg">{block[1].toUpperCase()}</span>
+          <span className="tg">{block[1]}</span>
           <p dangerouslySetInnerHTML={{ __html: typesetMathHtml(block[2], subj) }} />
         </div>
       );
     case 'wn':
       return (
         <div className="wn">
-          <span className="tg">TRAP</span>
+          <span className="tg">Trap</span>
           <p dangerouslySetInnerHTML={{ __html: typesetMathHtml(block[1], subj) }} />
         </div>
       );
     case 'key':
       return (
         <div className="key">
-          <span className="tg">REMEMBER</span>
+          <span className="tg">Remember</span>
           <p dangerouslySetInnerHTML={{ __html: typesetMathHtml(block[1], subj) }} />
         </div>
       );

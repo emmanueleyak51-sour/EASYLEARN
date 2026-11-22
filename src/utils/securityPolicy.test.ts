@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   buildHardenedTutorSystemPrompt,
   buildSecurityHeaders,
+  extractTrustedClientIp,
+  isAllowedApiMutationRequest,
   isAllowedWebSocketOrigin,
   isValidAlocApiKey,
   isValidAlocCursor,
@@ -13,6 +15,7 @@ import {
   SlidingWindowRateLimiter,
   stripPrototypePollution,
 } from './securityPolicy';
+import { typesetMathHtml } from './mathTypesetter';
 
 test('sanitizeEducationalHtml strips script, img onerror, svg onload, iframe, and event handlers while preserving math HTML', () => {
   const safeMath =
@@ -150,4 +153,68 @@ test('buildSecurityHeaders outputs strict OWASP headers and conditional HSTS', (
 
   const httpsHeaders = buildSecurityHeaders(true);
   assert.match(httpsHeaders['Strict-Transport-Security'], /max-age=31536000/);
+});
+
+test('typesetMathHtml sanitizes English subject HTML while preserving phonetic slashes /iː/', () => {
+  const dirtyEng = 'Vowel sound /iː/ in `seat` <img src=x onerror="alert(1)"><script>evil()</script>';
+  const rendered = typesetMathHtml(dirtyEng, 'eng');
+  assert.match(rendered, /\/iː\//);
+  assert.match(rendered, /<code class="rtc-code">seat<\/code>/);
+  assert.doesNotMatch(rendered, /<img/i);
+  assert.doesNotMatch(rendered, /<script/i);
+  assert.doesNotMatch(rendered, /onerror/i);
+});
+
+test('extractTrustedClientIp defeats leftmost X-Forwarded-For spoofing on raw requests and honors Express req.ip', () => {
+  assert.equal(
+    extractTrustedClientIp({
+      forwardedForHeader: '203.0.113.99, 198.51.100.42',
+      remoteAddress: '10.0.0.2',
+    }),
+    '198.51.100.42'
+  );
+  assert.equal(
+    extractTrustedClientIp({
+      expressIp: '198.51.100.42',
+      forwardedForHeader: '1.2.3.4, 198.51.100.42',
+    }),
+    '198.51.100.42'
+  );
+});
+
+test('isAllowedApiMutationRequest blocks cross-site POST mutations while allowing same-origin requests', () => {
+  assert.equal(
+    isAllowedApiMutationRequest({
+      method: 'POST',
+      secFetchSite: 'cross-site',
+      originHeader: 'https://evil.example',
+      hostHeader: 'app.example.com',
+    }),
+    false
+  );
+  assert.equal(
+    isAllowedApiMutationRequest({
+      method: 'POST',
+      originHeader: 'https://evil.example',
+      hostHeader: 'app.example.com',
+    }),
+    false
+  );
+  assert.equal(
+    isAllowedApiMutationRequest({
+      method: 'POST',
+      secFetchSite: 'same-origin',
+      originHeader: 'https://app.example.com',
+      hostHeader: '127.0.0.1:3000',
+      forwardedHost: 'app.example.com',
+    }),
+    true
+  );
+  assert.equal(
+    isAllowedApiMutationRequest({
+      method: 'GET',
+      secFetchSite: 'cross-site',
+    }),
+    true
+  );
 });

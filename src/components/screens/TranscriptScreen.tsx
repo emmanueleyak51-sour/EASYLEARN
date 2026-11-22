@@ -14,6 +14,11 @@ import { SUBJECT_INFO, mpct, tstate } from '../../utils/engine';
 import { waecGradeFromPct } from '../../utils/cbtEngine';
 import { summarizeMistakeVault } from '../../utils/mistakeVaultLogic';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
+import {
+  buildFormulaSheetPdf,
+  buildStudentReportCardPdf,
+  downloadPdfBytes,
+} from '../../utils/pdfExport';
 import { SubscreenTopBar } from '../AppShell';
 import { CrestSvg, Icon } from '../Icons';
 
@@ -90,6 +95,8 @@ export function TranscriptScreen({
     return Math.max(...jambRuns.map((c) => c.scaledScore));
   }, [progress.cbtHistory]);
 
+  const [pdfSavedFlash, setPdfSavedFlash] = useState(false);
+
   const activeSheet = CHEAT_SHEET_SUBJECTS.find((s) => s.id === cheatSubj) || CHEAT_SHEET_SUBJECTS[0];
   const issuedDate = new Date().toLocaleDateString('en-NG', {
     day: 'numeric',
@@ -98,22 +105,76 @@ export function TranscriptScreen({
     timeZone: 'Africa/Lagos',
   });
 
+  const handleDownloadPdf = () => {
+    if (viewMode === 'transcript') {
+      const pdfBytes = buildStudentReportCardPdf({
+        studentName: progress.name || 'Student',
+        issuedDate,
+        predictedUtme,
+        overallAvg,
+        overallWaec: waecGradeFromPct(overallAvg),
+        targetPct: progress.target || 75,
+        accuracyPct,
+        totalAnswered: totalAns,
+        bestCbt,
+        cbtCount,
+        mistakesCount: mistakeSummary.total,
+        streakDays: progress.streak.n,
+        enrolledCount: progress.subjs.length,
+        rows: facultyRows.map((r) => ({
+          name: r.name,
+          lessonsDone: r.lessonsDone,
+          totalTopics: r.totalTopics,
+          passed: r.passed,
+          avgMastery: r.avgMastery,
+          waec: r.waec,
+        })),
+      });
+      downloadPdfBytes(pdfBytes, `EYAK-Report-Card-${progress.name || 'Student'}.pdf`);
+    } else {
+      const pdfBytes = buildFormulaSheetPdf({
+        subjectLabel: activeSheet.label,
+        itemNounPlural: activeSheet.id === 'eng' ? 'rules' : 'formulas',
+        issuedDate,
+        items: activeSheet.items.map((f) => ({
+          name: f.name,
+          expressionHtml: f.rearrangements[0]?.exprHtml || f.summary,
+          trapHtml: f.trap,
+        })),
+      });
+      downloadPdfBytes(pdfBytes, `EYAK-${activeSheet.label}-Formulas-Sheet.pdf`);
+    }
+    setPdfSavedFlash(true);
+    window.setTimeout(() => setPdfSavedFlash(false), 2600);
+  };
+
   return (
     <div className="flex flex-col gap-5 anim-rise">
       <div className="no-print flex flex-col gap-4">
         <SubscreenTopBar
-          title="Readiness Transcript & Printable Sheets"
-          subtitle="Parent / Teacher Academic Standing + 1-Page Exam Cheat Sheets"
+          title="Report card"
+          subtitle="Progress summary for parents and teachers, plus printable formula sheets"
           onBack={onBack}
           right={
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="btn-tactile indigo min-h-[38px] px-4 text-[13px] whitespace-nowrap"
-            >
-              <Icon name="book" size={16} />
-              <span>Print / Save PDF</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="btn-tactile indigo min-h-[38px] px-3.5 sm:px-4 text-[13px] whitespace-nowrap"
+              >
+                <Icon name={pdfSavedFlash ? 'check' : 'download'} size={15} />
+                <span>{pdfSavedFlash ? 'PDF downloaded' : 'Download PDF'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                aria-label="Print report card"
+                className="btn-tactile paper min-h-[38px] px-3 text-[12.5px] whitespace-nowrap hidden sm:inline-flex"
+              >
+                <Icon name="printer" size={15} />
+                <span>Print</span>
+              </button>
+            </div>
           }
         />
 
@@ -128,7 +189,7 @@ export function TranscriptScreen({
                   : 'text-[var(--dim)] hover:text-[var(--ink)]'
               }`}
             >
-              Scholar Readiness Transcript
+              Report card
             </button>
             <button
               type="button"
@@ -139,7 +200,7 @@ export function TranscriptScreen({
                   : 'text-[var(--dim)] hover:text-[var(--ink)]'
               }`}
             >
-              1-Page Formula Cheat Sheets
+              Printable formula sheets
             </button>
           </div>
 
@@ -164,77 +225,77 @@ export function TranscriptScreen({
         </div>
       </div>
 
-      {/* ═══════════════════ SCHOLAR TRANSCRIPT VIEW ═══════════════════ */}
+      {/* ═══════════════════ REPORT CARD VIEW ═══════════════════ */}
       {viewMode === 'transcript' && (
         <article className="rtc-card print-sheet rounded-2xl p-6 sm:p-8 flex flex-col gap-6">
           <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[var(--line)]">
             <div className="flex items-center gap-3.5">
               <CrestSvg size={46} />
               <div>
-                <div className="eyebrow text-[var(--gold)]">EYAK · National Learning Studio</div>
-                <h1 className="h26 text-[var(--ink)]">Official Scholar Readiness Transcript</h1>
+                <div className="eyebrow text-[var(--gold)]">EYAK · Progress report</div>
+                <h1 className="h26 text-[var(--ink)]">Student report card</h1>
                 <div className="text-[13px] text-[var(--dim)]">
-                  Candidate: <strong className="text-[var(--ink)]">{progress.name || 'Scholar'}</strong> · Issued {issuedDate} (WAT)
+                  Student: <strong className="text-[var(--ink)]">{progress.name || 'Student'}</strong> · {issuedDate}
                 </div>
               </div>
             </div>
             <div className="text-left sm:text-right">
-              <div className="text-[11.5px] font-bold text-[var(--dim)]">Projected JAMB UTME Band</div>
-              <div className="font-[var(--display)] font-extrabold text-[28px] text-[var(--gold)] tabular-nums leading-tight">
+              <div className="text-[11.5px] font-bold text-[var(--dim)]">Estimated JAMB score</div>
+              <div className="font-[var(--display)] font-bold text-[28px] text-[var(--gold)] tabular-nums leading-tight">
                 {predictedUtme} / 400
               </div>
               <div className="text-[12px] font-bold text-[var(--green)]">
-                WAEC Standing: {waecGradeFromPct(overallAvg)}
+                WAEC grade: {waecGradeFromPct(overallAvg)}
               </div>
             </div>
           </header>
 
           {/* Key Performance KPIs */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5">
-              <div className="text-[11.5px] font-semibold text-[var(--dim)]">Overall Mastery</div>
-              <div className="font-[var(--display)] font-extrabold text-[22px] text-[var(--ink)] tabular-nums">
+            <div className="tile-mint rounded-2xl p-3.5">
+              <div className="text-[11.5px] font-bold opacity-80">Average score</div>
+              <div className="font-[var(--display)] font-bold text-[22px] tabular-nums">
                 {overallAvg}%
               </div>
-              <div className="text-[11px] text-[var(--dim)]">Target: {progress.target}%</div>
+              <div className="text-[11px] opacity-80">Target: {progress.target}%</div>
             </div>
-            <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5">
-              <div className="text-[11.5px] font-semibold text-[var(--dim)]">Question Accuracy</div>
-              <div className="font-[var(--display)] font-extrabold text-[22px] text-[var(--green)] tabular-nums">
+            <div className="tile-sky rounded-2xl p-3.5">
+              <div className="text-[11.5px] font-bold opacity-80">Accuracy</div>
+              <div className="font-[var(--display)] font-bold text-[22px] tabular-nums">
                 {accuracyPct}%
               </div>
-              <div className="text-[11px] text-[var(--dim)]">{totalAns} answered</div>
+              <div className="text-[11px] opacity-80">{totalAns} answered</div>
             </div>
-            <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5">
-              <div className="text-[11.5px] font-semibold text-[var(--dim)]">CBT Simulations</div>
-              <div className="font-[var(--display)] font-extrabold text-[22px] text-[var(--gold)] tabular-nums">
-                {bestCbt !== null ? `${bestCbt}/400` : `${cbtCount} runs`}
+            <div className="tile-peach rounded-2xl p-3.5">
+              <div className="text-[11.5px] font-bold opacity-80">Mock exams</div>
+              <div className="font-[var(--display)] font-bold text-[22px] tabular-nums">
+                {bestCbt !== null ? `${bestCbt}/400` : `${cbtCount} taken`}
               </div>
-              <div className="text-[11px] text-[var(--dim)]">{cbtCount} timed sittings</div>
+              <div className="text-[11px] opacity-80">{cbtCount} timed papers</div>
             </div>
-            <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5">
-              <div className="text-[11.5px] font-semibold text-[var(--dim)]">Mistake Vault</div>
-              <div className="font-[var(--display)] font-extrabold text-[22px] text-[var(--ink)] tabular-nums">
+            <div className="rounded-2xl bg-[var(--acc-soft)] border border-[var(--acc-line)] p-3.5 text-[var(--ink)]">
+              <div className="text-[11.5px] font-bold text-[var(--dim)]">Mistakes to fix</div>
+              <div className="font-[var(--display)] font-bold text-[22px] tabular-nums">
                 {mistakeSummary.total}
               </div>
               <div className="text-[11px] text-[var(--dim)]">
-                {mistakeSummary.total === 0 ? 'All mistakes cleared' : 'Open to redeem'}
+                {mistakeSummary.total === 0 ? 'All mistakes cleared' : 'Ready to practise'}
               </div>
             </div>
           </div>
 
-          {/* 12-Faculty Mastery Table */}
+          {/* Subject Mastery Table */}
           <div className="flex flex-col gap-2">
-            <h2 className="h18 text-[var(--ink)]">12-Faculty SS1–SS3 Curriculum Standing</h2>
+            <h2 className="h18 text-[var(--ink)]">Progress by subject</h2>
             <div className="tw">
               <table>
                 <thead>
                   <tr>
-                    <th>Subject Faculty</th>
+                    <th>Subject</th>
                     <th>Lessons</th>
-                    <th>Topics Passed</th>
-                    <th>Mastery %</th>
-                    <th>WAEC Band</th>
+                    <th>Topics passed</th>
+                    <th>Score</th>
+                    <th>Grade</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -268,10 +329,10 @@ export function TranscriptScreen({
 
           <footer className="pt-4 border-t border-[var(--line)] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[12px] text-[var(--dim)]">
             <span>
-              Active Study Streak: <strong className="text-[var(--ink)]">{progress.streak.n} days</strong> · Enrolled Subjects:{' '}
+              Study streak: <strong className="text-[var(--ink)]">{progress.streak.n} days</strong> · Subjects:{' '}
               <strong className="text-[var(--ink)]">{progress.subjs.length}</strong>
             </span>
-            <span>Generated offline-ready by EYAK · NERDC SS1–SS3 Aligned</span>
+            <span>Prepared on EYAK</span>
           </footer>
         </article>
       )}
@@ -281,12 +342,12 @@ export function TranscriptScreen({
         <article className="rtc-card print-sheet rounded-2xl p-6 flex flex-col gap-4">
           <header className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
             <div>
-              <div className="eyebrow text-[var(--gold)]">EYAK · Exam Revision Reference</div>
-              <h1 className="h24 text-[var(--ink)] font-[var(--display)] font-extrabold text-[22px]">
-                {activeSheet.label} — Complete Formula &amp; Trap Sheet ({activeSheet.items.length} items)
+              <div className="eyebrow text-[var(--gold)]">EYAK · Quick revision sheet</div>
+              <h1 className="h24 text-[var(--ink)] font-[var(--display)] font-bold text-[22px]">
+                {activeSheet.label} — formulas and traps ({activeSheet.items.length} items)
               </h1>
             </div>
-            <span className="text-[12px] font-bold text-[var(--dim)]">SS1–SS3 WAEC &amp; JAMB</span>
+            <span className="text-[12px] font-bold text-[var(--dim)]">JAMB and WAEC</span>
           </header>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

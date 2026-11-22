@@ -1,7 +1,8 @@
 import type { SubjectId, Topic, UserProgress } from '../types';
 import { mastery, tstate } from './engine';
+import { normalizeJambQuartet, pickWeightedBothTrackSlot } from './examTrackLogic';
 
-export type ExamTargetType = 'jamb' | 'waec';
+export type ExamTargetType = 'jamb' | 'waec' | 'both';
 
 export interface StudyPlanConfig {
   examType: ExamTargetType;
@@ -93,7 +94,7 @@ export function buildAdaptiveStudyPlan(
     }
   }
 
-  // Round-robin interleave across focus subjects, weakest topics first
+  // Round-robin interleave across focus subjects (or 70% JAMB / 30% WAEC when examType === 'both')
   const perSubj = new Map<SubjectId, typeof backlog>();
   for (const sid of focus) {
     perSubj.set(
@@ -104,14 +105,63 @@ export function buildAdaptiveStudyPlan(
     );
   }
   const interleaved: typeof backlog = [];
-  let added = true;
-  while (added) {
-    added = false;
-    for (const sid of focus) {
-      const q = perSubj.get(sid);
-      if (q && q.length > 0) {
-        interleaved.push(q.shift()!);
-        added = true;
+  if (config.examType === 'both') {
+    const jambCoreList = normalizeJambQuartet(
+      progress.jambSubjects?.length ? progress.jambSubjects : focus
+    );
+    const jambCoreSet = new Set<SubjectId>(jambCoreList);
+    const jambFocus = focus.filter((s) => jambCoreSet.has(s));
+    const waecExtraFocus = focus.filter((s) => !jambCoreSet.has(s));
+    let jPtr = 0;
+    let wPtr = 0;
+    let slotIdx = 0;
+    const pullNextFromGroup = (group: SubjectId[], startPtr: number): [typeof backlog[number] | null, number] => {
+      if (!group.length) return [null, startPtr];
+      for (let step = 0; step < group.length; step++) {
+        const idx = (startPtr + step) % group.length;
+        const q = perSubj.get(group[idx]);
+        if (q && q.length > 0) {
+          return [q.shift()!, (idx + 1) % group.length];
+        }
+      }
+      return [null, startPtr];
+    };
+    while (slotIdx < backlog.length + 5) {
+      const targetPool = pickWeightedBothTrackSlot(jambCoreList, focus, slotIdx++).focusExam;
+      if (targetPool === 'jamb') {
+        const [picked, nextJ] = pullNextFromGroup(jambFocus, jPtr);
+        jPtr = nextJ;
+        if (picked) {
+          interleaved.push(picked);
+          continue;
+        }
+        const [fallback, nextW] = pullNextFromGroup(waecExtraFocus, wPtr);
+        wPtr = nextW;
+        if (fallback) interleaved.push(fallback);
+        else break;
+      } else {
+        const [picked, nextW] = pullNextFromGroup(waecExtraFocus, wPtr);
+        wPtr = nextW;
+        if (picked) {
+          interleaved.push(picked);
+          continue;
+        }
+        const [fallback, nextJ] = pullNextFromGroup(jambFocus, jPtr);
+        jPtr = nextJ;
+        if (fallback) interleaved.push(fallback);
+        else break;
+      }
+    }
+  } else {
+    let added = true;
+    while (added) {
+      added = false;
+      for (const sid of focus) {
+        const q = perSubj.get(sid);
+        if (q && q.length > 0) {
+          interleaved.push(q.shift()!);
+          added = true;
+        }
       }
     }
   }
@@ -121,6 +171,8 @@ export function buildAdaptiveStudyPlan(
   const effectiveDays = Math.max(1, daysRemaining);
   const requiredTopicsPerDay = Number((remainingTopics / effectiveDays).toFixed(1));
   const capacityPerDay = Math.max(1, Math.min(4, Math.floor(config.dailyMinutes / 18)));
+  const examBadge =
+    config.examType === 'both' ? 'JAMB (70%) + WAEC (30%)' : config.examType.toUpperCase();
 
   let paceStatus: StudyPlanSnapshot['paceStatus'] = 'on_track';
   let paceHeadline = '';
@@ -132,10 +184,10 @@ export function buildAdaptiveStudyPlan(
     paceHeadline = '100% syllabus coverage achieved — switch to timed CBT mocks and Mistake Vault drills.';
   } else if (requiredTopicsPerDay <= capacityPerDay * 0.75) {
     paceStatus = 'ahead';
-    paceHeadline = `${daysRemaining} days to ${config.examType.toUpperCase()} — ${Math.max(1, Math.ceil(requiredTopicsPerDay))} topic/day keeps you comfortably ahead of schedule.`;
+    paceHeadline = `${daysRemaining} days to ${examBadge} — ${Math.max(1, Math.ceil(requiredTopicsPerDay))} topic/day keeps you comfortably ahead of schedule.`;
   } else if (requiredTopicsPerDay <= capacityPerDay * 1.25) {
     paceStatus = 'on_track';
-    paceHeadline = `${daysRemaining} days to ${config.examType.toUpperCase()} — ${requiredTopicsPerDay} topics/day hits full syllabus coverage before exam day.`;
+    paceHeadline = `${daysRemaining} days to ${examBadge} — ${requiredTopicsPerDay} topics/day hits full syllabus coverage before exam day.`;
   } else {
     paceStatus = 'stretch';
     paceHeadline = `${daysRemaining} days left — prioritize high-yield weak topics (${Math.ceil(requiredTopicsPerDay)} topics/day or raise daily minutes).`;

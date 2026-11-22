@@ -1,6 +1,7 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { db } from './index.ts';
 import {
+  cbtDailyEntries,
   duelEntries,
   leaderboardEntries,
   peerDuels,
@@ -8,6 +9,7 @@ import {
   users,
 } from './schema.ts';
 import { resolveAuthoritativeSubject, stripPrototypePollution } from '../utils/securityPolicy.ts';
+import { verifyEntitlementReceipt } from './billingRepository.ts';
 
 const VALID_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 const VALID_DUEL_ID_RE = /^[a-zA-Z0-9_-]{4,40}$/;
@@ -19,6 +21,8 @@ const ALLOWED_PROGRESS_KEYS = new Set([
   'target',
   'subj',
   'subjs',
+  'examTrack',
+  'jambSubjects',
   'xp',
   'streak',
   'themeId',
@@ -195,13 +199,23 @@ export async function saveCloudSyncBundle(params: {
   const safeStreak = clampInt(profile.streakCount, 0, 3650, 0);
   const safeSubj = cleanSubjectId(profile.activeSubj);
   const safeExamType =
-    profile.examType === 'jamb' || profile.examType === 'waec' ? profile.examType : null;
+    profile.examType === 'jamb' || profile.examType === 'waec' || profile.examType === 'both'
+      ? profile.examType
+      : null;
   const safeExamDate =
     typeof profile.examDate === 'string' && ISO_DATE_RE.test(profile.examDate.trim())
       ? profile.examDate.trim()
       : null;
 
   const safeProgress = sanitizeProgressMap(params.progress);
+  if (params.progress && typeof params.progress === 'object' && 'pro' in params.progress) {
+    const verifiedPro = await verifyEntitlementReceipt(
+      (params.progress as Record<string, unknown>).pro
+    );
+    if (verifiedPro) {
+      safeProgress.pro = verifiedPro;
+    }
+  }
   const safeSchemaVersion = clampInt(params.schemaVersion, 1, 20, 1);
   const now = new Date();
 
@@ -492,3 +506,151 @@ export async function listDuelEntriesByDuelId(duelIdRaw: string) {
     throw new Error('Database query failed. Please try again later.', { cause: error });
   }
 }
+
+export interface UpsertDailyCbtInput {
+  dayNumber: number;
+  mode: 'jamb' | 'waec';
+  participantKey: string;
+  displayName: string;
+  campusGoal: string;
+  scaledScore: number;
+  maxScale: number;
+  rawCorrect: number;
+  totalQuestions: number;
+  accuracyPct: number;
+  durationSec: number;
+}
+
+export async function upsertDailyCbtStanding(input: UpsertDailyCbtInput) {
+  if (!VALID_ID_RE.test(input.participantKey)) {
+    throw new Error('Invalid participant identifier.');
+  }
+  const safeDay = clampInt(input.dayNumber, 18_000, 100_000, Math.floor((Date.now() + 3_600_000) / 86_400_000));
+  const safeMode = input.mode === 'waec' ? 'waec' : 'jamb';
+  const safeMaxScale = safeMode === 'waec' ? 100 : 400;
+  const safeScaledScore = clampInt(input.scaledScore, 0, safeMaxScale, 0);
+  const safeTotalQuestions = clampInt(input.totalQuestions, 5, 250, 40);
+  const safeRawCorrect = clampInt(input.rawCorrect, 0, safeTotalQuestions, 0);
+  const safeAcc = clampInt(
+    input.accuracyPct,
+    0,
+    100,
+    Math.round((safeRawCorrect / Math.max(1, safeTotalQuestions)) * 100)
+  );
+  const safeDuration = clampInt(input.durationSec, 1, 14_400, 600);
+  const safeName = cleanText(input.displayName, 60, 'Scholar');
+  const safeGoal = cleanText(input.campusGoal, 48, 'National Scholar');
+  const now = new Date();
+
+  try {
+    const existing = await db
+      .select({
+        scaledScore: cbtDailyEntries.scaledScore,
+        accuracyPct: cbtDailyEntries.accuracyPct,
+        durationSec: cbtDailyEntries.durationSec,
+      })
+      .from(cbtDailyEntries)
+      .where(
+        and(
+          eq(cbtDailyEntries.dayNumber, safeDay),
+          eq(cbtDailyEntries.mode, safeMode),
+          eq(cbtDailyEntries.participantKey, input.participantKey)
+        )
+      )
+      .limit(1);
+
+    const prev = existing[0];
+    const shouldReplace =
+      !prev ||
+      safeScaledScore > prev.scaledScore ||
+      (safeScaledScore === prev.scaledScore && safeAcc > prev.accuracyPct) ||
+      (safeScaledScore === prev.scaledScore &&
+        safeAcc === prev.accuracyPct &&
+        safeDuration < prev.durationSec);
+
+    if (!prev) {
+      await db
+        .insert(cbtDailyEntries)
+        .values({
+          dayNumber: safeDay,
+          mode: safeMode,
+          participantKey: input.participantKey,
+          displayName: safeName,
+          campusGoal: safeGoal,
+          scaledScore: safeScaledScore,
+          maxScale: safeMaxScale,
+          rawCorrect: safeRawCorrect,
+          totalQuestions: safeTotalQuestions,
+          accuracyPct: safeAcc,
+          durationSec: safeDuration,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing();
+    } else if (shouldReplace) {
+      await db
+        .update(cbtDailyEntries)
+        .set({
+          displayName: safeName,
+          campusGoal: safeGoal,
+          scaledScore: safeScaledScore,
+          maxScale: safeMaxScale,
+          rawCorrect: safeRawCorrect,
+          totalQuestions: safeTotalQuestions,
+          accuracyPct: safeAcc,
+          durationSec: safeDuration,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(cbtDailyEntries.dayNumber, safeDay),
+            eq(cbtDailyEntries.mode, safeMode),
+            eq(cbtDailyEntries.participantKey, input.participantKey)
+          )
+        );
+    }
+
+    return await listDailyCbtStandings(safeDay, safeMode, 150);
+  } catch (error) {
+    console.error('Database query failed (upsertDailyCbtStanding):', error);
+    throw new Error('Database query failed. Please try again later.', { cause: error });
+  }
+}
+
+export async function listDailyCbtStandings(
+  dayNumber: number,
+  mode: 'jamb' | 'waec' = 'jamb',
+  limitCount = 150
+) {
+  const safeDay = clampInt(dayNumber, 18_000, 100_000, Math.floor((Date.now() + 3_600_000) / 86_400_000));
+  const safeMode = mode === 'waec' ? 'waec' : 'jamb';
+  const safeLimit = clampInt(limitCount, 1, 200, 150);
+
+  try {
+    return await db
+      .select({
+        participantKey: cbtDailyEntries.participantKey,
+        displayName: cbtDailyEntries.displayName,
+        campusGoal: cbtDailyEntries.campusGoal,
+        mode: cbtDailyEntries.mode,
+        scaledScore: cbtDailyEntries.scaledScore,
+        maxScale: cbtDailyEntries.maxScale,
+        rawCorrect: cbtDailyEntries.rawCorrect,
+        totalQuestions: cbtDailyEntries.totalQuestions,
+        accuracyPct: cbtDailyEntries.accuracyPct,
+        durationSec: cbtDailyEntries.durationSec,
+      })
+      .from(cbtDailyEntries)
+      .where(and(eq(cbtDailyEntries.dayNumber, safeDay), eq(cbtDailyEntries.mode, safeMode)))
+      .orderBy(
+        desc(cbtDailyEntries.scaledScore),
+        desc(cbtDailyEntries.accuracyPct),
+        asc(cbtDailyEntries.durationSec)
+      )
+      .limit(safeLimit);
+  } catch (error) {
+    console.error('Database query failed (listDailyCbtStandings):', error);
+    throw new Error('Database query failed. Please try again later.', { cause: error });
+  }
+}
+

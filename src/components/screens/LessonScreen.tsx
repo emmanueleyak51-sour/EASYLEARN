@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Beat, InteractiveLesson, LessonPart, Topic, UserProgress } from '../../types';
 import { tstate } from '../../utils/engine';
 import { extractBeatSpeechScript } from '../../utils/chemVoiceLogic';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
-import { AdirePattern, Icon } from '../Icons';
+import { Icon } from '../Icons';
 import { initExplorerState } from '../Explorers';
 import {
   BEAT_META,
@@ -15,6 +15,7 @@ import {
   makeInitialBeatState,
 } from '../LessonBeats';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { SplitWorkbench, SubscreenTopBar } from '../AppShell';
 
 interface FlatStep {
@@ -110,30 +111,7 @@ export function LessonScreen({
   const meta = BEAT_META[currentBeat.k];
   const isLast = stepIdx === steps.length - 1;
   const alreadyDone = !!tstate(progress, topic.id).lesson;
-  const voiceMode =
-    progress.subj === 'dataproc'
-      ? 'dataproc'
-      : progress.subj === 'digitech'
-        ? 'digitech'
-        : progress.subj === 'civic'
-          ? 'civic'
-          : progress.subj === 'eng'
-            ? 'eng'
-            : progress.subj === 'econ'
-              ? 'econ'
-              : progress.subj === 'geog'
-                ? 'geog'
-                : progress.subj === 'agric'
-                  ? 'agric'
-                  : progress.subj === 'bio'
-                    ? 'bio'
-                    : progress.subj === 'phys'
-                      ? 'phys'
-                      : progress.subj === 'chem'
-                        ? 'chem'
-                        : progress.subj === 'fmaths'
-                          ? 'fmath'
-                          : 'math';
+  const voiceMode = subjectToLiveCoachMode(progress.subj);
 
   const allBeatScripts = useMemo(
     () =>
@@ -196,30 +174,48 @@ export function LessonScreen({
     }
   };
 
+  useEffect(() => {
+    if (completed) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+      if ((e.key === 'ArrowRight' || e.key === 'Enter') && done) {
+        e.preventDefault();
+        handleNext();
+      } else if (e.key === 'ArrowLeft' && stepIdx > 0) {
+        e.preventDefault();
+        handlePrev();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   if (completed) {
     return (
       <div className="max-w-[640px] mx-auto py-6 flex flex-col gap-5 anim-rise">
-        <SubscreenTopBar title="Lesson Complete" subtitle={topic.name} onBack={onBack} />
-        <section className="adire-panel rounded-[26px] p-7 sm:p-8 text-center flex flex-col items-center gap-4">
-          <AdirePattern />
-          <div className="relative z-10 w-16 h-16 rounded-2xl bg-[var(--hero-badge)] text-[#141C33] flex items-center justify-center shadow-lg anim-stamp">
-            <Icon name="check" size={34} />
+        <SubscreenTopBar title="Lesson done" subtitle={topic.name} onBack={onBack} />
+        <section className="rtc-eq-plate p-6 sm:p-8 text-center flex flex-col items-center gap-4">
+          <div className="w-14 h-14 rounded-[18px] tile-peach flex items-center justify-center">
+            <Icon name="check" size={30} />
           </div>
-          <div className="relative z-10 flex flex-col gap-1.5">
-            <span className="eyebrow text-[var(--hero-badge)]">Lesson Mastered</span>
-            <h1 className="h28 text-white">You finished {topic.name}!</h1>
-            <p className="text-[15px] text-white/85 max-w-md mx-auto">
-              Now lock in what you learned with 6 mastery practice questions.
+          <div className="flex flex-col gap-1.5">
+            <span className="eyebrow text-[#FFE1D1]">Lesson finished</span>
+            <h1 className="h28 text-white">You finished {topic.name}</h1>
+            <p className="text-[15px] text-white/90 max-w-md mx-auto">
+              Now practise what you learned with 6 exam-style questions.
             </p>
           </div>
         </section>
 
-        <div className="rounded-2xl bg-[var(--bad-soft)] border border-[var(--bad-line)] p-5 flex items-start gap-3.5">
-          <span className="w-9 h-9 rounded-xl bg-[var(--card)] text-[var(--coral-ink)] flex items-center justify-center shrink-0">
+        <div className="rtc-card border-[var(--warn-line)] bg-[var(--warn-soft)] p-5 flex items-start gap-3.5">
+          <span className="w-9 h-9 rounded-[14px] bg-[var(--card)] border border-[var(--warn-line)] text-[var(--warn-ink)] flex items-center justify-center shrink-0">
             <Icon name="bolt" size={18} />
           </span>
           <div>
-            <span className="eyebrow text-[var(--coral-ink)]">Trap</span>
+            <span className="eyebrow text-[var(--warn-ink)]">Exam trap to watch out for</span>
             <p
               className="text-[15px] text-[var(--ink)] mt-1 leading-relaxed"
               dangerouslySetInnerHTML={{ __html: typesetMathHtml(topic.trap, progress.subj) }}
@@ -230,7 +226,7 @@ export function LessonScreen({
         <div className="flex flex-col sm:flex-row gap-3">
           <button type="button" onClick={onStartPractice} className="btn-tactile indigo flex-1">
             <span>Start practice (6 questions)</span>
-            <Icon name="go" size={18} />
+            <Icon name="go" size={18} className="ul-arrow" />
           </button>
           <button type="button" onClick={onBack} className="btn-tactile paper">
             <span>Back to topic</span>
@@ -281,7 +277,7 @@ export function LessonScreen({
                   setStepIdx(idx);
                 }
               }}
-              className={`h-2 flex-1 rounded-full transition-all duration-150 ${
+              className={`h-3 flex-1 rounded-full transition-all duration-150 ${
                 canJump ? 'cursor-pointer hover:opacity-85' : 'cursor-default'
               } ${
                 isPast
@@ -363,7 +359,7 @@ export function LessonScreen({
           ) : undefined
         }
         footer={
-          <div className="rtc-card rounded-2xl bg-[var(--card)]/95 backdrop-blur-md p-3 flex items-center justify-between gap-3">
+          <div className="rtc-card rounded-2xl p-3 flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={handlePrev}
@@ -372,6 +368,7 @@ export function LessonScreen({
             >
               <Icon name="back" size={17} />
               <span>Previous</span>
+              <kbd className="eyak-kbd hidden sm:inline-flex ml-0.5">←</kbd>
             </button>
             <button
               type="button"

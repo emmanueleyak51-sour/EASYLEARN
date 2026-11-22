@@ -28,6 +28,7 @@ import {
 import { splitRuleEquation, typesetMathHtml } from '../../utils/mathTypesetter';
 import { SubscreenTopBar } from '../AppShell';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { ChemNoteVisual } from '../ChemNoteVisuals';
 import { MathNoteVisual } from '../MathNoteVisuals';
 import { PhysNoteVisual } from '../PhysNoteVisuals';
@@ -95,8 +96,8 @@ function NoteTeachBlock({ block, subj }: { block: TeachBlock; subj: SubjectId })
       );
     case 'wn':
       return (
-        <div className="rounded-xl bg-[var(--bad-soft)] border border-[var(--bad-line)] p-3.5 flex flex-col gap-1">
-          <span className="text-[12px] font-bold text-[var(--coral-ink)]">
+        <div className="rounded-xl bg-[var(--warn-soft)] border border-[var(--warn-line)] p-3.5 flex flex-col gap-1">
+          <span className="text-[12px] font-bold text-[var(--warn-ink)]">
             Trap
           </span>
           <p
@@ -109,7 +110,7 @@ function NoteTeachBlock({ block, subj }: { block: TeachBlock; subj: SubjectId })
       return (
         <div className="rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] p-3.5 flex flex-col gap-1">
           <span className="text-[12px] font-bold text-[var(--gold)]">
-            Key Takeaway
+            Remember
           </span>
           <p
             className="text-[14.5px] leading-relaxed text-[var(--ink)] font-medium"
@@ -189,7 +190,7 @@ function EmbeddedNoteExplorer({ beat }: { beat: ExploreBeat }) {
       </div>
       <p
         className="text-[14px] text-[#CBE4D7] leading-relaxed"
-        dangerouslySetInnerHTML={{ __html: beat.intro }}
+        dangerouslySetInnerHTML={{ __html: typesetMathHtml(beat.intro) }}
       />
       <ExplorerCanvas
         kind={beat.xp}
@@ -759,6 +760,7 @@ export function NotesScreen({
     setViewMode('full');
   }, [topic.id]);
 
+  const isMath = subj === 'maths';
   const isFMath = subj === 'fmaths';
   const isChem = subj === 'chem';
   const isPhys = subj === 'phys';
@@ -770,6 +772,8 @@ export function NotesScreen({
   const isCivic = subj === 'civic';
   const isDigiTech = subj === 'digitech';
   const isDataProc = subj === 'dataproc';
+  const hasEquationsLabel =
+    isMath || isFMath || isChem || isPhys || isEcon || isGeog || isDigiTech || isDataProc;
   const nerdc = isChem
     ? CHEM_NERDC_MAP[topic.id]
     : isFMath
@@ -792,7 +796,9 @@ export function NotesScreen({
                       ? DIGITECH_NERDC_MAP[topic.id]
                       : isDataProc
                         ? DATAPROC_NERDC_MAP[topic.id]
-                        : MATH_NERDC_MAP[topic.id];
+                        : isMath
+                          ? MATH_NERDC_MAP[topic.id]
+                          : undefined;
   const safePartIdx = Math.min(voicePartIdx, Math.max(0, topic.parts.length - 1));
   const activePart = topic.parts[safePartIdx] || topic.parts[0];
 
@@ -886,16 +892,16 @@ export function NotesScreen({
   return (
     <div className="max-w-[820px] mx-auto flex flex-col gap-5 anim-rise">
       <SubscreenTopBar
-        title="Illustrated Study Notes"
+        title="Notes"
         subtitle={subtitleParts.join(' · ')}
         onBack={onBack}
         right={
           <button
             type="button"
             onClick={onStartLesson}
-            className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[var(--gold)] hover:brightness-105 text-[var(--on-acc)] font-bold text-[13px] shadow-[0_1px_2px_rgba(15,23,42,0.16)] transition cursor-pointer whitespace-nowrap shrink-0"
+            className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[var(--gold)] hover:brightness-105 text-[var(--on-acc)] font-bold text-[13px] shadow-[0_2px_0_var(--acc-d)] transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            Interactive lesson
+            Start lesson
           </button>
         }
       />
@@ -916,7 +922,6 @@ export function NotesScreen({
               value={readPct}
               max={100}
               tone="emerald"
-              heightClass="h-2"
               ariaLabel="Notes completion progress"
               className="sm:w-64"
             />
@@ -924,8 +929,8 @@ export function NotesScreen({
 
           <SlidingTabs
             items={[
-              { id: 'full', label: 'Chapter Notes' },
-              { id: 'reread', label: '1-Min Reread Sheet' },
+              { id: 'full', label: 'Chapter notes' },
+              { id: 'reread', label: 'One-minute recap' },
             ]}
             value={viewMode}
             onChange={setViewMode}
@@ -984,31 +989,7 @@ export function NotesScreen({
       {/* One-Tap Continuous Studio Voice Coach — Teaches Like a Classroom Mentor */}
       {activePart && (
         <ChemMadScientistBar
-          mode={
-            isDataProc
-              ? 'dataproc'
-              : isDigiTech
-                ? 'digitech'
-                : isCivic
-                  ? 'civic'
-                  : isEng
-                    ? 'eng'
-                    : isEcon
-                      ? 'econ'
-                      : isGeog
-                        ? 'geog'
-                        : isAgric
-                          ? 'agric'
-                          : isBio
-                            ? 'bio'
-                            : isPhys
-                              ? 'phys'
-                              : isChem
-                                ? 'chem'
-                                : isFMath
-                                  ? 'fmath'
-                                  : 'math'
-          }
+          mode={subjectToLiveCoachMode(subj)}
           variant="compact"
           muted={muted}
           sessionKey={`notes-session|${subj}|${topic.id}`}
@@ -1021,10 +1002,10 @@ export function NotesScreen({
           context={{
             topicName: topic.name,
             sectionName: topic.sec,
-            partTitle: viewMode === 'reread' ? '1-Min Reread Sheet' : activePart.title,
+            partTitle: viewMode === 'reread' ? 'One-minute recap' : activePart.title,
             stepLabel:
               viewMode === 'reread'
-                ? '1-Min Reread Summary'
+                ? 'One-minute recap'
                 : `Chapter ${safePartIdx + 1} of ${topic.parts.length} · ${activePart.title}`,
             stepText: activeStepScript,
             examTrap: topic.trap,
@@ -1034,7 +1015,7 @@ export function NotesScreen({
       )}
 
       {viewMode === 'reread' ? (
-        /* ─────────────── 1-MIN RAPID REREAD CHEAT-SHEET ─────────────── */
+        /* ─────────────── ONE-MINUTE RECAP ─────────────── */
         <div className="flex flex-col gap-5 anim-rise">
           {isChem ? (
             <ChemNoteVisual topicId={topic.id} partIdx={topic.id === 'c-water' ? 2 : 0} />
@@ -1058,14 +1039,14 @@ export function NotesScreen({
             <DigiTechNoteVisual topicId={topic.id} partIdx={0} />
           ) : isDataProc ? (
             <DataProcNoteVisual topicId={topic.id} partIdx={0} />
-          ) : (
+          ) : isMath ? (
             <MathNoteVisual topicId={topic.id} partIdx={0} />
-          )}
+          ) : null}
 
           {/* Learning Goals Summary */}
           {topic.goals.length > 0 && (
             <section className="rtc-card rounded-2xl p-5 flex flex-col gap-3">
-              <h2 className="h20 text-[var(--ink)]">Core Mastery Checklist</h2>
+              <h2 className="h20 text-[var(--ink)]">What you should know</h2>
               <ul className="space-y-2 text-[15px] text-[var(--ink)]">
                 {topic.goals.map((g, i) => (
                   <li key={i} className="flex items-start gap-2.5">
@@ -1080,21 +1061,64 @@ export function NotesScreen({
           {/* Consolidated Definitions & Laws */}
           {(allDefs.length > 0 || allLaws.length > 0) && (
             <section className="rtc-card rounded-2xl p-5 flex flex-col gap-4">
-              <h2 className="h20 text-[var(--ink)]">Essential Definitions &amp; Laws</h2>
-              <div className="tw">
+              <h2 className="h20 text-[var(--ink)]">Key terms and principles</h2>
+              {/* Mobile stacked definition cards — zero horizontal clipping on narrow phones */}
+              <div className="flex flex-col gap-2.5 sm:hidden">
+                {allLaws.map(([term, stmt], idx) => (
+                  <div
+                    key={`m-law-${idx}`}
+                    className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5 flex flex-col gap-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="font-bold text-[14.5px] text-[var(--ink)] leading-snug"
+                        dangerouslySetInnerHTML={{ __html: typesetMathHtml(term, subj) }}
+                      />
+                      <span className="text-[11px] font-bold text-[var(--gold)] shrink-0">
+                        Principle
+                      </span>
+                    </div>
+                    <p
+                      className="text-[14px] text-[var(--ink)]/90 leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: typesetMathHtml(stmt, subj) }}
+                    />
+                  </div>
+                ))}
+                {allDefs.map(([term, stmt], idx) => (
+                  <div
+                    key={`m-def-${idx}`}
+                    className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5 flex flex-col gap-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="font-bold text-[14.5px] text-[var(--ink)] leading-snug"
+                        dangerouslySetInnerHTML={{ __html: typesetMathHtml(term, subj) }}
+                      />
+                      <span className="text-[11px] font-bold text-[var(--dim)] shrink-0">
+                        Definition
+                      </span>
+                    </div>
+                    <p
+                      className="text-[14px] text-[var(--ink)]/90 leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: typesetMathHtml(stmt, subj) }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="tw hidden sm:block">
                 <table>
                   <thead>
                     <tr>
                       <th>Type</th>
-                      <th>Term / Principle</th>
-                      <th>Exact Definition &amp; Core Rule</th>
+                      <th>Term / principle</th>
+                      <th>Definition and core rule</th>
                     </tr>
                   </thead>
                   <tbody>
                     {allLaws.map(([term, stmt], idx) => (
                       <tr key={`law-${idx}`}>
                         <td>
-                          <span className="text-[var(--gold)]">Law / Principle</span>
+                          <span className="text-[var(--gold)]">Principle</span>
                         </td>
                         <td dangerouslySetInnerHTML={{ __html: typesetMathHtml(term, subj) }} />
                         <td dangerouslySetInnerHTML={{ __html: typesetMathHtml(stmt, subj) }} />
@@ -1117,7 +1141,7 @@ export function NotesScreen({
 
           {/* Chapter-by-Chapter Key Rules Snapshot */}
           <section className="rtc-card rounded-2xl p-5 flex flex-col gap-4">
-            <h2 className="h20 text-[var(--ink)]">Rapid Reread Key Rules</h2>
+            <h2 className="h20 text-[var(--ink)]">Key rules</h2>
             <div className="flex flex-col gap-4 divide-y divide-[var(--line)]">
               {topic.parts.map((part, idx) => (
                 <div key={idx} className={idx > 0 ? 'pt-4 flex flex-col gap-2' : 'flex flex-col gap-2'}>
@@ -1143,7 +1167,7 @@ export function NotesScreen({
           {/* Reference Tables */}
           {allTables.length > 0 && (
             <section className="rtc-card rounded-2xl p-5 flex flex-col gap-4">
-              <h2 className="h20 text-[var(--ink)]">Quick Comparison Tables</h2>
+              <h2 className="h20 text-[var(--ink)]">Comparison tables</h2>
               {allTables.map((item, i) => (
                 <div key={i} className="flex flex-col gap-2">
                   {item.title && (
@@ -1158,12 +1182,12 @@ export function NotesScreen({
           )}
 
           {/* Trap */}
-          <div className="rounded-2xl bg-[var(--bad-soft)] border border-[var(--bad-line)] p-4 sm:p-5 flex items-start gap-3">
-            <span className="w-8 h-8 rounded-xl bg-[var(--card)] text-[var(--coral-ink)] flex items-center justify-center shrink-0">
+          <div className="rounded-2xl bg-[var(--warn-soft)] border border-[var(--warn-line)] p-4 sm:p-5 flex items-start gap-3">
+            <span className="w-8 h-8 rounded-xl bg-[var(--card)] border border-[var(--warn-line)] text-[var(--warn-ink)] flex items-center justify-center shrink-0">
               <Icon name="bolt" size={16} />
             </span>
             <div>
-              <span className="eyebrow text-[var(--coral-ink)]">Trap</span>
+              <span className="eyebrow text-[var(--warn-ink)]">Trap</span>
               <p
                 className="text-[14.5px] text-[var(--ink)] mt-0.5 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: typesetMathHtml(topic.trap, subj) }}
@@ -1199,19 +1223,7 @@ export function NotesScreen({
             const showCivicPlate = isCivic && idx === 0;
             const showDigiTechPlate = isDigiTech && idx === 0;
             const showDataProcPlate = isDataProc && idx === 0;
-            const showMathPlate =
-              !isChem &&
-              !isFMath &&
-              !isPhys &&
-              !isBio &&
-              !isAgric &&
-              !isGeog &&
-              !isEcon &&
-              !isEng &&
-              !isCivic &&
-              !isDigiTech &&
-              !isDataProc &&
-              idx === 0;
+            const showMathPlate = isMath && idx === 0;
 
             return (
               <article
@@ -1298,21 +1310,64 @@ export function NotesScreen({
                 {/* Formal Definitions & Laws Table */}
                 {(extra.defs.length > 0 || extra.laws.length > 0) && (
                   <div className="flex flex-col gap-2">
-                    <span className="eyebrow text-[var(--dim)]">Key Definitions &amp; Principles</span>
-                    <div className="tw">
+                    <span className="eyebrow text-[var(--dim)]">Key definitions and principles</span>
+                    {/* Mobile stacked definition cards — readable full-width on 390px screens */}
+                    <div className="flex flex-col gap-2.5 sm:hidden">
+                      {extra.laws.map(([name, stmt], lIdx) => (
+                        <div
+                          key={`m-law-${lIdx}`}
+                          className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5 flex flex-col gap-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className="font-bold text-[14.5px] text-[var(--ink)] leading-snug"
+                              dangerouslySetInnerHTML={{ __html: typesetMathHtml(name, subj) }}
+                            />
+                            <span className="text-[11px] font-bold text-[var(--gold)] shrink-0">
+                              Principle
+                            </span>
+                          </div>
+                          <p
+                            className="text-[14px] text-[var(--ink)]/90 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: typesetMathHtml(stmt, subj) }}
+                          />
+                        </div>
+                      ))}
+                      {extra.defs.map(([term, def], dIdx) => (
+                        <div
+                          key={`m-def-${dIdx}`}
+                          className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-3.5 flex flex-col gap-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className="font-bold text-[14.5px] text-[var(--ink)] leading-snug"
+                              dangerouslySetInnerHTML={{ __html: typesetMathHtml(term, subj) }}
+                            />
+                            <span className="text-[11px] font-bold text-[var(--dim)] shrink-0">
+                              Definition
+                            </span>
+                          </div>
+                          <p
+                            className="text-[14px] text-[var(--ink)]/90 leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: typesetMathHtml(def, subj) }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="tw hidden sm:block">
                       <table>
                         <thead>
                           <tr>
                             <th>Category</th>
-                            <th>Term / Principle</th>
-                            <th>Definition &amp; Core Rule</th>
+                            <th>Term / principle</th>
+                            <th>Definition and core rule</th>
                           </tr>
                         </thead>
                         <tbody>
                           {extra.laws.map(([name, stmt], lIdx) => (
                             <tr key={`law-${lIdx}`}>
                               <td>
-                                <span className="text-[var(--gold)]">Law / Principle</span>
+                                <span className="text-[var(--gold)]">Principle</span>
                               </td>
                               <td dangerouslySetInnerHTML={{ __html: typesetMathHtml(name, subj) }} />
                               <td dangerouslySetInnerHTML={{ __html: typesetMathHtml(stmt, subj) }} />
@@ -1364,7 +1419,9 @@ export function NotesScreen({
                 {/* Key Rules */}
                 {part.rules.length > 0 && (
                   <div className="flex flex-col gap-2">
-                    <span className="eyebrow text-[var(--dim)]">Essential Rules &amp; Equations</span>
+                    <span className="eyebrow text-[var(--dim)]">
+                      {hasEquationsLabel ? 'Key rules and equations' : 'Key rules'}
+                    </span>
                     <ul className="rules">
                       {part.rules.map((r, rIdx) => (
                         <RuleItemRenderer key={rIdx} html={r} subj={subj} />
@@ -1377,7 +1434,7 @@ export function NotesScreen({
                 {part.ex && (
                   <div className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-4 sm:p-5 flex flex-col gap-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="eyebrow text-[var(--gold)]">Step-by-Step Worked Example</span>
+                      <span className="eyebrow text-[var(--gold)]">Worked example</span>
                       <button
                         type="button"
                         onClick={() =>
@@ -1432,7 +1489,7 @@ export function NotesScreen({
                   <div className="rounded-2xl bg-[var(--deep)]/65 border border-[var(--line)] p-4 sm:p-5 flex flex-col gap-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="eyebrow text-[var(--gold)]">
-                        Quick Recall Check · Chapter {idx + 1}
+                        Quick check · Chapter {idx + 1}
                       </span>
                       {recallSolved && (
                         <span className="text-[12.5px] font-bold text-[var(--green)]">
@@ -1454,7 +1511,7 @@ export function NotesScreen({
                       {recallOrder.map((origIdx, dispIdx) => {
                         const isPicked = pickedRecall === origIdx;
                         const isRight = origIdx === recallRight;
-                        const cls = isPicked ? (isRight ? 'ok' : 'no') : '';
+                        const cls = isPicked ? (isRight ? 'ok' : 'no anim-shake') : '';
                         return (
                           <button
                             key={origIdx}
@@ -1469,8 +1526,8 @@ export function NotesScreen({
                             }}
                             className={`opt-tile ${cls}`}
                           >
-                            <span className="w-7 h-7 rounded-lg bg-[var(--deep)] border border-[var(--line)] font-extrabold text-[12.5px] flex items-center justify-center shrink-0">
-                              {String.fromCharCode(65 + dispIdx)}
+                            <span className="opt-bubble">
+                              <span>{String.fromCharCode(65 + dispIdx)}</span>
                             </span>
                             <span
                               className="flex-1 text-[14.5px]"
@@ -1482,7 +1539,7 @@ export function NotesScreen({
                     </div>
                     {pickedRecall !== null && (
                       <div
-                        className={`rounded-xl border p-3.5 text-[14px] leading-relaxed ${
+                        className={`anim-explain-reveal rounded-xl border p-3.5 text-[14px] leading-relaxed ${
                           recallSolved
                             ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--ink)]'
                             : 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--ink)]'
@@ -1541,7 +1598,7 @@ export function NotesScreen({
                         }}
                         className="btn-tactile emerald min-h-[44px] px-5 whitespace-nowrap shrink-0"
                       >
-                        <span>Finish &amp; open 1-Min Reread Sheet</span>
+                        <span>Finish and open one-minute recap</span>
                         <Icon name="check" size={17} />
                       </button>
                     )}
@@ -1554,13 +1611,13 @@ export function NotesScreen({
           {/* Topic Trap & Next Step Footer (shown on final chapter or all-chapters view) */}
           {(chapterLayout === 'all' || safePartIdx === topic.parts.length - 1) && (
             <>
-              <div className="rounded-2xl bg-[var(--bad-soft)] border border-[var(--bad-line)] p-4 sm:p-5 flex items-start gap-3">
-                <span className="w-8 h-8 rounded-xl bg-[var(--card)] text-[var(--coral-ink)] flex items-center justify-center shrink-0">
+              <div className="rounded-2xl bg-[var(--warn-soft)] border border-[var(--warn-line)] p-4 sm:p-5 flex items-start gap-3">
+                <span className="w-8 h-8 rounded-xl bg-[var(--card)] border border-[var(--warn-line)] text-[var(--warn-ink)] flex items-center justify-center shrink-0">
                   <Icon name="bolt" size={16} />
                 </span>
                 <div>
-                  <span className="eyebrow text-[var(--coral-ink)]">
-                    Trap
+                  <span className="eyebrow text-[var(--warn-ink)]">
+                    Common exam trap
                   </span>
                   <p
                     className="text-[14.5px] text-[var(--ink)] mt-0.5 leading-relaxed"
@@ -1573,11 +1630,11 @@ export function NotesScreen({
                 <div>
                   <h3 className="h18 text-[var(--ink)]">
                     {readCount === topic.parts.length
-                      ? 'All chapters read — ready to test your mastery!'
+                      ? 'All chapters read — ready to practise!'
                       : 'Ready to practise what you just read?'}
                   </h3>
                   <p className="text-[14px] text-[var(--dim)] mt-0.5">
-                    Switch to the <strong>1-Min Reread Sheet</strong> anytime for a rapid concept refresh.
+                    Switch to <strong>One-minute recap</strong> anytime for a quick refresh.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2.5 shrink-0">

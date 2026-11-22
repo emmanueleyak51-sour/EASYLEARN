@@ -22,10 +22,10 @@ export function ReviewScreen({
   return (
     <div className="flex flex-col gap-6 anim-rise">
       <div>
-        <span className="eyebrow text-[var(--gold)]">Spaced Repetition · 1 → 3 → 7 Days</span>
-        <h1 className="h28 text-[var(--ink)]">{SUBJECT_INFO[progress.subj].short} Review Queue</h1>
+        <span className="eyebrow text-[var(--gold)]">Spaced revision · 1, 3 and 7 days</span>
+        <h1 className="h28 text-[var(--ink)]">Revision</h1>
         <p className="text-[15px] text-[var(--dim)] mt-1">
-          Every question you miss returns at expanding intervals until you get it right 3 times.
+          Questions you miss in {SUBJECT_INFO[progress.subj].name} come back after a few days until you get them right three times.
         </p>
       </div>
 
@@ -48,17 +48,17 @@ export function ReviewScreen({
             <Icon name={dueNow.length > 0 ? 'rev' : 'check'} size={28} />
           </div>
           <div>
-            <div className="font-[var(--display)] font-extrabold text-[22px] text-[var(--ink)]">
+            <div className="font-[var(--display)] font-bold text-[22px] text-[var(--ink)]">
               {dueNow.length > 0
-                ? `${dueNow.length} ${dueNow.length === 1 ? 'card' : 'cards'} due today`
-                : 'All caught up for today!'}
+                ? `${dueNow.length} ${dueNow.length === 1 ? 'question' : 'questions'} due today`
+                : 'All caught up for today'}
             </div>
             <div className="text-[14px] text-[var(--dim)] mt-0.5">
               {dueNow.length > 0
-                ? 'Clear these now to lock in weak spots and boost your mastery score.'
+                ? 'Practise these now to turn weak spots into steady marks.'
                 : upcoming.length > 0
-                  ? `${upcoming.length} more ${upcoming.length === 1 ? 'card is' : 'cards are'} scheduled for future days.`
-                  : 'Miss any question during practice or a diagnostic and it will appear here automatically.'}
+                  ? `${upcoming.length} more ${upcoming.length === 1 ? 'question is' : 'questions are'} scheduled for later days.`
+                  : 'Miss any question during practice or a test and it will show up here.'}
             </div>
           </div>
         </div>
@@ -66,13 +66,13 @@ export function ReviewScreen({
         <div className="shrink-0 flex flex-col sm:flex-row gap-2.5">
           {dueNow.length > 0 && (
             <button type="button" onClick={() => onStartReview(false)} className="btn-tactile indigo">
-              <span>Start review ({dueNow.length})</span>
+              <span>Start revision ({dueNow.length})</span>
               <Icon name="go" size={18} />
             </button>
           )}
           {dueNow.length === 0 && upcoming.length > 0 && (
             <button type="button" onClick={() => onStartReview(true)} className="btn-tactile paper">
-              <span>Review {upcoming.length} early</span>
+              <span>Practise {upcoming.length} early</span>
               <Icon name="go" size={18} />
             </button>
           )}
@@ -82,7 +82,7 @@ export function ReviewScreen({
       {/* Queue breakdown */}
       {allScheduled.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="h20 text-[var(--ink)]">Scheduled cards ({allScheduled.length})</h2>
+          <h2 className="h20 text-[var(--ink)]">Scheduled questions ({allScheduled.length})</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {allScheduled.slice(0, 12).map((qid) => {
               const q = findQ(qid);
@@ -93,14 +93,14 @@ export function ReviewScreen({
               return (
                 <div
                   key={qid}
-                  className="rounded-2xl bg-[var(--card)] border border-[var(--line)] p-4 flex flex-col gap-1.5"
+                  className="rtc-card rounded-2xl p-4 flex flex-col gap-1.5"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12px] font-extrabold uppercase tracking-wider text-[var(--gold)] truncate">
+                    <span className="text-[12.5px] font-bold text-[var(--gold)] truncate">
                       {t?.name || q.t}
                     </span>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                      className={`px-2.5 py-0.5 rounded-xl text-[11.5px] font-bold ${
                         daysLeft <= 0
                           ? 'bg-[var(--bad-soft)] text-[var(--coral-ink)]'
                           : 'bg-[var(--acc-soft)] text-[var(--gold)]'
@@ -114,7 +114,7 @@ export function ReviewScreen({
                     dangerouslySetInnerHTML={{ __html: typesetMathHtml(q.q, progress.subj) }}
                   />
                   <div className="text-[12px] font-semibold text-[var(--dim)]">
-                    Streak stage: {entry.st}/3 clears
+                    Right in a row: {entry.st} of 3
                   </div>
                 </div>
               );
