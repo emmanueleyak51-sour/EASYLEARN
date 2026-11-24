@@ -2248,7 +2248,8 @@ html.dark .rtc-auth-shell {
     inset 0 1px 0 rgba(255, 255, 255, 0.65),
     0 6px 20px -10px rgba(15, 23, 42, 0.14);
 }
-html.dark .ul-liquid-bar {
+html.dark .ul-liquid-bar,
+[data-mode="dark"] .ul-liquid-bar {
   background: color-mix(in srgb, var(--card) 86%, var(--bg) 14%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
@@ -2287,7 +2288,8 @@ html.dark .ul-liquid-bar {
     0 6px 18px -5px var(--acc-glow);
   transition: box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.16s ease;
 }
-html.dark .ul-liquid-lens {
+html.dark .ul-liquid-lens,
+[data-mode="dark"] .ul-liquid-lens {
   background: linear-gradient(
     180deg,
     color-mix(in srgb, rgba(255, 255, 255, 0.14) 72%, var(--gold) 28%) 0%,
@@ -2415,7 +2417,227 @@ html.dark .eyak-jamb-showcase {
   animation: liquidSheetIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* ── EYAK Flagship Website Compositor Motion & Equalizer Physics ── */
+html {
+  scroll-behavior: smooth;
+}
+
+@keyframes eyakScrollProgress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.eyak-scroll-beam {
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  will-change: transform;
+}
+
+@supports (animation-timeline: scroll()) {
+  .eyak-scroll-beam {
+    animation: eyakScrollProgress linear both;
+    animation-timeline: scroll(root);
+  }
+}
+
+@keyframes eyakSubtleKenBurns {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(0, -4px, 0) scale(1.04);
+  }
+}
+
+.eyak-hero-drift {
+  animation: eyakSubtleKenBurns 16s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.eyak-media-zoom {
+  transition: transform 0.48s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+.group:hover .eyak-media-zoom {
+  transform: scale(1.038);
+}
+
+.eyak-tactile-card {
+  transition:
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+  will-change: transform;
+}
+.eyak-tactile-card:hover {
+  transform: translate3d(0, -2px, 0);
+}
+.eyak-tactile-card:active {
+  transform: translate3d(0, 0, 0) scale(0.992);
+}
+
+@keyframes eyakVoiceBarA {
+  0%, 100% {
+    transform: scaleY(0.28);
+  }
+  45% {
+    transform: scaleY(0.96);
+  }
+}
+
+@keyframes eyakVoiceBarB {
+  0%, 100% {
+    transform: scaleY(0.42);
+  }
+  50% {
+    transform: scaleY(0.84);
+  }
+}
+
+@keyframes eyakVoiceBarC {
+  0%, 100% {
+    transform: scaleY(0.22);
+  }
+  55% {
+    transform: scaleY(1);
+  }
+}
+
+.eyak-eq-bar {
+  transform-origin: center bottom;
+  transform: scaleY(0.26);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
+  will-change: transform;
+}
+.eyak-eq-live .eyak-eq-bar-a {
+  animation: eyakVoiceBarA 0.68s ease-in-out infinite;
+}
+.eyak-eq-live .eyak-eq-bar-b {
+  animation: eyakVoiceBarB 0.54s ease-in-out infinite 0.12s;
+}
+.eyak-eq-live .eyak-eq-bar-c {
+  animation: eyakVoiceBarC 0.76s ease-in-out infinite 0.22s;
+}
+
+@keyframes eyakSheenSweep {
+  0% {
+    transform: translate3d(-130%, 0, 0) skewX(-18deg);
+  }
+  100% {
+    transform: translate3d(230%, 0, 0) skewX(-18deg);
+  }
+}
+
+.eyak-cta-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.eyak-cta-sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 42%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.26) 50%,
+    transparent 100%
+  );
+  transform: translate3d(-140%, 0, 0) skewX(-18deg);
+}
+.eyak-cta-sheen:hover::after {
+  animation: eyakSheenSweep 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.eyak-theme-stage {
+  --display: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--body);
+  transition: background-color 0.28s ease, color 0.28s ease, border-color 0.28s ease;
+}
+
+.eyak-display {
+  font-family: var(--display);
+  letter-spacing: -0.008em;
+}
+
+.eyak-theme-stage h3 {
+  font-family: var(--display);
+  letter-spacing: -0.018em;
+}
+
+.eyak-theme-stage h1,
+.eyak-theme-stage h2 {
+  font-family: var(--display);
+  letter-spacing: -0.026em;
+}
+
+.eyak-mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyak-nocturnal-stage {
+  position: relative;
+  background-color: var(--bg-out);
+  background-image:
+    radial-gradient(64% 48% at 18% 12%, var(--acc-glow) 0%, transparent 70%),
+    radial-gradient(52% 44% at 84% 88%, rgba(52, 211, 153, 0.09) 0%, transparent 72%);
+}
+
+.eyak-spotlight-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.eyak-spotlight-surface::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.24s ease;
+  background: radial-gradient(
+    480px circle at var(--spot-x, 50%) var(--spot-y, 20%),
+    var(--acc-glow),
+    transparent 68%
+  );
+}
+
+.eyak-spotlight-surface:hover::before {
+  opacity: 0.42;
+}
+
+@keyframes eyakDropletFall {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.85);
+    opacity: 0.95;
+  }
+  80% {
+    transform: translate3d(0, 26px, 0) scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(0, 32px, 0) scale(0.5);
+    opacity: 0;
+  }
+}
+
+.eyak-lab-droplet {
+  animation: eyakDropletFall 1.15s cubic-bezier(0.4, 0, 0.85, 0.6) infinite;
+  will-change: transform, opacity;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;

@@ -16,6 +16,7 @@ import {
   tstatus,
 } from '../../utils/engine';
 import { estimateJambScoreOutOf400 } from '../../utils/examSubjects';
+import { PUBLIC_FREE_LAUNCH_ACTIVE } from '../../utils/freeLaunchAndPwaLogic';
 import { getDailyQuietLine } from '../../utils/motivationLogic';
 import eyakTrophyUrl from '../../assets/images/eyak_golden_trophy_1795315897770.jpg';
 import { AnimatedNumber } from '../AnimatedNumber';
@@ -137,6 +138,7 @@ export function HomeScreen({
   onStartDiagnostic,
   onOpenLab,
   onOpenStudio,
+  onOpenNovels,
   onOpenFormulas,
   onOpenTopicsMap,
   onOpenCbt,
@@ -163,6 +165,7 @@ export function HomeScreen({
   onStartDiagnostic: () => void;
   onOpenLab: () => void;
   onOpenStudio?: () => void;
+  onOpenNovels?: (novelId?: string) => void;
   onOpenFormulas?: () => void;
   onOpenTopicsMap: () => void;
   onOpenCbt?: () => void;
@@ -184,9 +187,11 @@ export function HomeScreen({
   const passedCount = topics.filter((t) => tstate(progress, t.id).boss).length;
   const mission = nextMission(progress, topics, allSubjectTopics);
   const focus = homeTopics(progress, topics, allSubjectTopics).slice(0, 3);
-  const hasLockedRemaining = topics.some(
-    (t) => !tstate(progress, t.id).boss && isTopicLocked(progress, t.id, allSubjectTopics)
-  );
+  const hasLockedRemaining =
+    !PUBLIC_FREE_LAUNCH_ACTIVE &&
+    topics.some(
+      (t) => !tstate(progress, t.id).boss && isTopicLocked(progress, t.id, allSubjectTopics)
+    );
   const hasDiagnosed = !!(progress.sx[subj]?.dx || progress.dx);
   const dueCount = dueIds.length;
   const openMistakesCount = summarizeMistakeVault(progress.mistakes || {}).total;
@@ -272,7 +277,7 @@ export function HomeScreen({
   const buddyGreeting = mission
     ? `${greet()}, ${progress.name || 'friend'}! Ready for ${mission.t.name.toLowerCase()} in ${SUBJECT_INFO[subj].short}?`
     : hasLockedRemaining
-      ? `${greet()}, ${progress.name || 'friend'}! Your 3-day starter trial has ended — unlock full access from ₦1,000/month.`
+      ? `${greet()}, ${progress.name || 'friend'}! Your 1-day free trial has expired — subscribe from ₦1,000/month to unlock the app.`
       : `${greet()}, ${progress.name || 'friend'}! You have finished every topic in ${SUBJECT_INFO[subj].short}.`;
 
   const buddySubline =
@@ -633,7 +638,7 @@ export function HomeScreen({
                           Unlock all {topics.length} topics in {SUBJECT_INFO[subj].name}
                         </h2>
                         <p className="text-[15px] text-[var(--dim)] leading-relaxed">
-                          Your 3-day starter trial has ended. Activate any EYAK pass from ₦1,000/month to unlock all 49 subjects, tutors, mock exams, virtual labs and colour themes.
+                          Your 1-day free trial has expired. Subscribe from ₦1,000/month (auto-renews unless cancelled; Lifetime is one-time) to unlock all 49 subjects, tutors, mock exams, virtual labs and colour themes.
                         </p>
                       </>
                     ) : (
@@ -677,7 +682,7 @@ export function HomeScreen({
                           className="btn-tactile indigo flex-1 min-w-[190px] whitespace-nowrap"
                         >
                           <Icon name="unlock" size={17} />
-                          <span>Unlock EYAK Premium</span>
+                          <span>Unlock Easy Learn Premium</span>
                         </button>
                         <button
                           type="button"
@@ -804,13 +809,15 @@ export function HomeScreen({
                           ? 'Pendulum timer, lenses, circuits and springs'
                           : 'Compass, ruler and protractor constructions';
                 const companionCta =
-                  isStudio && subj === 'crs'
-                    ? 'Open Study Bible'
-                    : isStudio && subj === 'irs'
-                      ? 'Open Qur’an reader'
-                      : isStudio
-                        ? 'Open practical tool'
-                        : 'Open labs';
+                  isStudio && (subj === 'eng' || subj === 'lit')
+                    ? 'Open Novels Library'
+                    : isStudio && subj === 'crs'
+                      ? 'Open Study Bible'
+                      : isStudio && subj === 'irs'
+                        ? 'Open Qur’an reader'
+                        : isStudio
+                          ? 'Open practical tool'
+                          : 'Open labs';
                 return (
                   <section
                     aria-label={`${SUBJECT_INFO[subj].name} practical companion`}
@@ -933,7 +940,9 @@ export function HomeScreen({
 
                   <div className="flex flex-col gap-2">
                     {focus.map((topic) => {
-                      const locked = isTopicLocked(progress, topic.id, allSubjectTopics);
+                      const locked =
+                        !PUBLIC_FREE_LAUNCH_ACTIVE &&
+                        isTopicLocked(progress, topic.id, allSubjectTopics);
                       const score = mpct(progress, topic.id);
                       const status = tstatus(progress, topic.id);
                       return (
@@ -985,6 +994,31 @@ export function HomeScreen({
               <section aria-label="More study tools" className="flex flex-col gap-2.5">
                 <h2 className="h18 text-[var(--ink)]">Study tools</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 min-[920px]:grid-cols-3 gap-2.5">
+                  {onOpenNovels && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenNovels(subj === 'lit' ? 'so-the-path' : 'lekki-headmaster')
+                      }
+                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                          <Icon name="book" size={16} />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
+                            JAMB &amp; WAEC Novels
+                          </div>
+                          <div className="text-[11.5px] text-[var(--dim)] truncate">
+                            8 set texts · Lekki Headmaster, Mockingbird &amp; more
+                          </div>
+                        </div>
+                      </div>
+                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                    </button>
+                  )}
+
                   {onOpenMistakes && (
                     <button
                       type="button"

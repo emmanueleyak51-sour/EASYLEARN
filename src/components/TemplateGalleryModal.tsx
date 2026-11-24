@@ -51,10 +51,10 @@ function MiniTemplateMockup({ tpl }: { tpl: DesignTemplateSpec }) {
                 E
               </span>
               <span
-                className="text-[10px] font-extrabold tracking-[0.06em]"
+                className="text-[10px] font-extrabold tracking-[0.04em]"
                 style={{ fontFamily: tpl.displayFontStack }}
               >
-                EYAK
+                Easy Learn
               </span>
             </div>
             <div className="flex items-center gap-2 text-[8px] font-semibold" style={{ color: p.dim }}>
@@ -160,10 +160,10 @@ function MiniTemplateMockup({ tpl }: { tpl: DesignTemplateSpec }) {
                 </span>
                 {tpl.layoutStyle !== 'compact-rail' && (
                   <span
-                    className="text-[8.5px] font-extrabold tracking-wider truncate"
+                    className="text-[8px] font-extrabold tracking-tight truncate"
                     style={{ fontFamily: tpl.displayFontStack }}
                   >
-                    EYAK
+                    Easy Learn
                   </span>
                 )}
               </div>
@@ -325,7 +325,7 @@ export function TemplateGalleryModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="EYAK 10 Design Templates Preview Studio"
+      aria-label="Easy Learn 10 Design Templates Preview Studio"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-[#090E1B]/72 backdrop-blur-sm anim-fade"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -337,10 +337,10 @@ export function TemplateGalleryModal({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="text-[11.5px] font-bold text-[var(--gold)]">
-                EYAK Live Template Studio · 10 Full-Platform Designs
+                Easy Learn Live Template Studio · 10 Full-Platform Designs
               </div>
               <h2 className="font-[var(--display)] font-extrabold text-[20px] sm:text-[23px] text-[var(--ink)] leading-tight mt-0.5">
-                Preview &amp; Choose Your EYAK Design Template
+                Preview &amp; Choose Your Easy Learn Design Template
               </h2>
               <p className="text-[13px] text-[var(--dim)] mt-0.5">
                 Click <strong>Preview Live</strong> on any template to transform the real app instantly — browse Home, CBT Simulator, Lessons, and Dark Mode before deciding.
@@ -540,7 +540,7 @@ export function TemplatePreviewDock({
         <button
           type="button"
           onClick={onReset}
-          aria-label="Reset to default EYAK design"
+          aria-label="Reset to default Easy Learn design"
           title="Reset to default design"
           className="w-7 h-7 rounded-lg text-[var(--dim)] hover:text-[var(--coral-ink)] hover:bg-[var(--bad-soft)] flex items-center justify-center cursor-pointer transition-colors"
         >

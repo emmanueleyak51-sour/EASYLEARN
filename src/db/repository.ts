@@ -1,4 +1,5 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import crypto from 'node:crypto';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db } from './index.ts';
 import {
   cbtDailyEntries,
@@ -6,6 +7,7 @@ import {
   leaderboardEntries,
   peerDuels,
   scholarProgressSync,
+  systemSecrets,
   users,
 } from './schema.ts';
 import { resolveAuthoritativeSubject, stripPrototypePollution } from '../utils/securityPolicy.ts';
@@ -39,6 +41,7 @@ const ALLOWED_PROGRESS_KEYS = new Set([
   'duelHistory',
   'leaderboardCampusGoal',
   'leaderboardPublic',
+  'novelProgress',
 ]);
 
 function clampInt(val: unknown, min: number, max: number, fallback = min): number {
@@ -653,4 +656,210 @@ export async function listDailyCbtStandings(
     throw new Error('Database query failed. Please try again later.', { cause: error });
   }
 }
+
+interface StoredEmailAuthCredential {
+  email: string;
+  displayName: string;
+  saltHex: string;
+  hashHex: string;
+  updatedAtMs: number;
+}
+
+const memoryEmailCredentials = new Map<string, StoredEmailAuthCredential>();
+
+function hashPasswordScrypt(password: string, saltHex: string): string {
+  return crypto.scryptSync(password, saltHex, 32).toString('hex');
+}
+
+function verifyPasswordScrypt(password: string, saltHex: string, expectedHashHex: string): boolean {
+  try {
+    const derived = Buffer.from(hashPasswordScrypt(password, saltHex), 'hex');
+    const expected = Buffer.from(expectedHashHex, 'hex');
+    if (derived.length !== expected.length) return false;
+    return crypto.timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
+}
+
+function buildEmailSecretKey(cleanEmail: string): string {
+  const digest = crypto.createHash('sha256').update(cleanEmail).digest('hex').slice(0, 32);
+  return `email_auth_v1:${digest}`;
+}
+
+async function readStoredEmailCredential(
+  cleanEmail: string
+): Promise<StoredEmailAuthCredential | null> {
+  const keyName = buildEmailSecretKey(cleanEmail);
+  try {
+    const [row] = await db
+      .select({ secretValue: systemSecrets.secretValue })
+      .from(systemSecrets)
+      .where(eq(systemSecrets.keyName, keyName))
+      .limit(1);
+    if (row?.secretValue) {
+      const parsed = JSON.parse(row.secretValue) as StoredEmailAuthCredential;
+      if (parsed && parsed.email === cleanEmail && parsed.saltHex && parsed.hashHex) {
+        return parsed;
+      }
+    }
+  } catch {
+    /* fallback to memory map */
+  }
+  return memoryEmailCredentials.get(cleanEmail) || null;
+}
+
+async function writeStoredEmailCredential(cred: StoredEmailAuthCredential): Promise<void> {
+  memoryEmailCredentials.set(cred.email, cred);
+  const keyName = buildEmailSecretKey(cred.email);
+  const serialized = JSON.stringify(cred);
+  try {
+    await db
+      .insert(systemSecrets)
+      .values({ keyName, secretValue: serialized })
+      .onConflictDoUpdate({
+        target: systemSecrets.keyName,
+        set: { secretValue: serialized },
+      });
+  } catch {
+    /* keep memory credential active if DB is unavailable */
+  }
+}
+
+async function hasExistingUserEmailInDb(cleanEmail: string): Promise<string | null> {
+  try {
+    const [row] = await db
+      .select({ displayName: users.displayName })
+      .from(users)
+      .where(sql`lower(${users.email}) = ${cleanEmail}`)
+      .limit(1);
+    return row ? row.displayName : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function registerUniqueEmailAccount(input: {
+  email: string;
+  displayName: string;
+  password: string;
+}): Promise<
+  | { ok: false; duplicateEmail: true; error: string }
+  | { ok: true; email: string; displayName: string }
+> {
+  const cleanEmail = input.email.trim().toLowerCase();
+  const cleanName = cleanText(input.displayName, 60, 'Scholar');
+
+  const existingCred = await readStoredEmailCredential(cleanEmail);
+  const existingUserDisplay = await hasExistingUserEmailInDb(cleanEmail);
+  if (existingCred || existingUserDisplay !== null) {
+    return {
+      ok: false,
+      duplicateEmail: true,
+      error: `An Easy Learn account already exists for ${cleanEmail}. Please sign in instead, or recover your password with Google.`,
+    };
+  }
+
+  const saltHex = crypto.randomBytes(16).toString('hex');
+  const hashHex = hashPasswordScrypt(input.password, saltHex);
+  const cred: StoredEmailAuthCredential = {
+    email: cleanEmail,
+    displayName: cleanName,
+    saltHex,
+    hashHex,
+    updatedAtMs: Date.now(),
+  };
+  await writeStoredEmailCredential(cred);
+
+  const syntheticUid = `email_${crypto.createHash('sha256').update(cleanEmail).digest('hex').slice(0, 28)}`;
+  try {
+    await db
+      .insert(users)
+      .values({
+        uid: syntheticUid,
+        email: cleanEmail,
+        displayName: cleanName,
+      })
+      .onConflictDoNothing();
+  } catch {
+    /* non-fatal if DB unavailable */
+  }
+
+  return { ok: true, email: cleanEmail, displayName: cleanName };
+}
+
+export async function verifyEmailPasswordLogin(input: {
+  email: string;
+  password: string;
+}): Promise<
+  | { ok: true; email: string; displayName: string }
+  | { ok: false; notFound?: boolean; error: string }
+> {
+  const cleanEmail = input.email.trim().toLowerCase();
+  const existingCred = await readStoredEmailCredential(cleanEmail);
+  if (!existingCred) {
+    const existingGoogleUser = await hasExistingUserEmailInDb(cleanEmail);
+    if (existingGoogleUser !== null) {
+      return {
+        ok: false,
+        error:
+          'This email is linked with Google Sign-In. Tap "Continue with Google" or "Forgot password? Recover with Google" below.',
+      };
+    }
+    return {
+      ok: false,
+      notFound: true,
+      error: 'No account found for that email address. Create an account or sign in with Google.',
+    };
+  }
+
+  if (!verifyPasswordScrypt(input.password, existingCred.saltHex, existingCred.hashHex)) {
+    return {
+      ok: false,
+      error: 'Incorrect password for this account. Try again or tap "Forgot password? Recover with Google".',
+    };
+  }
+
+  return {
+    ok: true,
+    email: existingCred.email,
+    displayName: existingCred.displayName,
+  };
+}
+
+export async function recoverEmailPasswordViaGoogle(input: {
+  verifiedEmail: string;
+  displayName?: string;
+  newPassword?: string;
+}): Promise<{ ok: true; email: string; displayName: string; passwordUpdated: boolean }> {
+  const cleanEmail = input.verifiedEmail.trim().toLowerCase();
+  const existingCred = await readStoredEmailCredential(cleanEmail);
+  const resolvedName = cleanText(
+    existingCred?.displayName || input.displayName || cleanEmail.split('@')[0],
+    60,
+    'Scholar'
+  );
+
+  let passwordUpdated = false;
+  if (typeof input.newPassword === 'string' && input.newPassword.length >= 4) {
+    const saltHex = crypto.randomBytes(16).toString('hex');
+    const hashHex = hashPasswordScrypt(input.newPassword, saltHex);
+    await writeStoredEmailCredential({
+      email: cleanEmail,
+      displayName: resolvedName,
+      saltHex,
+      hashHex,
+      updatedAtMs: Date.now(),
+    });
+    passwordUpdated = true;
+  }
+
+  return {
+    ok: true,
+    email: cleanEmail,
+    displayName: resolvedName,
+    passwordUpdated,
+  };
+}
+
 

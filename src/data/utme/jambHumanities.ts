@@ -713,7 +713,7 @@ const COMP_SPECS: CompactTopicInput[] = [
       title: 'Computer networks, internet protocols and security',
       idea: 'Networks connect computers to share files, printers and internet access — from LAN (one school/office) to MAN (city) and WAN (global internet). Most modern LANs use a Star topology connected to a central switch, while Routers forward packets across networks using IP addresses and TCP/IP. Online safety relies on HTTPS encryption, firewalls, strong unique passwords, two-factor authentication (2FA) and avoiding phishing links.',
       terms: [
-        ['DNS (Domain Name System)', 'Internet directory translating human domain names (like `eyak.ng`) into numeric IP addresses'],
+        ['DNS (Domain Name System)', 'Internet directory translating human domain names (like `easylearn.ng`) into numeric IP addresses'],
         ['HTTPS', 'Encrypted version of HTTP that protects passwords and bank details in transit'],
         ['Phishing', 'Deceptive fake emails, SMS or websites tricking victims into revealing passwords, PINs or OTPs'],
       ],

@@ -11,17 +11,39 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        useCredentials: true,
+        includeAssets: ['icon.svg', 'easylearn-logo.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: '/',
-          name: 'EYAK',
-          short_name: 'EYAK',
-          description: 'Offline-ready SS1–SS3 learning studio with JAMB/WAEC CBT Simulator, interactive sandboxes, labs, and spaced mastery across 12 faculties.',
-          theme_color: '#3346DB',
+          name: 'Easy Learn — Your Road to Campus',
+          short_name: 'Easy Learn',
+          description:
+            'Offline-ready JAMB UTME & WAEC/NECO learning app across 49 secondary subjects, 8 prescribed novels, virtual science labs, and CBT mock exams.',
+          theme_color: '#5B2BD6',
           background_color: '#F7F8FC',
           display: 'standalone',
-          start_url: '/',
+          display_override: ['window-controls-overlay', 'standalone'],
+          orientation: 'any',
+          start_url: '/?source=pwa',
           scope: '/',
+          categories: ['education', 'books'],
+          prefer_related_applications: false,
+          shortcuts: [
+            {
+              name: 'Study Dashboard',
+              short_name: 'Study',
+              description: 'Resume your JAMB & WAEC study plan',
+              url: '/?source=pwa',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+            },
+            {
+              name: 'Novels Library',
+              short_name: 'Novels',
+              description: 'Open all 8 JAMB & WAEC prescribed novels',
+              url: '/?source=pwa&screen=novels',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+            },
+          ],
           icons: [
             {
               src: '/pwa-192x192.png',
@@ -44,8 +66,11 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          cleanupOutdatedCaches: true,
+          skipWaiting: true,
+          clientsClaim: true,
           maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg,woff,woff2}'],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -78,7 +103,8 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: false,
+          enabled: true,
+          type: 'module',
         },
       }),
     ],

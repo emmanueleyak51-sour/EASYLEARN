@@ -180,7 +180,7 @@ export function TopicTestScreen({
     const won = session.phase === 'won';
     const topics = getTopics(progress.subj);
     const newPred = predicted(progress, topics);
-    const shareText = `I just ${won ? 'passed' : 'practised'} the ${topic.name} topic test on EYAK with ${session.hits}/${session.list.length} correct! Subject mastery: ${newPred}%.`;
+    const shareText = `I just ${won ? 'passed' : 'practised'} the ${topic.name} topic test on Easy Learn with ${session.hits}/${session.list.length} correct! Subject mastery: ${newPred}%.`;
 
     const handleCopyShare = async () => {
       try {

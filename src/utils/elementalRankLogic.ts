@@ -196,6 +196,7 @@ export function computeElementalRpBreakdown(input: {
   streakCount: number;
   duelsCompleted: number;
   theoryCount?: number;
+  novelRankPoints?: number;
 }): ElementalRankBreakdown {
   const safeTopics = Math.max(0, Math.floor(input.topicsPassed || 0));
   const safeAnswered = Math.max(0, Math.floor(input.totalAnswered || 0));
@@ -204,6 +205,7 @@ export function computeElementalRpBreakdown(input: {
   const safeStreak = Math.max(0, Math.floor(input.streakCount || 0));
   const safeDuels = Math.max(0, Math.floor(input.duelsCompleted || 0));
   const safeTheory = Math.max(0, Math.floor(input.theoryCount || 0));
+  const safeNovelRp = Math.min(160, Math.max(0, Math.floor(input.novelRankPoints || 0)));
 
   // Up to 420 RP: steep syllabus mastery across 90 Topic Tests
   const topicsPoints = Math.min(420, Math.round((Math.min(safeTopics, 90) / 90) * 420));
@@ -218,12 +220,15 @@ export function computeElementalRpBreakdown(input: {
   const cbtRatio = safeCbt / 400;
   const cbtPoints = Math.min(180, Math.round(Math.pow(cbtRatio, 1.25) * 180));
 
-  // Up to 80 RP: disciplined streak & challenge completions
+  // Up to 80 RP (plus earned Novel Final Exam Rank Points): disciplined streak & challenge completions
   const streakPts = Math.min(50, safeStreak * 2);
   const challengePts = Math.min(30, (safeDuels + safeTheory) * 3);
   const consistencyPoints = Math.min(80, streakPts + challengePts);
 
-  const total = Math.min(1000, topicsPoints + accuracyPoints + cbtPoints + consistencyPoints);
+  const total = Math.min(
+    1000,
+    topicsPoints + accuracyPoints + cbtPoints + consistencyPoints + safeNovelRp
+  );
   return { total, topicsPoints, accuracyPoints, cbtPoints, consistencyPoints };
 }
 
@@ -387,6 +392,10 @@ export function extractSmartnessMetricsFromProgress(
   const streakCount = Math.max(0, Math.floor(p.streak?.n || 0));
   const duelsCompleted = (p.duelHistory || []).length;
   const theoryCount = Object.keys(p.theoryScores || {}).length;
+  const novelRankPoints = Object.values(p.novelProgress || {}).reduce(
+    (sum, entry) => sum + Math.max(0, Math.floor(entry?.rankPointsAwarded || 0)),
+    0
+  );
 
   const breakdown = computeElementalRpBreakdown({
     topicsPassed,
@@ -396,6 +405,7 @@ export function extractSmartnessMetricsFromProgress(
     streakCount,
     duelsCompleted,
     theoryCount,
+    novelRankPoints,
   });
 
   return {

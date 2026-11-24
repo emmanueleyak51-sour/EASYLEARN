@@ -288,7 +288,7 @@ export function MasteryThemeGallery({
                   <p className="text-[11px] text-[var(--dim)] leading-snug mt-0.5 line-clamp-2">
                     {unlocked
                       ? theme.tagline
-                      : 'Subscribe to any EYAK pass to unlock and view this colour theme.'}
+                      : 'Subscribe to any Easy Learn pass to unlock and view this colour theme.'}
                   </p>
                 </div>
               </div>

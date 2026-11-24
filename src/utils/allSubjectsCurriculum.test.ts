@@ -46,7 +46,7 @@ test('catalog exposes all 49 official JAMB and WAEC/NECO subjects cleanly', () =
 
 test('Part 4 core JAMB subjects have exact required topic counts', () => {
   assert.equal(getTopics('govt').length, 33, 'Government must have 33 topics');
-  assert.equal(getTopics('lit').length, 10, 'Literature in English must have 10 topics');
+  assert.equal(getTopics('lit').length, 12, 'Literature in English must have 12 topics');
   assert.equal(getTopics('crs').length, 12, 'CRS must have 12 topics');
   assert.equal(getTopics('irs').length, 10, 'IRS must have 10 topics');
   assert.equal(getTopics('comm').length, 11, 'Commerce must have 11 topics');
@@ -168,8 +168,8 @@ test('non-Chem and non-Maths subjects never leak Professor Spark, Chemistry, bea
       sid
     );
     assert.ok(
-      firstBeatScript.includes(tutor.tutorName),
-      `Expected ${sid} first beat script to mention ${tutor.tutorName}, got: ${firstBeatScript}`
+      firstBeatScript.includes('Topic focus:'),
+      `Expected ${sid} first beat script to announce Topic focus, got: ${firstBeatScript}`
     );
     assert.equal(firstBeatScript.includes('Professor Spark'), false);
     assert.equal(firstBeatScript.includes('Master Chike'), false);
@@ -184,7 +184,6 @@ test('non-Chem and non-Maths subjects never leak Professor Spark, Chemistry, bea
     }
 
     const missionScript = extractMissionSpeechScript(topic.name, 'practice', 8, topic.trap, sid);
-    assert.ok(missionScript.includes(tutor.tutorName));
     assert.ok(missionScript.includes(tutor.name));
     assert.equal(missionScript.includes('Professor Spark'), false);
     assert.equal(missionScript.includes('Chemistry'), false);

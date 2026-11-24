@@ -1446,6 +1446,328 @@ const LIT_SPECS: UtmeTopicSpec[] = [
       },
     ],
   },
+  {
+    id: 'lit-african-prose-set',
+    name: 'Prescribed African Prose (WAEC & JAMB Set Novels)',
+    sec: 'Prescribed prose texts',
+    goals: [
+      'Analyse plot, character arcs, themes and narrative techniques in So the Path Does Not Die, Redemption Road, Second Class Citizen and Unexpected Joy at Dawn',
+      'Connect textual evidence and literary devices to WAEC Paper 3 essay prompts and UTME twin-option questions',
+    ],
+    trap: 'Never retell the plot blindly in WAEC Paper 3 essays or confuse character pairs across African set novels (e.g., Finaba/Cammy in So the Path Does Not Die vs Bendu/Commander Cobra in Redemption Road).',
+    parts: [
+      {
+        title: '2026–2030 Harmonized African Prose: Hollist & Shaw',
+        idea: 'The harmonized WAEC/NECO & JAMB 2026–2030 Literature-in-English syllabus features two landmark West African novels: Pede Hollist’s So the Path Does Not Die (Sierra Leone & diaspora identity, Female Genital Cutting, and Finaba Marah’s return home) and Elma Shaw’s Redemption Road (post-war Monrovia, Liberia, where NGO director Bendu Lewis confronts former rebel Commander Cobra / Moses Varney).',
+        terms: [
+          ['Fafei / Initiation rite', 'The traditional Kono female initiation ceremony in Talaba that triggers Finaba’s childhood trauma and family rupture'],
+          ['Peace in Practice', 'The Monrovia trauma-healing NGO directed by Bendu Lewis in Elma Shaw’s Redemption Road'],
+          ['Camp Sande', 'The wartime rebel forest camp in Redemption Road where Bendu survived captivity under Commander Cobra'],
+          ['Diaspora alienation', 'The feeling of cultural homelessness experienced by African migrants between Western cities and ancestral homelands'],
+        ],
+        rules: [
+          'In So the Path Does Not Die, Pa Aguibou Marah breaks with village elders after Baramusu’s secret FGC rite on young Finaba, moving the family to Freetown.',
+          'In Washington D.C., Finaba marries African-American physician Cammy before returning to Sierra Leone to build a sanctuary for vulnerable girls.',
+          'In Redemption Road, Bendu’s pursuit of legal accountability against Moses Varney (Commander Cobra) exposes the tension between political impunity and survivor healing.',
+        ],
+        table: {
+          headers: ['Prescribed Novel', 'Author & Setting', 'Protagonist & Central Conflict'],
+          rows: [
+            ['So the Path Does Not Die', 'Pede Hollist · Talaba, Freetown & Washington D.C.', 'Finaba (Fina) Marah negotiates FGC trauma, diaspora identity and cultural renewal'],
+            ['Redemption Road', 'Elma Shaw · Monrovia & Camp Sande, Liberia', 'Bendu Lewis confronts wartime captor Moses Varney (Commander Cobra) in peacetime Monrovia'],
+          ],
+          trapNote: 'Remember the exact countries: Pede Hollist writes on Sierra Leone (Kono/Freetown), while Elma Shaw writes on Liberia (Monrovia).',
+        },
+        example: {
+          q: 'How does the title "So the Path Does Not Die" function symbolically in Pede Hollist’s novel?',
+          steps: [
+            ['Trace the ancestral proverb', 'Elders invoke keeping the ancestral path alive to justify unbroken custom'],
+            ['Trace Finaba’s redefinition', 'Finaba preserves Kono communal heritage while reforming harmful practices through girls’ education in Sierra Leone'],
+            ['State the thematic synthesis', 'A culture survives by ethical renewal rather than rigid harm or total Western abandonment'],
+          ],
+        },
+        yourTurn: {
+          q: 'In Elma Shaw’s Redemption Road, what triggers Bendu Lewis’s psychological crisis in peacetime Monrovia?',
+          o: [
+            'Spotting her wartime rebel captor, Moses Varney (Commander Cobra), walking freely as an influential civilian',
+            'Losing her university scholarship in Freetown after a student protest',
+            'Being deported from Accra during the Aliens Compliance Order',
+            'Having her first novel manuscript burned by her husband in London',
+          ],
+          a: 0,
+          h: [
+            'Think about the post-civil-war Liberian setting in Monrovia.',
+            'Commander Cobra now lives openly under his civilian name, Moses Varney.',
+          ],
+          e: 'Seeing Moses Varney (Commander Cobra) enjoying status and impunity in Monrovia reawakens Bendu’s buried Camp Sande trauma and drives her quest for justice.',
+        },
+      },
+      {
+        title: 'Classic African Prose Continuity: Emecheta & Agyei-Agyiri',
+        idea: 'Alongside the 2026–2030 texts, Buchi Emecheta’s Second Class Citizen and Alex Agyei-Agyiri’s Unexpected Joy at Dawn remain core West African prose benchmarks testing patriarchy, migration, pan-African identity, and resilience.',
+        terms: [
+          ['The Presence', 'Adah Ofili’s inner voice of ambition and determination in Second Class Citizen'],
+          ['The Bride Price', 'Adah’s first novel manuscript, which Francis callously burns in London'],
+          ['Aliens Compliance Order', 'Historical expulsion policies (1969 Ghana / 1983 Nigeria) driving twin journeys in Unexpected Joy at Dawn'],
+          ['Parallel plot', 'Narrative technique in Unexpected Joy at Dawn alternating between Nii Tackie in Ghana and Mama Orojo in Nigeria'],
+        ],
+        rules: [
+          'Adah Ofili refuses “second-class” status first as an Igbo girl denied early schooling in Lagos, and later as a Black mother enduring racism and domestic abuse under Francis in London.',
+          'Francis burning Adah’s manuscript is the irreversible climax that makes Adah leave with her children.',
+          'Unexpected Joy at Dawn alternates between Accra and Lagos as siblings Moses Nii Tackie and Mama Orojo search for each other across artificial colonial borders.',
+        ],
+        table: {
+          headers: ['Prescribed Novel', 'Protagonist(s)', 'Climactic Turning Point'],
+          rows: [
+            ['Second Class Citizen (Buchi Emecheta)', 'Adah Ofili (vs Francis Obi)', 'Francis burns Adah’s manuscript ("brainchild"), prompting her legal separation'],
+            ['Unexpected Joy at Dawn (Alex Agyei-Agyiri)', 'Moses Nii Tackie & Mama Orojo', 'Unexpected sibling reunion in Nigeria after perilous deportation and border trauma'],
+          ],
+          trapNote: 'In Unexpected Joy at Dawn, Nii Tackie carries Nigerian Yoruba blood (Orojo) despite bearing a Ga name and working as an assistant bank manager in Accra.',
+        },
+        example: {
+          q: 'Why does Buchi Emecheta describe Adah’s first manuscript as her "brainchild" in Second Class Citizen?',
+          steps: [
+            ['Connect motherhood and authorship', 'Adah values intellectual creation alongside her devotion to her biological children'],
+            ['Contrast Francis’s reaction', 'Burning the manuscript attacks Adah’s independent mind and voice'],
+            ['Link to the resolution', 'Destroying her "brainchild" breaks the final bond of her oppressive marriage'],
+          ],
+        },
+        yourTurn: {
+          q: 'Which narrative structure does Alex Agyei-Agyiri employ in Unexpected Joy at Dawn?',
+          o: [
+            'Parallel plots alternating between Accra (Ghana) and Lagos/Illere (Nigeria)',
+            'A single courtroom diary narrated by a nine-year-old child in Alabama',
+            'An epistolary exchange of letters between Paris and Dakar',
+            'A hospital bedside vigil in Eastern Ontario, Canada',
+          ],
+          a: 0,
+          h: [
+            'Follow the simultaneous journeys of Moses Nii Tackie and his sister Mama Orojo.',
+            'One storyline unfolds in Ghana while the twin storyline unfolds in Nigeria.',
+          ],
+          e: 'Agyei-Agyiri alternates chapters between Ghana and Nigeria, mirroring the shared destiny of West Africans divided by xenophobic expulsion decrees.',
+        },
+      },
+    ],
+    qs: [
+      {
+        q: 'In Pede Hollist’s So the Path Does Not Die, why does Pa Aguibou Marah leave Talaba village for Freetown with his family?',
+        o: [
+          'Grandmother Baramusu secretly subjects young Finaba to the Fafei initiation rite against his promise',
+          'A diamond mining company buys his cocoa plantation',
+          'Finaba wins an immediate medical scholarship to Washington D.C.',
+          'Civil war rebels burn down the village schoolhouse',
+        ],
+        a: 0,
+        e: 'Baramusu’s secret circumcision of Finaba shatters Pa Aguibou’s trust and prompts his permanent break with Talaba.',
+      },
+      {
+        q: 'Who is Cammy in Pede Hollist’s So the Path Does Not Die?',
+        o: [
+          'The Trinidadian-born physician whom Finaba marries in the United States',
+          'The village elder who leads the Kono initiation society',
+          'Bendu Lewis’s defense lawyer in Monrovia',
+          'Adah Ofili’s negligent childminder in London',
+        ],
+        a: 0,
+        e: 'Cammy is a successful Caribbean-American doctor whose marriage to Finaba exposes cultural misunderstandings around her childhood trauma and longing for Sierra Leone.',
+      },
+      {
+        q: 'In Elma Shaw’s Redemption Road, what is the wartime alias of Moses Varney?',
+        o: ['Commander Cobra', 'Commander Scorpion', 'General Lion', 'Major Viper'],
+        a: 0,
+        e: 'Moses Varney is the civilian name of former rebel warlord Commander Cobra, who held Bendu captive at Camp Sande.',
+      },
+      {
+        q: 'What is the name of the trauma-counselling NGO led by Bendu Lewis in Redemption Road?',
+        o: ['Peace in Practice', 'Pathways Home', 'Stardom Foundation', 'Shield of Liberia'],
+        a: 0,
+        e: 'Bendu directs Peace in Practice in Monrovia while secretly struggling with her own unhealed war memories.',
+      },
+      {
+        q: 'In Buchi Emecheta’s Second Class Citizen, how does young Adah first gain entry into Methodist School in Lagos?',
+        o: [
+          'She sneaks away from home on her own and runs into Mr. Cole’s classroom',
+          'Her father registers her ahead of her younger brother Boy',
+          'Francis pays her primary school scholarship from London',
+          'Her mother petitions the colonial district officer',
+        ],
+        a: 0,
+        e: 'Eight-year-old Adah slips out of the house with a slate and presents herself in Mr. Cole’s classroom.',
+      },
+      {
+        q: 'In Alex Agyei-Agyiri’s Unexpected Joy at Dawn, why is Moses Nii Tackie still treated as an "alien" by immigration officials despite his Ga name?',
+        o: [
+          'His biological heritage is Nigerian (Yoruba), and he lacks official Ghanaian citizenship papers during the 1983 crisis',
+          'He refuses to speak English at the Accra bank',
+          'He entered Ghana illegally the week before the novel begins',
+          'He works as a diamond smuggler for Tally O',
+        ],
+        a: 0,
+        e: 'Raised by a Ga foster family in Ghana, Nii Tackie bears Yoruba tribal marks and Nigerian ancestry without Ghanaian documentation.',
+      },
+    ],
+  },
+  {
+    id: 'lit-nonafrican-prose-set',
+    name: 'Prescribed Non-African Prose (2026–2030 Set Novels)',
+    sec: 'Prescribed prose texts',
+    goals: [
+      'Analyse perspective, symbolism, moral courage and racial injustice in Harper Lee’s To Kill a Mockingbird',
+      'Trace the dual-timeline hospital vigil, family devotion and resilience in Susanne Bellefeuille’s Path of Lucas: The Journey He Endured',
+    ],
+    trap: 'In To Kill a Mockingbird, distinguish nine-year-old Scout’s innocent eye from adult Jean Louise’s retrospective irony; in Path of Lucas, keep the present hospital frame (Lucy’s coma) distinct from the chronological flashbacks of Lucas’s life.',
+    parts: [
+      {
+        title: 'Harper Lee: To Kill a Mockingbird',
+        idea: 'Set in Maycomb, Alabama during the 1930s Great Depression, Harper Lee’s To Kill a Mockingbird uses the first-person voice of Jean Louise (“Scout”) Finch to link two storylines: the children’s fascination with reclusive neighbour Arthur (“Boo”) Radley and Atticus Finch’s courageous courtroom defence of Tom Robinson, a Black farmhand falsely accused by Bob and Mayella Ewell.',
+        terms: [
+          ['Mockingbird motif', 'Symbol of harmless innocence that brings only music/goodness; destroying it (Tom Robinson, Boo Radley) is a sin'],
+          ['Retrospective first-person narration', 'Adult Scout looking back through her childhood eyes to expose Maycomb’s racial hypocrisy'],
+          ['Moral empathy', 'Atticus’s lesson that you never truly understand a person until you climb into his skin and walk around in it'],
+        ],
+        rules: [
+          'Physical evidence proves Tom Robinson’s left arm was crippled in a cotton gin accident, whereas Mayella Ewell was bruised mainly on the right side of her face by a left-handed attacker (her father, Bob Ewell).',
+          'Despite clear proof, the all-white jury convicts Tom Robinson, who is later shot dead while trying to escape prison.',
+          'On Halloween night, Boo Radley rescues Jem and Scout from Bob Ewell’s knife attack, and Sheriff Heck Tate insists Ewell "fell on his knife" to spare shy Boo destructive publicity.',
+        ],
+        table: {
+          headers: ['Symbolic "Mockingbird"', 'How Innocence Is Shown', 'Outcome in the Novel'],
+          rows: [
+            ['Tom Robinson', 'Helps lonely Mayella Ewell out of pure kindness without pay', 'Wrongly convicted by racial prejudice and killed in prison'],
+            ['Arthur ("Boo") Radley', 'Leaves secret gifts in the knot-hole, blankets Scout in the fire, saves the children', 'Protected by Sheriff Heck Tate and understood empathetically by Scout on his porch'],
+          ],
+          trapNote: 'Miss Maudie Atkinson (not Aunt Alexandra) explains why it is a sin to kill a mockingbird after Atticus warns the children with their air-rifles.',
+        },
+        example: {
+          q: 'Why does Sheriff Heck Tate refuse to arrest Arthur ("Boo") Radley after Bob Ewell dies under the oak tree?',
+          steps: [
+            ['Identify Boo’s action', 'Boo saved Jem and Scout from Bob Ewell’s murderous assault'],
+            ['Weigh Maycomb’s attention', 'Dragging shy, reclusive Boo into public limelight would torment him for doing a heroic deed'],
+            ['Connect to the mockingbird symbol', 'Scout affirms Heck Tate’s wisdom by saying exposing Boo "would be sort of like shootin’ a mockingbird"'],
+          ],
+        },
+        yourTurn: {
+          q: 'During Tom Robinson’s trial in To Kill a Mockingbird, what crucial medical/physical fact does Atticus demonstrate in court?',
+          o: [
+            'Tom Robinson’s left arm is permanently crippled and useless, whereas Mayella was struck by a strong left-handed man',
+            'Bob Ewell was out of town in Montgomery on the evening of November 21',
+            'Sheriff Heck Tate had taken fingerprints from the Ewell cabin window',
+            'Tom Robinson had never stepped inside the Ewell yard before that day',
+          ],
+          a: 0,
+          h: [
+            'Watch what happens when Atticus asks Bob Ewell to write his name in court.',
+            'Bob Ewell is left-handed, while Tom’s left arm was mangled in a childhood cotton-gin accident.',
+          ],
+          e: 'Atticus proves Bob Ewell is left-handed while Tom’s left arm is shrivelled and twelve inches shorter, making it physically impossible for Tom to have inflicted Mayella’s right-side facial bruises.',
+        },
+      },
+      {
+        title: 'Susanne Bellefeuille: Path of Lucas — The Journey He Endured',
+        idea: 'Prescribed on the 2026–2030 WAEC/JAMB Non-African Prose list, Canadian novelist Susanne Bellefeuille’s Path of Lucas: The Journey He Endured uses a frame narrative: sitting beside his comatose daughter Lucy after a devastating car crash in Eastern Ontario, narrator-protagonist Lucas Clarkson recounts his life’s love, losses, and quiet endurance with his wife Isabelle.',
+        terms: [
+          ['Frame narrative (bedside vigil)', 'Present-tense hospital scenes beside comatose Lucy that enclose chronological flashbacks of Lucas’s life'],
+          ['First-person confessional voice', 'Lucas speaking intimately to his unconscious daughter to tether her spirit back to life'],
+          ['Domestic stoicism', 'Quiet, everyday fatherly sacrifice through financial strain, grief and medical crisis'],
+        ],
+        rules: [
+          'The present-day anchor is Lucy’s hospital room following a severe road accident; Lucas believes recounting their family’s full story will help awaken her.',
+          'Flashbacks trace Lucas’s courtship and marriage to Isabelle, rural/small-town Canadian work ethic, parenting joys, and devastating family trials.',
+          'In WAEC essays, always connect the dual timelines: every past hardship Lucas endured strengthens his refusal to give up hope at Lucy’s bedside.',
+        ],
+        table: {
+          headers: ['Narrative Layer', 'Key Characters', 'Dramatic Function'],
+          rows: [
+            ['Present Frame (Hospital Vigil)', 'Lucas Clarkson, comatose daughter Lucy, doctors & family', 'Creates immediate emotional suspense and tenderness'],
+            ['Retrospective Journey (Flashbacks)', 'Young Lucas, Isabelle, growing children', 'Demonstrates how enduring love survives grief and hardship'],
+          ],
+          trapNote: 'Do not confuse Lucas Clarkson (the father and narrator) with Lucy (his injured daughter in the hospital bed).',
+        },
+        example: {
+          q: 'How does the hospital bedside setting shape the tone of Susanne Bellefeuille’s Path of Lucas?',
+          steps: [
+            ['Identify the frame situation', 'Lucas speaks to his daughter Lucy while she lies in a coma'],
+            ['Analyse the emotional effect', 'Every memory of Isabelle and family life carries urgent, tender weight rather than casual nostalgia'],
+            ['State the thematic payoff', 'Storytelling itself becomes an act of paternal love and healing'],
+          ],
+        },
+        yourTurn: {
+          q: 'In Susanne Bellefeuille’s Path of Lucas: The Journey He Endured, what frames Lucas Clarkson’s narration of his past?',
+          o: [
+            'His vigil at the hospital bedside of his comatose daughter, Lucy, after a terrible accident',
+            'A courtroom testimony defending a falsely accused farm worker',
+            'A farewell speech on a Lagos secondary school assembly podium',
+            'A deportation camp near the Ghana–Togo border',
+          ],
+          a: 0,
+          h: [
+            'Recall why Lucas is telling his life story out loud.',
+            'He is sitting beside his injured daughter Lucy in a Canadian hospital room.',
+          ],
+          e: 'Lucas’s bedside vigil for his comatose daughter Lucy serves as the emotional frame through which he recounts his life with Isabelle and their family.',
+        },
+      },
+    ],
+    qs: [
+      {
+        q: 'In Harper Lee’s To Kill a Mockingbird, who explains to Scout that mockingbirds do nothing except make music for people to enjoy?',
+        o: ['Miss Maudie Atkinson', 'Calpurnia', 'Mrs. Henry Lafayette Dubose', 'Mayella Ewell'],
+        a: 0,
+        e: 'After Atticus tells Jem and Scout it is a sin to kill a mockingbird, neighbour Miss Maudie Atkinson explains why—mockingbirds harm no crops or gardens and only sing.',
+      },
+      {
+        q: 'Why does Atticus Finch make Jem read aloud to Mrs. Henry Lafayette Dubose every afternoon in To Kill a Mockingbird?',
+        o: [
+          'So Jem can witness real moral courage as the dying old woman battles her morphine addiction before death',
+          'Because Mrs. Dubose is Jem’s schoolteacher in Maycomb',
+          'To earn money to replace Scout’s lost overalls',
+          'Because Sheriff Heck Tate ordered community service after the fire',
+        ],
+        a: 0,
+        e: 'Although Jem initially goes as punishment for cutting her camellia bushes, Atticus wants him to see genuine courage—fighting a battle you know is hard purely on principle.',
+      },
+      {
+        q: 'Who places the woollen blanket around Scout’s shoulders on the freezing night Miss Maudie’s house burns down?',
+        o: ['Arthur ("Boo") Radley', 'Dill Harris', 'Bob Ewell', 'Mr. Dolphus Raymond'],
+        a: 0,
+        e: 'While Jem and Scout stand transfixed watching the fire in front of the Radley gate, Boo Radley quietly steps out and drapes a blanket over Scout.',
+      },
+      {
+        q: 'In Susanne Bellefeuille’s Path of Lucas: The Journey He Endured, what is the relationship between Lucas and Isabelle?',
+        o: [
+          'Husband and wife whose enduring bond anchors the family across decades of trials',
+          'Brother and sister separated between Ontario and London',
+          'Defense lawyer and prosecutor in a rural Canadian trial',
+          'Doctor and head nurse at Lucy’s hospital',
+        ],
+        a: 0,
+        e: 'Isabelle is Lucas’s beloved wife; their courtship, marriage, parenthood, and shared trials form the heart of Lucas’s retrospective story.',
+      },
+      {
+        q: 'Which narrative perspective is used in Path of Lucas: The Journey He Endured?',
+        o: [
+          'First-person narration by Lucas Clarkson addressing his comatose daughter and recalling his life',
+          'Second-person instruction manual addressed to medical students',
+          'Detached newspaper reports from Ottawa journalists',
+          'Choral dramatic dialogue without a narrator',
+        ],
+        a: 0,
+        e: 'Lucas narrates in an intimate first-person voice from his daughter Lucy’s bedside, weaving present hospital moments with memories.',
+      },
+      {
+        q: 'What thematic thread links Harper Lee’s To Kill a Mockingbird and Susanne Bellefeuille’s Path of Lucas despite their different settings?',
+        o: [
+          'Quiet fatherly devotion, moral resilience, and protecting loved ones through painful trials',
+          'Post-colonial military coups in West Africa',
+          'Satire of corrupt urban municipal politicians',
+          'Supernatural intervention by forest deities',
+        ],
+        a: 0,
+        e: 'Both Atticus Finch and Lucas Clarkson embody steadfast paternal love, quiet integrity, and endurance in the face of grief and crisis.',
+      },
+    ],
+  },
 ];
 
 export function buildLitCurriculum() {

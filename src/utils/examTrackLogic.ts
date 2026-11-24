@@ -1,6 +1,7 @@
 import type { ExamTrack, SubjectId, UserProgress } from '../types';
 import { ALL_SUBJECT_IDS, JAMB_SUBJECT_IDS, isJambSubject, isWaecOnlySubject } from './examSubjects';
 import { SUBJECT_TUTOR_REGISTRY } from './tutorRegistry';
+import { buildPersonalityIntroScript } from './tutorIntroPersonalities';
 
 export const DEFAULT_JAMB_ELECTIVES: readonly SubjectId[] = [
   'maths',
@@ -23,6 +24,7 @@ export interface OnboardingTeacherCard {
   shortName: string;
   tutorName: string;
   roleTitle: string;
+  personalityTag: string;
   studioLabel: string;
   geminiVoice: string;
   isPrimaryJamb: boolean;
@@ -269,7 +271,7 @@ export function getToughJambDrillConfig(
       targetSecPerQ: 33, // Faster than official JAMB 40s/question
       badgeLabel: 'Tough JAMB Condition · 6/7 in 3:30',
       conditionSummary:
-        'Stricter timer (30s/question), 86% pass bar, and close look-alike options so your real JAMB score matches or beats your EYAK score.',
+        'Stricter timer (30s/question), 86% pass bar, and close look-alike options so your real JAMB score matches or beats your Easy Learn score.',
     };
   }
   return {
@@ -400,17 +402,7 @@ export function buildOnboardingTeacherLineup(
   return targetSubjects.map((subj) => {
     const meta = SUBJECT_TUTOR_REGISTRY[subj] || SUBJECT_TUTOR_REGISTRY.eng;
     const isPrimaryJamb = jambQuartet.includes(subj);
-
-    let oneTimeIntroScript: string;
-    if (track === 'jamb') {
-      oneTimeIntroScript = `Hi, I am ${meta.tutorName}, your ${meta.name} voice teacher. This is my only introduction — from here on, whenever you tap Teach or Call teacher, we jump straight into tough JAMB syllabus drills and tricky look-alike options.`;
-    } else if (track === 'waec') {
-      oneTimeIntroScript = `Hi, I am ${meta.tutorName}, your ${meta.name} voice teacher. I am introducing myself just once now — in class, we go straight into WAEC objective and theory marking points and the common mistakes candidates must avoid.`;
-    } else if (isPrimaryJamb) {
-      oneTimeIntroScript = `Hi, I am ${meta.tutorName}, one of your four core JAMB and WAEC ${meta.name} teachers. After this one-time hello, we dive straight into deep JAMB concepts for seventy percent of your prep plus sharp WAEC theory accuracy.`;
-    } else {
-      oneTimeIntroScript = `Hi, I am ${meta.tutorName}, your WAEC ${meta.name} teacher. We meet once right here — whenever you open ${meta.short}, we go straight to WAEC marking-scheme points and examiner pitfalls.`;
-    }
+    const { personalityTag, script } = buildPersonalityIntroScript(subj, track, isPrimaryJamb);
 
     return {
       subj,
@@ -418,10 +410,11 @@ export function buildOnboardingTeacherLineup(
       shortName: meta.short,
       tutorName: meta.tutorName,
       roleTitle: meta.roleTitle,
+      personalityTag,
       studioLabel: meta.studioLabel,
       geminiVoice: meta.geminiVoice,
       isPrimaryJamb,
-      oneTimeIntroScript,
+      oneTimeIntroScript: script,
     };
   });
 }
@@ -562,7 +555,7 @@ export function getSaturdayCbtCampaign(
       bonusXpMultiplier: 2,
       headline: `Saturday National CBT Arena is LIVE · Closes in ${hoursLeftTodayWat}h`,
       subheadline:
-        'Students across EYAK are writing their Saturday CBT right now. Take yours before midnight to get ranked on today’s live board and earn 2× Rank Points!',
+        'Students across Easy Learn are writing their Saturday CBT right now. Take yours before midnight to get ranked on today’s live board and earn 2× Rank Points!',
       ctaLabel: 'Enter Saturday CBT Now',
     };
   }
@@ -660,7 +653,7 @@ export function rankDailyCbtParticipants(
     encouragementTitle = 'First Pacesetter on Today’s CBT Board!';
     encouragementBody =
       mode === 'jamb'
-        ? `You set today’s opening Tough JAMB mark (${myScore}/400). Because EYAK grades stricter than real UTME, every student who writes CBT today now has to chase your standard — review your missed traps now to push even higher!`
+        ? `You set today’s opening Tough JAMB mark (${myScore}/400). Because Easy Learn grades stricter than real UTME, every student who writes CBT today now has to chase your standard — review your missed traps now to push even higher!`
         : `You set today’s opening WAEC mark (${myScore}%). Review any missed questions in your Mistake Vault so your Paper 1 and Paper 2 stay airtight!`;
   } else if (myRank === 1) {
     encouragementTitle = `#1 Out of ${totalParticipants} Students Today!`;
@@ -678,7 +671,7 @@ export function rankDailyCbtParticipants(
     encouragementTitle = `#${myRank} of ${totalParticipants} Today — Every Tough Paper Builds Your Real Score!`;
     encouragementBody =
       mode === 'jamb'
-        ? `Do not be discouraged by a tough score (${myScore}/400) — EYAK trains you with harder distractors and tighter timing than real JAMB on purpose. Study the explanations for your missed questions right now and watch your next CBT jump!`
+        ? `Do not be discouraged by a tough score (${myScore}/400) — Easy Learn trains you with harder distractors and tighter timing than real JAMB on purpose. Study the explanations for your missed questions right now and watch your next CBT jump!`
         : `Showing up and finishing today’s paper (${myScore}%) puts you ahead of everyone who didn’t practise. Review the missed topics step by step and come back stronger on your next run!`;
   }
 

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import type { SubjectId } from '../../types';
+import type { SubjectId, UserProgress } from '../../types';
+import type { NovelFinalExamEvaluation } from '../../utils/novelsLogic';
+import { JambWaecNovelsStudio } from './JambWaecNovelsStudio';
 
 const CONSTITUTION_SECTIONS = [
   { chapter: 'Chapter I', title: 'General Provisions (Sections 1–12)', summary: 'Supremacy of the Constitution, Nigeria as an indivisible federal republic, and separation of powers into Legislature, Executive and Judiciary.' },
@@ -114,7 +116,33 @@ const LANGUAGE_PACKS: Record<string, {
   },
 };
 
-export function HumanitiesAndLanguageStudio({ subj }: { subj: SubjectId }) {
+export function HumanitiesAndLanguageStudio({
+  subj,
+  progress,
+  onToggleNovelChapterRead,
+  onRecordNovelChapterQuiz,
+  onRecordNovelQuizScore,
+  onCompleteNovelFinalExam,
+  onUpdateNovelNotes,
+  onOpenCurriculumTopic,
+}: {
+  subj: SubjectId;
+  progress?: UserProgress;
+  onToggleNovelChapterRead?: (novelId: string, chapterNumber: number) => void;
+  onRecordNovelChapterQuiz?: (
+    novelId: string,
+    chapterNumber: number,
+    score: number,
+    total: number
+  ) => void;
+  onRecordNovelQuizScore?: (novelId: string, score: number, total: number) => void;
+  onCompleteNovelFinalExam?: (novelId: string, evaluation: NovelFinalExamEvaluation) => {
+    newlyAwardedRp: number;
+    newlyAwardedXp: number;
+  };
+  onUpdateNovelNotes?: (novelId: string, notes: string) => void;
+  onOpenCurriculumTopic?: (subj: SubjectId, topicId: string) => void;
+}) {
   const [search, setSearch] = useState<string>('');
   const [lineIdx, setLineIdx] = useState<number>(0);
   const [pickedDevice, setPickedDevice] = useState<string | null>(null);
@@ -171,64 +199,79 @@ export function HumanitiesAndLanguageStudio({ subj }: { subj: SubjectId }) {
   if (subj === 'lit') {
     const item = UNSEEN_LINES[lineIdx];
     return (
-      <section className="rtc-card rounded-[28px] p-5 sm:p-7 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            <h2 className="h22 text-[var(--ink)]">Unseen poetry device spotter</h2>
-            <p className="text-[13.5px] text-[var(--dim)]">
-              Practise spotting literary devices on original unseen lines ({lineIdx + 1} of {UNSEEN_LINES.length})
-            </p>
+      <div className="flex flex-col gap-6">
+        <JambWaecNovelsStudio
+          progress={progress}
+          initialNovelId="so-the-path"
+          initialFilter="african-prose"
+          onToggleChapterRead={onToggleNovelChapterRead}
+          onRecordChapterQuiz={onRecordNovelChapterQuiz}
+          onRecordQuizScore={onRecordNovelQuizScore}
+          onCompleteFinalExam={onCompleteNovelFinalExam}
+          onUpdateNotes={onUpdateNovelNotes}
+          onOpenCurriculumTopic={onOpenCurriculumTopic}
+        />
+
+        <section className="rtc-card rounded-2xl p-5 sm:p-7 flex flex-col gap-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="h22 text-[var(--ink)]">Unseen poetry device spotter</h2>
+              <p className="text-[13.5px] text-[var(--dim)]">
+                Practise spotting literary devices on original unseen lines ({lineIdx + 1} of{' '}
+                {UNSEEN_LINES.length})
+              </p>
+            </div>
+            <span className="text-[12px] font-bold text-[var(--gold)]">Original unseen verse</span>
           </div>
-          <span className="tile-sky px-3 py-1 rounded-full text-[12px] font-bold">Original unseen verse</span>
-        </div>
 
-        <blockquote className="rounded-[22px] bg-[var(--acc-soft)] border-2 border-[var(--acc-line)] p-5 font-[var(--serif)] text-[20px] leading-relaxed text-[var(--ink)]">
-          “{item.line}”
-        </blockquote>
+          <blockquote className="rounded-2xl bg-[var(--acc-soft)] border border-[var(--acc-line)] p-5 font-[var(--serif)] text-[20px] leading-relaxed text-[var(--ink)]">
+            “{item.line}”
+          </blockquote>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          {item.choices.map((ch) => {
-            const chosen = pickedDevice === ch;
-            const correct = ch === item.device;
-            const stateClass =
-              pickedDevice === null
-                ? 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)]'
-                : correct
-                  ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[#0B4A37]'
-                  : chosen
-                    ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[#8A1C2A]'
-                    : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] opacity-70';
-            return (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {item.choices.map((ch) => {
+              const chosen = pickedDevice === ch;
+              const correct = ch === item.device;
+              const stateClass =
+                pickedDevice === null
+                  ? 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)]'
+                  : correct
+                    ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--ink)]'
+                    : chosen
+                      ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--ink)]'
+                      : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] opacity-70';
+              return (
+                <button
+                  key={ch}
+                  type="button"
+                  onClick={() => setPickedDevice(ch)}
+                  className={`min-h-[48px] px-4 rounded-xl border font-bold text-[14.5px] cursor-pointer ${stateClass}`}
+                >
+                  {ch}
+                </button>
+              );
+            })}
+          </div>
+
+          {pickedDevice && (
+            <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] p-4 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-[14px] text-[var(--ink)]">
+                <strong className="text-[var(--gold)]">{item.device}:</strong> {item.why}
+              </p>
               <button
-                key={ch}
                 type="button"
-                onClick={() => setPickedDevice(ch)}
-                className={`min-h-[48px] px-4 rounded-[18px] border-2 font-bold text-[14.5px] cursor-pointer ${stateClass}`}
+                onClick={() => {
+                  setPickedDevice(null);
+                  setLineIdx((i) => (i + 1) % UNSEEN_LINES.length);
+                }}
+                className="btn-tactile indigo py-2 px-4 text-[13.5px]"
               >
-                {ch}
+                Next unseen line
               </button>
-            );
-          })}
-        </div>
-
-        {pickedDevice && (
-          <div className="rounded-[18px] bg-[var(--bg)] border-2 border-[var(--line)] p-4 flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-[14px] text-[var(--ink)]">
-              <strong className="text-[var(--gold)]">{item.device}:</strong> {item.why}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                setPickedDevice(null);
-                setLineIdx((i) => (i + 1) % UNSEEN_LINES.length);
-              }}
-              className="btn-tactile indigo py-2 px-4 text-[13.5px]"
-            >
-              Next unseen line
-            </button>
-          </div>
-        )}
-      </section>
+            </div>
+          )}
+        </section>
+      </div>
     );
   }
 

@@ -12,12 +12,12 @@ import {
   getEngFormulasForTopic,
 } from './engFormulaLogic';
 
-test('English Language curriculum has 32 NERDC SS1-SS3 topics, zero labs, and 224 valid MCQs', () => {
+test('English Language curriculum has 34 NERDC SS1-SS3 & JAMB Novel topics, zero labs, and 239 valid MCQs', () => {
   assert.equal(SUBJECT_IDS.length, 49);
   assert.ok(SUBJECT_IDS.includes('eng'));
   const eng = SUBJECTS.eng;
   assert.ok(eng, 'English subject exists');
-  assert.equal(eng.topics.length, 32, '32 English topics');
+  assert.equal(eng.topics.length, 34, '34 English topics');
   assert.equal(getLabsForSubject('eng').length, 0, 'STRICT NO-LAB RULE: English has zero labs');
 
   const ss1 = filterEngTopicsByClass(eng.topics, 'ss1');
@@ -26,8 +26,8 @@ test('English Language curriculum has 32 NERDC SS1-SS3 topics, zero labs, and 22
   const all = filterEngTopicsByClass(eng.topics, 'all');
   assert.equal(ss1.length, 11, '11 SS1 English topics');
   assert.equal(ss2.length, 11, '11 SS2 English topics');
-  assert.equal(ss3.length, 10, '10 SS3 English topics');
-  assert.equal(all.length, 32, '32 total English topics');
+  assert.equal(ss3.length, 12, '12 SS3 English topics (including 2 JAMB novels)');
+  assert.equal(all.length, 34, '34 total English topics');
 
   let totalQs = 0;
   for (const t of eng.topics) {
@@ -52,7 +52,7 @@ test('English Language curriculum has 32 NERDC SS1-SS3 topics, zero labs, and 22
     );
     assert.ok(hasTable, `${t.id} interactive lesson includes custom study table`);
   }
-  assert.equal(totalQs, 224, '224 total English MCQs');
+  assert.equal(totalQs, 239, '239 total English MCQs');
 });
 
 test('English Grammar & Rules Studio has 30 rules linked to valid topics and clean drill decks', () => {

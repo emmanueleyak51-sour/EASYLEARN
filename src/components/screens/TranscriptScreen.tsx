@@ -130,7 +130,7 @@ export function TranscriptScreen({
           waec: r.waec,
         })),
       });
-      downloadPdfBytes(pdfBytes, `EYAK-Report-Card-${progress.name || 'Student'}.pdf`);
+      downloadPdfBytes(pdfBytes, `Easy-Learn-Report-Card-${progress.name || 'Student'}.pdf`);
     } else {
       const pdfBytes = buildFormulaSheetPdf({
         subjectLabel: activeSheet.label,
@@ -142,7 +142,7 @@ export function TranscriptScreen({
           trapHtml: f.trap,
         })),
       });
-      downloadPdfBytes(pdfBytes, `EYAK-${activeSheet.label}-Formulas-Sheet.pdf`);
+      downloadPdfBytes(pdfBytes, `Easy-Learn-${activeSheet.label}-Formulas-Sheet.pdf`);
     }
     setPdfSavedFlash(true);
     window.setTimeout(() => setPdfSavedFlash(false), 2600);
@@ -232,7 +232,7 @@ export function TranscriptScreen({
             <div className="flex items-center gap-3.5">
               <CrestSvg size={46} />
               <div>
-                <div className="eyebrow text-[var(--gold)]">EYAK · Progress report</div>
+                <div className="eyebrow text-[var(--gold)]">Easy Learn · Progress report</div>
                 <h1 className="h26 text-[var(--ink)]">Student report card</h1>
                 <div className="text-[13px] text-[var(--dim)]">
                   Student: <strong className="text-[var(--ink)]">{progress.name || 'Student'}</strong> · {issuedDate}
@@ -332,7 +332,7 @@ export function TranscriptScreen({
               Study streak: <strong className="text-[var(--ink)]">{progress.streak.n} days</strong> · Subjects:{' '}
               <strong className="text-[var(--ink)]">{progress.subjs.length}</strong>
             </span>
-            <span>Prepared on EYAK</span>
+            <span>Prepared on Easy Learn</span>
           </footer>
         </article>
       )}
@@ -342,7 +342,7 @@ export function TranscriptScreen({
         <article className="rtc-card print-sheet rounded-2xl p-6 flex flex-col gap-4">
           <header className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
             <div>
-              <div className="eyebrow text-[var(--gold)]">EYAK · Quick revision sheet</div>
+              <div className="eyebrow text-[var(--gold)]">Easy Learn · Quick revision sheet</div>
               <h1 className="h24 text-[var(--ink)] font-[var(--display)] font-bold text-[22px]">
                 {activeSheet.label} — formulas and traps ({activeSheet.items.length} items)
               </h1>

@@ -1,6 +1,7 @@
 import type { SubjectId } from '../types';
 
 export type SubjectStudioKind =
+  | 'novels'
   | 'bible'
   | 'quran'
   | 'music'
@@ -32,6 +33,13 @@ export interface SubjectStudioMeta {
  * has a practical, hands-on study tool right alongside its syllabus lessons.
  */
 export const SUBJECT_STUDIO_META: Partial<Record<SubjectId, SubjectStudioMeta>> = {
+  eng: {
+    kind: 'novels',
+    title: 'JAMB & WAEC Novels Library',
+    subtitle: 'Study The Lekki Headmaster, The Life Changer & 6 Literature set novels',
+    badge: '8 set novels',
+    icon: 'book',
+  },
   crs: {
     kind: 'bible',
     title: 'Study Bible (12 versions)',
@@ -125,10 +133,10 @@ export const SUBJECT_STUDIO_META: Partial<Record<SubjectId, SubjectStudioMeta>> 
   },
   lit: {
     kind: 'literature',
-    title: 'Unseen Poetry & Device Spotter',
-    subtitle: 'Practise spotting figures of speech on original verses',
-    badge: 'Reading lab',
-    icon: 'pen',
+    title: 'Prescribed Novels & Poetry Lab',
+    subtitle: 'WAEC/JAMB African & Non-African set novels plus unseen verse spotter',
+    badge: 'Set novels + verse',
+    icon: 'book',
   },
   hist: {
     kind: 'history',

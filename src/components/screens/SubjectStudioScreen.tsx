@@ -1,5 +1,5 @@
 import React from 'react';
-import type { SubjectId } from '../../types';
+import type { SubjectId, UserProgress } from '../../types';
 import { SUBJECT_INFO } from '../../utils/engine';
 import { SUBJECT_STUDIO_META } from '../../utils/subjectStudioMeta';
 import { SubscreenTopBar } from '../AppShell';
@@ -10,13 +10,40 @@ import { MusicAndArtStudio } from '../studios/MusicAndArtStudio';
 import { AccountingAndBusinessStudio } from '../studios/AccountingAndBusinessStudio';
 import { HumanitiesAndLanguageStudio } from '../studios/HumanitiesAndLanguageStudio';
 import { AppliedAndTradesStudio } from '../studios/AppliedAndTradesStudio';
+import { JambWaecNovelsStudio } from '../studios/JambWaecNovelsStudio';
+import type { NovelFinalExamEvaluation } from '../../utils/novelsLogic';
 
 export interface SubjectStudioScreenProps {
   subj: SubjectId;
+  progress?: UserProgress;
+  onToggleNovelChapterRead?: (novelId: string, chapterNumber: number) => void;
+  onRecordNovelChapterQuiz?: (
+    novelId: string,
+    chapterNumber: number,
+    score: number,
+    total: number
+  ) => void;
+  onRecordNovelQuizScore?: (novelId: string, score: number, total: number) => void;
+  onCompleteNovelFinalExam?: (novelId: string, evaluation: NovelFinalExamEvaluation) => {
+    newlyAwardedRp: number;
+    newlyAwardedXp: number;
+  };
+  onUpdateNovelNotes?: (novelId: string, notes: string) => void;
+  onOpenCurriculumTopic?: (subj: SubjectId, topicId: string) => void;
   onBack: () => void;
 }
 
-export function SubjectStudioScreen({ subj, onBack }: SubjectStudioScreenProps) {
+export function SubjectStudioScreen({
+  subj,
+  progress,
+  onToggleNovelChapterRead,
+  onRecordNovelChapterQuiz,
+  onRecordNovelQuizScore,
+  onCompleteNovelFinalExam,
+  onUpdateNovelNotes,
+  onOpenCurriculumTopic,
+  onBack,
+}: SubjectStudioScreenProps) {
   const meta = SUBJECT_STUDIO_META[subj];
   const subjInfo = SUBJECT_INFO[subj];
 
@@ -32,6 +59,20 @@ export function SubjectStudioScreen({ subj, onBack }: SubjectStudioScreenProps) 
       );
     }
     switch (meta.kind) {
+      case 'novels':
+        return (
+          <JambWaecNovelsStudio
+            progress={progress}
+            initialNovelId="lekki-headmaster"
+            initialFilter="all"
+            onToggleChapterRead={onToggleNovelChapterRead}
+            onRecordChapterQuiz={onRecordNovelChapterQuiz}
+            onRecordQuizScore={onRecordNovelQuizScore}
+            onCompleteFinalExam={onCompleteNovelFinalExam}
+            onUpdateNotes={onUpdateNovelNotes}
+            onOpenCurriculumTopic={onOpenCurriculumTopic}
+          />
+        );
       case 'bible':
         return <BibleStudio />;
       case 'quran':
@@ -46,7 +87,18 @@ export function SubjectStudioScreen({ subj, onBack }: SubjectStudioScreenProps) 
       case 'literature':
       case 'history':
       case 'language':
-        return <HumanitiesAndLanguageStudio subj={subj} />;
+        return (
+          <HumanitiesAndLanguageStudio
+            subj={subj}
+            progress={progress}
+            onToggleNovelChapterRead={onToggleNovelChapterRead}
+            onRecordNovelChapterQuiz={onRecordNovelChapterQuiz}
+            onRecordNovelQuizScore={onRecordNovelQuizScore}
+            onCompleteNovelFinalExam={onCompleteNovelFinalExam}
+            onUpdateNovelNotes={onUpdateNovelNotes}
+            onOpenCurriculumTopic={onOpenCurriculumTopic}
+          />
+        );
       default:
         return <AppliedAndTradesStudio subj={subj} />;
     }
@@ -60,7 +112,7 @@ export function SubjectStudioScreen({ subj, onBack }: SubjectStudioScreenProps) 
         onBack={onBack}
         right={
           meta ? (
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[12px] font-bold text-[var(--gold)]">
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-[12px] font-bold text-[var(--gold)]">
               <Icon name={meta.icon} size={14} />
               <span>{meta.badge}</span>
             </span>

@@ -453,7 +453,7 @@ export function QuestionBankManagerModal({
     geminiPauseRef.current = false;
     setGeminiStatus('running');
     setRetryCountdownSec(0);
-    setGeminiMessage('Initializing Gemini Structured JSON Batch Queue…');
+    setGeminiMessage('Initializing Easy Learn Batch Builder…');
 
     const orderedQueue = QUESTION_BANK_SUBJECTS.filter((s) => selectedGeminiSubjects.includes(s.id));
     const initStats: Partial<Record<SubjectId, SubjectRunStat>> = {};
@@ -525,7 +525,7 @@ export function QuestionBankManagerModal({
             },
           }));
           setGeminiMessage(
-            `${cfg.uiName}: ${currentCount.toLocaleString()} / ${targetCap.toLocaleString()} — Generating batch #${batchIndex} (${requestSize} questions via Gemini)…`
+            `${cfg.uiName}: ${currentCount.toLocaleString()} / ${targetCap.toLocaleString()} — Building batch #${batchIndex} (${requestSize} questions)…`
           );
 
           let generated: BankQuestion[] | null = null;
@@ -577,7 +577,7 @@ export function QuestionBankManagerModal({
             fatalError =
               typeof data?.error === 'string' && data.error
                 ? data.error
-                : `Gemini generator failed (HTTP ${resp.status}).`;
+                : `Question batch builder failed (HTTP ${resp.status}).`;
             break;
           }
 
@@ -653,7 +653,7 @@ export function QuestionBankManagerModal({
 
       setGeminiStatus('done');
       setGeminiMessage(
-        `Gemini batch generation complete! Added ${grandSaved.toLocaleString()} unique questions (${grandDupes.toLocaleString()} duplicates filtered).`
+        `Batch build complete! Added ${grandSaved.toLocaleString()} unique questions (${grandDupes.toLocaleString()} duplicates filtered).`
       );
       refresh();
     } catch (err) {
@@ -671,7 +671,7 @@ export function QuestionBankManagerModal({
   const handleResumeGemini = () => {
     geminiPauseRef.current = false;
     setGeminiStatus('running');
-    setGeminiMessage('Resuming Gemini batch queue…');
+    setGeminiMessage('Resuming batch queue…');
   };
 
   const handleStopGemini = () => {
@@ -903,7 +903,7 @@ export function QuestionBankManagerModal({
                             </div>
                             <div className="text-[11px] font-semibold text-[var(--dim)] flex items-center gap-1.5 flex-wrap">
                               <span>
-                                {cfg.alocSlug ? `ALOC: ${cfg.alocSlug}` : 'Gemini Primary'}
+                                {cfg.alocSlug ? `Feed: ${cfg.alocSlug}` : 'Smart Builder'}
                               </span>
                               {cfg.requiresLatex && (
                                 <>
@@ -942,7 +942,7 @@ export function QuestionBankManagerModal({
                               }}
                               className="min-h-[30px] px-2.5 rounded-lg bg-[var(--card)] border border-[var(--line)] hover:border-[var(--gold)] text-[11.5px] font-bold text-[var(--dim)] hover:text-[var(--ink)] cursor-pointer"
                             >
-                              ALOC
+                              Feed
                             </button>
                           )}
                           <button
@@ -953,7 +953,7 @@ export function QuestionBankManagerModal({
                             }}
                             className="min-h-[30px] px-2.5 rounded-lg bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[11.5px] font-bold text-[var(--gold)] cursor-pointer"
                           >
-                            + Gemini
+                            + Build
                           </button>
                         </div>
                       </div>
@@ -1142,7 +1142,7 @@ export function QuestionBankManagerModal({
               {/* ALOC Slug Reference Table */}
               <section className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-4">
                 <div className="text-[12.5px] font-bold text-[var(--ink)] mb-2.5">
-                  Mapped ALOC Subject Slugs (9 Supported · Use Source B Gemini for F.Maths, DigiTech &amp; DataProc)
+                  Mapped Feed Subject Codes (9 Supported · Use Smart Batch Builder for F.Maths, DigiTech &amp; DataProc)
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {ALOC_SUPPORTED_SUBJECTS.map((s) => (
@@ -1584,7 +1584,7 @@ export function QuestionBankManagerModal({
                                 : 'bg-[var(--card)] border border-[var(--line)] text-[var(--dim)]'
                             }`}
                           >
-                            {q.source === 'api' ? 'ALOC API' : 'Gemini AI'}
+                            {q.source === 'api' ? 'Verified Past' : 'Easy Learn'}
                           </span>
                         </div>
 

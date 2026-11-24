@@ -1025,7 +1025,7 @@ export function resolveVoiceProfileMeta(profile: string | undefined): {
       voiceName: 'Puck',
       stylePrompt:
         'A warm, calm, encouraging master geometry teacher guiding a student step-by-step at a slate chalkboard with natural classroom presence and unhurried precision.',
-      defaultPersona: 'You are the Geometry Coach guiding a student step-by-step on EYAK.',
+      defaultPersona: 'You are the Geometry Coach guiding a student step-by-step on Easy Learn.',
       tutorName: 'Geometry Coach',
     };
   }
@@ -1041,7 +1041,7 @@ export function resolveVoiceProfileMeta(profile: string | undefined): {
   return {
     voiceName: meta.geminiVoice,
     stylePrompt: meta.voiceStyle,
-    defaultPersona: `You are ${meta.tutorName}, a clear, encouraging Nigerian ${meta.roleTitle} teaching on EYAK.`,
+    defaultPersona: `You are ${meta.tutorName}, a clear, encouraging Nigerian ${meta.roleTitle} teaching on Easy Learn.`,
     tutorName: meta.tutorName,
   };
 }

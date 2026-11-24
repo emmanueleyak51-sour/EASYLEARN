@@ -39,7 +39,7 @@ export function StudyBuddy({
     >
       <img
         src={eyakMentorUrl}
-        alt="Eyak campus mentor"
+        alt="Easy Learn campus mentor"
         referrerPolicy="no-referrer"
         draggable={false}
         onError={() => setImgFailed(true)}
@@ -51,7 +51,7 @@ export function StudyBuddy({
 
 /**
  * Expressive Illustrated Nigerian Campus Mentor Hero Stage:
- * - Friendly waving young scholar in royal-purple Eyak hoodie
+ * - Friendly waving young scholar in royal-purple Easy Learn hoodie
  * - Tilted "Hello!" callout + golden spark rays
  * - Crisp speech bubble with underlined scholar name & bold highlighted subject
  * - Streak encouragement strip + daily lightning thought strip
@@ -141,7 +141,7 @@ export function StudyBuddyGreeting({
             {!mentorFailed ? (
               <img
                 src={eyakMentorUrl}
-                alt="Friendly Nigerian Eyak mentor waving hello"
+                alt="Friendly Nigerian Easy Learn mentor waving hello"
                 referrerPolicy="no-referrer"
                 draggable={false}
                 onError={() => setMentorFailed(true)}
@@ -150,7 +150,7 @@ export function StudyBuddyGreeting({
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-[#6D28D9] to-[#3B0CA3] text-white p-4">
                 <CrestSvg size={48} />
-                <span className="font-[var(--display)] font-bold text-[14px]">Eyak Mentor</span>
+                <span className="font-[var(--display)] font-bold text-[14px]">Easy Learn Mentor</span>
               </div>
             )}
           </div>

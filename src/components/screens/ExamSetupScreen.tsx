@@ -230,40 +230,22 @@ export function ExamSetupScreen({
     }
   }, [activeVoiceSubj, teacherLineup]);
 
-  // Warm the studio TTS cache for the 4 core voice teachers while the student is still on Step 1
-  // so tapping "Meet My 4 JAMB Voice Teachers" or switching voices plays instantaneously.
-  useEffect(() => {
-    if (!activeTrack || teacherLineup.length === 0) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      const priorityCards = teacherLineup.slice(0, 4);
-      let idx = 0;
-      const worker = async () => {
-        while (!cancelled && mountedRef.current && idx < priorityCards.length) {
-          const nextCard = priorityCards[idx];
-          idx += 1;
-          if (!nextCard) continue;
-          try {
-            await fetchTeacherIntroAudio(nextCard);
-          } catch {
-            /* on-demand tap will retry and surface any real error */
-          }
-        }
-      };
-      void worker();
-      if (priorityCards.length > 1) {
-        void worker();
-      }
-    }, 220);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [activeTrack, teacherLineup]);
-
   const activeTeacher =
     teacherLineup.find((t) => t.subj === activeVoiceSubj) || teacherLineup[0];
+
+  // While the current teacher is speaking on Step 2, quietly warm just the next teacher in line
+  useEffect(() => {
+    if (step !== 'voices' || voiceStatus !== 'playing' || teacherLineup.length <= 1) return;
+    const curIdx = teacherLineup.findIndex((t) => t.subj === activeTeacher?.subj);
+    const nextCard = teacherLineup[(Math.max(0, curIdx) + 1) % teacherLineup.length];
+    if (!nextCard) return;
+    const timer = window.setTimeout(() => {
+      void fetchTeacherIntroAudio(nextCard).catch(() => {});
+    }, 1200);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeTeacher?.subj, step, teacherLineup, voiceStatus]);
 
   const playTeacherVoice = useCallback(
     async (card: OnboardingTeacherCard | undefined = activeTeacher) => {
@@ -449,8 +431,20 @@ export function ExamSetupScreen({
         <div className="flex items-center gap-3 min-w-0">
           <CrestSvg size={40} />
           <div className="min-w-0">
-            <div className="text-[12px] font-bold text-[var(--gold)]">
-              {step === 'track' ? 'Step 1 of 2 · Exam Track' : 'Step 2 of 2 · Meet Your Voice Teachers Once'}
+            <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-[var(--gold)]">
+              <span>
+                {step === 'track'
+                  ? 'Step 1 of 2 · Exam Track'
+                  : 'Step 2 of 2 · Meet Your Voice Teachers Once'}
+              </span>
+              {progress.leaderboardCampusGoal && (
+                <>
+                  <span aria-hidden="true" className="text-[var(--dim)]">·</span>
+                  <span className="text-[var(--ink)] truncate">
+                    {progress.leaderboardCampusGoal}
+                  </span>
+                </>
+              )}
             </div>
             <h1 className="font-[var(--display)] font-extrabold text-[20px] sm:text-[24px] leading-tight text-[var(--ink)] truncate">
               {step === 'track'
@@ -566,7 +560,7 @@ export function ExamSetupScreen({
                     JAMB-Only Tough Mode Active
                   </div>
                   <p className="text-[13px] text-[var(--muted)] leading-relaxed">
-                    Only your <strong>4 chosen JAMB subjects</strong> and <strong>4 Live Voice Teachers</strong> will appear across the app. Topic Tests require <strong>6/7 in 3:30</strong> with look-alike options so your real JAMB score matches or beats your EYAK score.
+                    Only your <strong>4 chosen JAMB subjects</strong> and <strong>4 Live Voice Teachers</strong> will appear across the app. Topic Tests require <strong>6/7 in 3:30</strong> with look-alike options so your real JAMB score matches or beats your Easy Learn score.
                   </p>
                 </div>
               )}
@@ -866,13 +860,13 @@ export function ExamSetupScreen({
                             ? activeTeacher.isPrimaryJamb
                               ? ' · 70% JAMB Core'
                               : ' · 30% WAEC Focus'
-                            : ` · Voice ${activeTeacher.geminiVoice}`}
+                            : ' · Studio Voice'}
                         </div>
                         <h2 className="font-[var(--display)] font-extrabold text-[21px] text-[var(--ink)] truncate">
                           {activeTeacher.tutorName}
                         </h2>
-                        <div className="text-[12.5px] text-[var(--dim)] truncate">
-                          {activeTeacher.roleTitle} · One-time voice greeting
+                        <div className="text-[12.5px] font-semibold text-[var(--dim)] truncate">
+                          {activeTeacher.personalityTag}
                         </div>
                       </div>
                     </div>
@@ -1011,6 +1005,9 @@ export function ExamSetupScreen({
                     </div>
                     <span className="font-[var(--display)] font-bold text-[13.5px] text-[var(--ink)] truncate">
                       {card.tutorName}
+                    </span>
+                    <span className="text-[11px] text-[var(--dim)] truncate">
+                      {card.personalityTag}
                     </span>
                   </button>
                 );

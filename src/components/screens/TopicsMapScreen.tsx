@@ -98,6 +98,7 @@ import {
   tstate,
   tstatus,
 } from '../../utils/engine';
+import { PUBLIC_FREE_LAUNCH_ACTIVE } from '../../utils/freeLaunchAndPwaLogic';
 import { Icon, MiniRing } from '../Icons';
 import {
   FLUID_SCREEN_EXIT,
@@ -557,7 +558,7 @@ export function TopicsMapScreen({
 
   const mission = nextMission(progress, classScopedTopics, allSubjectTopics);
   const recommended = mission?.t.id;
-  const studentIsPro = isPro(progress);
+  const studentIsPro = PUBLIC_FREE_LAUNCH_ACTIVE || isPro(progress);
 
   const sections: { name: string; sub?: string; items: Topic[] }[] = useMemo(() => {
     if (activeClass !== 'all') {
@@ -1035,7 +1036,9 @@ export function TopicsMapScreen({
               <SmoothCollapse open={isOpen}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2.5 mt-2.5 border-t border-[var(--line)]">
                   {sec.items.map((t) => {
-                    const locked = isTopicLocked(progress, t.id, allSubjectTopics);
+                    const locked =
+                      !PUBLIC_FREE_LAUNCH_ACTIVE &&
+                      isTopicLocked(progress, t.id, allSubjectTopics);
                     const pctVal = mpct(progress, t.id);
                     const st = tstate(progress, t.id);
                     const status = tstatus(progress, t.id);

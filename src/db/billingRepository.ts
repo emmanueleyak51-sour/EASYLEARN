@@ -10,17 +10,25 @@ import {
 } from './schema.ts';
 import {
   FREE_TRIAL_DAYS,
+  FREE_TRIAL_DURATION_MS,
   buildCanonicalProPayloadV2,
   buildCanonicalTrialPayloadV1,
   currentEpochDay,
   getPremiumPlanById,
+  isConfiguredPaystackSecretKey,
   isValidDeviceId,
   isValidDeviceSecretToken,
+  isValidEmailAddress,
   isValidPaystackReference,
   isValidVoucherCodeFormat,
+  looksLikeRawCardNumber,
   normalizeVoucherCode,
+  parseScholarEmailList,
   sanitizeDeviceId,
   type PremiumPlanId,
+  type SubscriptionAutoRenewInfo,
+  type TrialLinkInfo,
+  type TrialPaymentMethod,
 } from '../utils/paywallLogic.ts';
 import type { UserProgress } from '../types.ts';
 
@@ -29,7 +37,6 @@ export type SignedTrialReceipt = NonNullable<UserProgress['trial']>;
 
 const SIGNING_SECRET_KEY_NAME = 'entitlement_hmac_v1';
 const ECDSA_KEYPAIR_SECRET_NAME = 'entitlement_ecdsa_p256_v1';
-const VOUCHER_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 let cachedSigningSecret: string | null = null;
 let cachedEcdsaKeys: {
@@ -233,7 +240,10 @@ export async function signEntitlementReceipt(fields: {
   };
 }
 
-export async function signTrialReceipt(startedDay: number): Promise<SignedTrialReceipt> {
+export async function signTrialReceipt(
+  startedDay: number,
+  startedAtMs?: number
+): Promise<SignedTrialReceipt> {
   const safeStart = Math.floor(startedDay);
   const untilDay = safeStart + FREE_TRIAL_DAYS - 1;
   const { privateKey } = await getOrCreateEntitlementKeyPair();
@@ -244,18 +254,24 @@ export async function signTrialReceipt(startedDay: number): Promise<SignedTrialR
       dsaEncoding: 'ieee-p1363',
     })
     .toString('hex');
+  const resolvedStartMs =
+    typeof startedAtMs === 'number' && Number.isFinite(startedAtMs) && startedAtMs > 0
+      ? Math.floor(startedAtMs)
+      : Date.now();
   return {
     startedDay: safeStart,
     untilDay,
+    startedAtMs: resolvedStartMs,
+    endsAtMs: resolvedStartMs + FREE_TRIAL_DURATION_MS,
     sig,
   };
 }
 
 /**
- * Records and signs a tamper-proof 3-day post-login starter trial anchored to BOTH
+ * Records and signs a tamper-proof 1-day (24-hour) post-login free trial anchored to BOTH
  * the secret-token-verified device (`DT_<sha256>`) and Firebase `uid`.
  * Clearing `localStorage` or creating a second account on the same device always
- * resolves to the earliest `startedDay` recorded for either identifier.
+ * resolves to the earliest `startedDay` / `createdAt` recorded for either identifier.
  */
 export async function getOrCreateTrialReceipt(params: {
   uid?: string | null;
@@ -288,6 +304,11 @@ export async function getOrCreateTrialReceipt(params: {
       (minDay, row) => Math.min(minDay, row.startedDay),
       existing[0].startedDay
     );
+    const earliestCreatedMs = existing.reduce((minMs, row) => {
+      const ts = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.now();
+      return Math.min(minMs, ts);
+    }, Date.now());
+
     if (cleanUid && deviceKey) {
       const deviceRow = existing.find((r) => r.deviceId === deviceKey);
       if (deviceRow && !deviceRow.uid) {
@@ -310,10 +331,11 @@ export async function getOrCreateTrialReceipt(params: {
           .onConflictDoNothing({ target: trialRegistrations.deviceId });
       }
     }
-    return signTrialReceipt(earliestDay);
+    return signTrialReceipt(earliestDay, earliestCreatedMs);
   }
 
   if (deviceKey) {
+    const nowMs = Date.now();
     await db
       .insert(trialRegistrations)
       .values({
@@ -332,10 +354,17 @@ export async function getOrCreateTrialReceipt(params: {
       finalRows.length > 0
         ? finalRows.reduce((m, r) => Math.min(m, r.startedDay), finalRows[0].startedDay)
         : curDay;
-    return signTrialReceipt(resolvedDay);
+    const resolvedMs =
+      finalRows.length > 0
+        ? finalRows.reduce((m, r) => {
+            const ts = r.createdAt instanceof Date ? r.createdAt.getTime() : nowMs;
+            return Math.min(m, ts);
+          }, nowMs)
+        : nowMs;
+    return signTrialReceipt(resolvedDay, resolvedMs);
   }
 
-  return signTrialReceipt(curDay);
+  return signTrialReceipt(curDay, Date.now());
 }
 
 export async function verifyEntitlementReceipt(rawPro: unknown): Promise<SignedProReceipt | null> {
@@ -421,10 +450,16 @@ export async function getActiveSubscriptionReceipt(params: {
   deviceToken?: unknown;
   deviceId?: string | null;
   email?: string | null;
+  verifiedEmail?: string | null;
   currentDay?: number;
 }): Promise<SignedProReceipt | null> {
   const curDay = params.currentDay ?? currentEpochDay();
   const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
+  const cleanVerifiedEmail =
+    typeof params.verifiedEmail === 'string' && isValidEmailAddress(params.verifiedEmail)
+      ? params.verifiedEmail.trim().toLowerCase()
+      : null;
+
   // Never allow bare display Device IDs (`?deviceId=ABCD1234`) to fetch or hijack subscriptions
   const { deviceKey: cleanDevice, verifiedBySecretToken } = deriveAuthoritativeDeviceKey(
     params.deviceToken,
@@ -432,24 +467,28 @@ export async function getActiveSubscriptionReceipt(params: {
     { allowLegacyDeviceIdFallback: false }
   );
 
-  if (!cleanUid && !cleanDevice) return null;
+  if (!cleanUid && !cleanDevice && !cleanVerifiedEmail) return null;
 
-  // Enforce strict UID ownership:
-  // - If signed in (`cleanUid`), match subscriptions owned by `cleanUid`, OR unbound (`uid IS NULL`)
-  //   subscriptions created on this exact secret-token-verified device. Never leak another user's UID-bound pass.
-  // - If signed out (`!cleanUid`), require secret `X-Device-Token` match (`verifiedBySecretToken === true`).
-  const ownerMatch =
-    cleanUid && cleanDevice && verifiedBySecretToken
-      ? or(
-          eq(premiumSubscriptions.uid, cleanUid),
-          and(
-            isNull(premiumSubscriptions.uid),
-            eq(premiumSubscriptions.deviceId, cleanDevice)
-          )
-        )
-      : cleanUid
-        ? eq(premiumSubscriptions.uid, cleanUid)
-        : eq(premiumSubscriptions.deviceId, cleanDevice!);
+  // Enforce strict ownership across UID, secret-token-verified Device, and verified Email (for Paystack parent/school seat sponsorships):
+  const clauses = [];
+  if (cleanUid) {
+    clauses.push(eq(premiumSubscriptions.uid, cleanUid));
+  }
+  if (cleanDevice && verifiedBySecretToken) {
+    clauses.push(
+      cleanUid
+        ? and(isNull(premiumSubscriptions.uid), eq(premiumSubscriptions.deviceId, cleanDevice))
+        : eq(premiumSubscriptions.deviceId, cleanDevice)
+    );
+  }
+  if (cleanVerifiedEmail) {
+    clauses.push(
+      and(isNull(premiumSubscriptions.uid), eq(premiumSubscriptions.email, cleanVerifiedEmail))
+    );
+  }
+  if (clauses.length === 0) return null;
+
+  const ownerMatch = clauses.length === 1 ? clauses[0]! : or(...clauses)!;
 
   const rows = await db
     .select()
@@ -461,15 +500,32 @@ export async function getActiveSubscriptionReceipt(params: {
   const active = rows[0];
   if (!active) return null;
 
-  // Double-check UID isolation: if bound to a different Google account, deny
+  // Double-check UID isolation: if bound to a different Google/Firebase account, deny
   if (active.uid && cleanUid && active.uid !== cleanUid) {
     return null;
+  }
+
+  // Bind unbound Paystack email/device subscription to the scholar's UID on first verified sign-in
+  if (!active.uid && cleanUid) {
+    const canBind =
+      (cleanVerifiedEmail && active.email === cleanVerifiedEmail) ||
+      (verifiedBySecretToken && cleanDevice && active.deviceId === cleanDevice);
+    if (canBind) {
+      await db
+        .update(premiumSubscriptions)
+        .set({
+          uid: cleanUid,
+          email: active.email || cleanVerifiedEmail || '',
+          updatedAt: new Date(),
+        })
+        .where(eq(premiumSubscriptions.id, active.id));
+    }
   }
 
   const source =
     active.source === 'voucher' || active.source === 'paystack' || active.source === 'admin'
       ? active.source
-      : 'voucher';
+      : 'paystack';
 
   return signEntitlementReceipt({
     pid: active.planId,
@@ -489,178 +545,6 @@ export class BillingUserError extends Error {
   }
 }
 
-export async function redeemAccessVoucher(params: {
-  rawCode: unknown;
-  deviceToken?: unknown;
-  deviceId?: unknown;
-  uid?: string | null;
-  email?: string | null;
-  currentDay?: number;
-}): Promise<{
-  pro: SignedProReceipt;
-  planName: string;
-  daysAdded: number;
-  untilDay: number;
-  alreadyRedeemedByCaller: boolean;
-}> {
-  if (!isValidVoucherCodeFormat(params.rawCode)) {
-    throw new BillingUserError('Enter a valid Pass PIN (for example EYAK-ABCD-2345).', 400);
-  }
-  const { deviceKey, verifiedBySecretToken } = deriveAuthoritativeDeviceKey(
-    params.deviceToken,
-    params.deviceId,
-    { allowLegacyDeviceIdFallback: false }
-  );
-  if (!deviceKey) {
-    throw new BillingUserError('Secure device session token is required. Refresh and try again.', 400);
-  }
-
-  const code = normalizeVoucherCode(params.rawCode);
-  const deviceId = deviceKey;
-  const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
-  const cleanEmail =
-    typeof params.email === 'string' && params.email.trim()
-      ? params.email.trim().toLowerCase().slice(0, 254)
-      : '';
-  const curDay = params.currentDay ?? currentEpochDay();
-
-  const txResult = await db.transaction(async (tx) => {
-    const voucherRows = await tx
-      .select()
-      .from(accessVouchers)
-      .where(eq(accessVouchers.code, code))
-      .limit(1);
-
-    const voucher = voucherRows[0];
-    if (!voucher) {
-      throw new BillingUserError(
-        'Pass PIN not found. Check every character and try again.',
-        404
-      );
-    }
-    if (voucher.revoked) {
-      throw new BillingUserError('This Pass PIN has been deactivated.', 403);
-    }
-
-    const plan = getPremiumPlanById(voucher.planId);
-    const planName = plan?.name || 'Premium pass';
-
-    // Check if already redeemed
-    if (voucher.redeemedAt) {
-      const sameUid = Boolean(cleanUid && voucher.redeemedByUid && voucher.redeemedByUid === cleanUid);
-      const sameDevice = Boolean(
-        voucher.redeemedByDeviceId && voucher.redeemedByDeviceId === deviceId
-      );
-      if (!sameUid && !sameDevice) {
-        throw new BillingUserError(
-          'This Pass PIN has already been used on another phone or account.',
-          409
-        );
-      }
-
-      // Idempotent recovery: return the caller's existing subscription for this PIN if still active
-      const existingSubRows = await tx
-        .select()
-        .from(premiumSubscriptions)
-        .where(eq(premiumSubscriptions.reference, code))
-        .orderBy(desc(premiumSubscriptions.untilDay))
-        .limit(1);
-
-      const sub = existingSubRows[0];
-      if (!sub || sub.untilDay < curDay) {
-        throw new BillingUserError('This Pass PIN has already expired.', 410);
-      }
-      if (cleanUid && !sub.uid && verifiedBySecretToken && sub.deviceId === deviceId) {
-        await tx
-          .update(premiumSubscriptions)
-          .set({ uid: cleanUid, email: sub.email || cleanEmail, updatedAt: new Date() })
-          .where(eq(premiumSubscriptions.id, sub.id));
-      }
-      return {
-        planId: sub.planId,
-        planName,
-        startsDay: sub.startsDay,
-        untilDay: sub.untilDay,
-        daysAdded: 0,
-        reference: code,
-        alreadyRedeemedByCaller: true,
-      };
-    }
-
-    // Find current active subscription to stack days cleanly if renewing early (never stack onto another user's UID)
-    const ownerMatch = cleanUid
-      ? or(
-          eq(premiumSubscriptions.uid, cleanUid),
-          and(
-            isNull(premiumSubscriptions.uid),
-            eq(premiumSubscriptions.deviceId, deviceId)
-          )
-        )
-      : eq(premiumSubscriptions.deviceId, deviceId);
-
-    const activeSubs = await tx
-      .select()
-      .from(premiumSubscriptions)
-      .where(and(ownerMatch, gte(premiumSubscriptions.untilDay, curDay)))
-      .orderBy(desc(premiumSubscriptions.untilDay))
-      .limit(1);
-
-    const baseDay = activeSubs[0] ? Math.max(curDay, activeSubs[0].untilDay) : curDay;
-    const daysToAdd = Math.max(1, Math.min(36500, voucher.days));
-    const untilDay = baseDay + daysToAdd;
-    const now = new Date();
-
-    await tx
-      .update(accessVouchers)
-      .set({
-        redeemedByUid: cleanUid,
-        redeemedByDeviceId: deviceId,
-        redeemedAt: now,
-      })
-      .where(eq(accessVouchers.code, code));
-
-    await tx.insert(premiumSubscriptions).values({
-      uid: cleanUid,
-      deviceId,
-      email: cleanEmail,
-      planId: voucher.planId,
-      source: 'voucher',
-      reference: code,
-      startsDay: curDay,
-      untilDay,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return {
-      planId: voucher.planId,
-      planName,
-      startsDay: curDay,
-      untilDay,
-      daysAdded: daysToAdd,
-      reference: code,
-      alreadyRedeemedByCaller: false,
-    };
-  });
-
-  const pro = await signEntitlementReceipt({
-    pid: txResult.planId,
-    on: txResult.startsDay,
-    until: txResult.untilDay,
-    code: txResult.reference,
-    source: 'voucher',
-    planName: txResult.planName,
-  });
-
-  return {
-    pro,
-    planName: txResult.planName,
-    daysAdded: txResult.daysAdded,
-    untilDay: txResult.untilDay,
-    alreadyRedeemedByCaller: txResult.alreadyRedeemedByCaller,
-  };
-}
-
 export async function createPendingPaystackTransaction(params: {
   reference: string;
   planId: PremiumPlanId;
@@ -669,14 +553,18 @@ export async function createPendingPaystackTransaction(params: {
   uid?: string | null;
   deviceToken?: unknown;
   deviceId?: string;
+  systemDeviceKey?: string;
 }) {
-  const { deviceKey } = deriveAuthoritativeDeviceKey(params.deviceToken, params.deviceId, {
-    allowLegacyDeviceIdFallback: false,
-  });
-  if (!deviceKey) {
+  const { deviceKey: derivedKey } = deriveAuthoritativeDeviceKey(
+    params.deviceToken,
+    params.deviceId,
+    { allowLegacyDeviceIdFallback: false }
+  );
+  const resolvedDeviceKey = derivedKey || params.systemDeviceKey || null;
+  if (!resolvedDeviceKey) {
     throw new BillingUserError('Secure device session token is required.', 400);
   }
-  const safeEmail = params.email.trim().toLowerCase().slice(0, 254);
+  const safeEmail = params.email.trim().toLowerCase().slice(0, 8000);
   const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
 
   await db
@@ -688,7 +576,7 @@ export async function createPendingPaystackTransaction(params: {
       currency: 'NGN',
       email: safeEmail,
       uid: cleanUid,
-      deviceId: deviceKey,
+      deviceId: resolvedDeviceKey,
       status: 'pending',
     })
     .onConflictDoNothing({ target: paymentTransactions.reference });
@@ -703,25 +591,25 @@ export async function completeVerifiedPaystackTransaction(params: {
   deviceToken?: unknown;
   deviceId?: string;
   uid?: string | null;
+  allowServerWebhook?: boolean;
   currentDay?: number;
 }): Promise<{
   pro: SignedProReceipt;
   planName: string;
   untilDay: number;
+  activatedCount: number;
 }> {
   if (!isValidPaystackReference(params.reference)) {
     throw new BillingUserError('Invalid payment reference.', 400);
   }
-  const { deviceKey } = deriveAuthoritativeDeviceKey(params.deviceToken, params.deviceId, {
-    allowLegacyDeviceIdFallback: false,
-  });
-  if (!deviceKey) {
-    throw new BillingUserError('Secure device session token is required.', 400);
-  }
+  const { deviceKey: callerDeviceKey } = deriveAuthoritativeDeviceKey(
+    params.deviceToken,
+    params.deviceId,
+    { allowLegacyDeviceIdFallback: false }
+  );
   const ref = params.reference.trim();
-  const deviceId = deviceKey;
   const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
-  const cleanEmail = params.customerEmail.trim().toLowerCase().slice(0, 254);
+  const cleanCustomerEmail = params.customerEmail.trim().toLowerCase().slice(0, 254);
   const curDay = params.currentDay ?? currentEpochDay();
 
   const txOutcome = await db.transaction(async (tx) => {
@@ -732,24 +620,44 @@ export async function completeVerifiedPaystackTransaction(params: {
       .limit(1);
 
     const recorded = txRows[0];
+    const isSponsorTx = recorded?.deviceId === 'PAYSTACK_SPONSOR';
+    const effectiveDeviceId =
+      callerDeviceKey ||
+      (isSponsorTx ? 'PAYSTACK_SPONSOR' : null) ||
+      (params.allowServerWebhook ? recorded?.deviceId || 'PAYSTACK_WEBHOOK' : null);
+
+    if (!effectiveDeviceId) {
+      throw new BillingUserError('Secure device session token is required.', 400);
+    }
+
     const resolvedPlan =
       getPremiumPlanById(recorded?.planId) || getPremiumPlanById(params.verifiedPlanId) || null;
 
     if (!resolvedPlan) {
-      throw new BillingUserError('Could not match payment to a valid EYAK Premium plan.', 400);
+      throw new BillingUserError('Could not match payment to a valid Easy Learn Premium plan.', 400);
     }
 
     if (params.currency.toUpperCase() !== 'NGN') {
       throw new BillingUserError('Payment currency must be NGN.', 400);
     }
-    if (params.paidAmountKobo < resolvedPlan.priceKobo) {
-      throw new BillingUserError('Paid amount is less than the selected plan price.', 400);
+    const expectedAmountKobo = recorded?.amountKobo ?? resolvedPlan.priceKobo;
+    if (params.paidAmountKobo < expectedAmountKobo) {
+      throw new BillingUserError('Paid amount is less than the expected checkout total.', 400);
     }
+
+    const parsedRecipientList = parseScholarEmailList(recorded?.email || cleanCustomerEmail, 200);
+    const recipientEmails =
+      parsedRecipientList.emails.length > 0
+        ? parsedRecipientList.emails
+        : [cleanCustomerEmail || 'student@eyak.ng'];
 
     // Prevent replay across different devices/users if already verified
     if (recorded?.status === 'verified') {
       const sameCaller =
-        recorded.deviceId === deviceId || Boolean(cleanUid && recorded.uid === cleanUid);
+        params.allowServerWebhook ||
+        isSponsorTx ||
+        recorded.deviceId === effectiveDeviceId ||
+        Boolean(cleanUid && recorded.uid === cleanUid);
       if (!sameCaller) {
         throw new BillingUserError('This payment reference has already been redeemed.', 409);
       }
@@ -765,6 +673,7 @@ export async function completeVerifiedPaystackTransaction(params: {
           planName: resolvedPlan.name,
           startsDay: subRows[0].startsDay,
           untilDay: subRows[0].untilDay,
+          activatedCount: recipientEmails.length,
         };
       }
     }
@@ -776,7 +685,7 @@ export async function completeVerifiedPaystackTransaction(params: {
         .set({
           status: 'verified',
           verifiedAt: now,
-          uid: recorded.uid || cleanUid,
+          uid: recorded.uid || (isSponsorTx ? null : cleanUid),
         })
         .where(eq(paymentTransactions.reference, ref));
     } else {
@@ -785,23 +694,69 @@ export async function completeVerifiedPaystackTransaction(params: {
         planId: resolvedPlan.id,
         amountKobo: params.paidAmountKobo,
         currency: 'NGN',
-        email: cleanEmail,
+        email: cleanCustomerEmail,
         uid: cleanUid,
-        deviceId,
+        deviceId: effectiveDeviceId,
         status: 'verified',
         verifiedAt: now,
       });
     }
 
-    const ownerMatch = cleanUid
+    if (isSponsorTx || recipientEmails.length > 1) {
+      let lastUntilDay = curDay + resolvedPlan.days;
+      for (const targetEmail of recipientEmails) {
+        const existingEmailSubs = await tx
+          .select()
+          .from(premiumSubscriptions)
+          .where(
+            and(
+              eq(premiumSubscriptions.email, targetEmail),
+              gte(premiumSubscriptions.untilDay, curDay)
+            )
+          )
+          .orderBy(desc(premiumSubscriptions.untilDay))
+          .limit(1);
+
+        const baseDay = existingEmailSubs[0]
+          ? Math.max(curDay, existingEmailSubs[0].untilDay)
+          : curDay;
+        const untilDay = baseDay + resolvedPlan.days;
+        lastUntilDay = untilDay;
+
+        await tx.insert(premiumSubscriptions).values({
+          uid: existingEmailSubs[0]?.uid || null,
+          deviceId: 'PAYSTACK_SPONSOR',
+          email: targetEmail,
+          planId: resolvedPlan.id,
+          source: 'paystack',
+          reference: ref,
+          startsDay: curDay,
+          untilDay,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      return {
+        planId: resolvedPlan.id,
+        planName: resolvedPlan.name,
+        startsDay: curDay,
+        untilDay: lastUntilDay,
+        activatedCount: recipientEmails.length,
+      };
+    }
+
+    const singleEmail = recipientEmails[0] || cleanCustomerEmail;
+    const targetUid = recorded?.uid || cleanUid;
+    const ownerMatch = targetUid
       ? or(
-          eq(premiumSubscriptions.uid, cleanUid),
+          eq(premiumSubscriptions.uid, targetUid),
           and(
             isNull(premiumSubscriptions.uid),
-            eq(premiumSubscriptions.deviceId, deviceId)
+            eq(premiumSubscriptions.deviceId, effectiveDeviceId)
           )
         )
-      : eq(premiumSubscriptions.deviceId, deviceId);
+      : eq(premiumSubscriptions.deviceId, effectiveDeviceId);
 
     const activeSubs = await tx
       .select()
@@ -814,9 +769,9 @@ export async function completeVerifiedPaystackTransaction(params: {
     const untilDay = baseDay + resolvedPlan.days;
 
     await tx.insert(premiumSubscriptions).values({
-      uid: cleanUid,
-      deviceId,
-      email: cleanEmail,
+      uid: targetUid,
+      deviceId: effectiveDeviceId,
+      email: singleEmail,
       planId: resolvedPlan.id,
       source: 'paystack',
       reference: ref,
@@ -831,6 +786,7 @@ export async function completeVerifiedPaystackTransaction(params: {
       planName: resolvedPlan.name,
       startsDay: curDay,
       untilDay,
+      activatedCount: 1,
     };
   });
 
@@ -843,94 +799,50 @@ export async function completeVerifiedPaystackTransaction(params: {
     planName: txOutcome.planName,
   });
 
+  const activatedPlan = getPremiumPlanById(txOutcome.planId);
+  if (activatedPlan && (params.uid || params.deviceToken)) {
+    const nextBillingAtIso = activatedPlan.isRecurring
+      ? new Date(Date.now() + activatedPlan.days * 86_400_000).toISOString()
+      : null;
+    await upsertSubscriptionAutoRenewState({
+      uid: params.uid,
+      deviceToken: params.deviceToken,
+      planId: activatedPlan.id,
+      isRecurring: activatedPlan.isRecurring,
+      autoRenew: activatedPlan.isRecurring,
+      status: activatedPlan.isRecurring ? 'active' : 'one_time',
+      nextBillingAtIso,
+      cancelledAtIso: null,
+    }).catch(() => {
+      /* non-fatal auto-renew metadata write */
+    });
+  }
+
   return {
     pro,
     planName: txOutcome.planName,
     untilDay: txOutcome.untilDay,
-  };
-}
-
-function generateSingleRandomVoucherCode(): string {
-  const seg = (len: number) => {
-    let out = '';
-    for (let i = 0; i < len; i++) {
-      out += VOUCHER_ALPHABET[crypto.randomInt(0, VOUCHER_ALPHABET.length)];
-    }
-    return out;
-  };
-  return `EYAK-${seg(4)}-${seg(4)}`;
-}
-
-export async function createAdminVoucherBatch(params: {
-  planId: string;
-  count: number;
-  note?: string;
-  adminEmail: string;
-}) {
-  const plan = getPremiumPlanById(params.planId);
-  if (!plan) {
-    throw new BillingUserError(
-      'Choose a valid plan (Monthly, 6-Month, Yearly, or Lifetime).',
-      400
-    );
-  }
-  const safeCount = Math.max(1, Math.min(25, Math.floor(Number(params.count) || 1)));
-  const safeNote =
-    typeof params.note === 'string'
-      ? params.note.replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, 120)
-      : '';
-  const safeAdmin = params.adminEmail.trim().toLowerCase().slice(0, 254);
-
-  const createdCodes: string[] = [];
-  let attempts = 0;
-  while (createdCodes.length < safeCount && attempts < safeCount * 4) {
-    attempts++;
-    const code = generateSingleRandomVoucherCode();
-    const inserted = await db
-      .insert(accessVouchers)
-      .values({
-        code,
-        planId: plan.id,
-        days: plan.days,
-        priceNgn: plan.priceNgn,
-        note: safeNote,
-        createdByEmail: safeAdmin,
-      })
-      .onConflictDoNothing({ target: accessVouchers.code })
-      .returning({ code: accessVouchers.code });
-
-    if (inserted[0]?.code) {
-      createdCodes.push(inserted[0].code);
-    }
-  }
-
-  return {
-    planId: plan.id,
-    planName: plan.name,
-    days: plan.days,
-    priceNgn: plan.priceNgn,
-    codes: createdCodes,
+    activatedCount: txOutcome.activatedCount,
   };
 }
 
 export async function getAdminBillingOverview() {
   const curDay = currentEpochDay();
-  const [recentVouchers, activeSubs] = await Promise.all([
+  const [recentTransactions, activeSubs] = await Promise.all([
     db
       .select({
-        code: accessVouchers.code,
-        planId: accessVouchers.planId,
-        days: accessVouchers.days,
-        priceNgn: accessVouchers.priceNgn,
-        note: accessVouchers.note,
-        redeemedByDeviceId: accessVouchers.redeemedByDeviceId,
-        redeemedAt: accessVouchers.redeemedAt,
-        revoked: accessVouchers.revoked,
-        createdAt: accessVouchers.createdAt,
+        reference: paymentTransactions.reference,
+        planId: paymentTransactions.planId,
+        amountKobo: paymentTransactions.amountKobo,
+        currency: paymentTransactions.currency,
+        email: paymentTransactions.email,
+        status: paymentTransactions.status,
+        verifiedAt: paymentTransactions.verifiedAt,
+        createdAt: paymentTransactions.createdAt,
       })
-      .from(accessVouchers)
-      .orderBy(desc(accessVouchers.createdAt))
-      .limit(50),
+      .from(paymentTransactions)
+      .orderBy(desc(paymentTransactions.createdAt))
+      .limit(40),
     db
       .select({
         id: premiumSubscriptions.id,
@@ -948,18 +860,33 @@ export async function getAdminBillingOverview() {
       .limit(40),
   ]);
 
-  const unredeemedCount = recentVouchers.filter((v) => !v.redeemedAt && !v.revoked).length;
-  const redeemedCount = recentVouchers.filter((v) => Boolean(v.redeemedAt)).length;
+  const verifiedTxs = recentTransactions.filter((t) => t.status === 'verified');
+  const totalVerifiedRevenueNgn = verifiedTxs.reduce(
+    (sum, t) => sum + Math.round((t.amountKobo || 0) / 100),
+    0
+  );
 
   return {
+    paystackConfigured: isConfiguredPaystackSecretKey(process.env.PAYSTACK_SECRET_KEY),
     activeSubscriptionsCount: activeSubs.length,
-    recentUnredeemedCount: unredeemedCount,
-    recentRedeemedCount: redeemedCount,
-    vouchers: recentVouchers.map((v) => ({
-      ...v,
-      redeemedAtIso: v.redeemedAt instanceof Date ? v.redeemedAt.toISOString() : null,
-      createdAtIso: v.createdAt instanceof Date ? v.createdAt.toISOString() : null,
-    })),
+    verifiedTransactionsCount: verifiedTxs.length,
+    totalVerifiedRevenueNgn,
+    recentTransactions: recentTransactions.map((t) => {
+      const parsedEmails = parseScholarEmailList(t.email, 200);
+      return {
+        reference: t.reference,
+        planId: t.planId,
+        amountNgn: Math.round((t.amountKobo || 0) / 100),
+        emailSummary:
+          parsedEmails.emails.length > 1
+            ? `${parsedEmails.emails[0]} + ${parsedEmails.emails.length - 1} more`
+            : t.email,
+        seatCount: Math.max(1, parsedEmails.emails.length),
+        status: t.status,
+        verifiedAtIso: t.verifiedAt instanceof Date ? t.verifiedAt.toISOString() : null,
+        createdAtIso: t.createdAt instanceof Date ? t.createdAt.toISOString() : null,
+      };
+    }),
     activeSubscriptions: activeSubs.map((s) => ({
       ...s,
       daysLeft: Math.max(0, s.untilDay - curDay),
@@ -967,3 +894,681 @@ export async function getAdminBillingOverview() {
     })),
   };
 }
+
+const PASS_PIN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateCryptographicPassPin(): string {
+  const bytes = crypto.randomBytes(8);
+  let part1 = '';
+  let part2 = '';
+  for (let i = 0; i < 4; i += 1) {
+    part1 += PASS_PIN_ALPHABET[bytes[i] % PASS_PIN_ALPHABET.length];
+    part2 += PASS_PIN_ALPHABET[bytes[i + 4] % PASS_PIN_ALPHABET.length];
+  }
+  return `ELRN-${part1}-${part2}`;
+}
+
+export interface OwnerPassPinRecord {
+  code: string;
+  planId: string;
+  planName: string;
+  days: number;
+  priceNgn: number;
+  note: string;
+  status: 'available' | 'redeemed' | 'revoked';
+  createdByEmail: string;
+  createdAtIso: string | null;
+  redeemedAtIso: string | null;
+}
+
+export async function createOwnerPassPins(params: {
+  planId: string;
+  count: number;
+  note?: string;
+  createdByEmail: string;
+}): Promise<OwnerPassPinRecord[]> {
+  const plan = getPremiumPlanById(params.planId);
+  if (!plan) {
+    throw new BillingUserError('Choose a valid Easy Learn pass plan.', 400);
+  }
+  const safeCount = Math.max(1, Math.min(50, Math.floor(Number(params.count) || 1)));
+  const safeNote = String(params.note || '').trim().slice(0, 120);
+  const safeCreator = String(params.createdByEmail || '').trim().toLowerCase().slice(0, 160);
+  if (!safeCreator) {
+    throw new BillingUserError('Verified owner email is required to issue Pass PINs.', 403);
+  }
+
+  const created: OwnerPassPinRecord[] = [];
+  const now = new Date();
+
+  for (let i = 0; i < safeCount; i += 1) {
+    let insertedCode: string | null = null;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const candidate = generateCryptographicPassPin();
+      const rows = await db
+        .insert(accessVouchers)
+        .values({
+          code: candidate,
+          planId: plan.id,
+          days: plan.days,
+          priceNgn: plan.priceNgn,
+          note: safeNote,
+          createdByEmail: safeCreator,
+          revoked: false,
+          createdAt: now,
+        })
+        .onConflictDoNothing({ target: accessVouchers.code })
+        .returning({ code: accessVouchers.code });
+
+      if (rows[0]?.code) {
+        insertedCode = rows[0].code;
+        break;
+      }
+    }
+    if (!insertedCode) {
+      throw new BillingUserError('Could not generate a unique Pass PIN. Please retry.', 500);
+    }
+    created.push({
+      code: insertedCode,
+      planId: plan.id,
+      planName: plan.name,
+      days: plan.days,
+      priceNgn: plan.priceNgn,
+      note: safeNote,
+      status: 'available',
+      createdByEmail: safeCreator,
+      createdAtIso: now.toISOString(),
+      redeemedAtIso: null,
+    });
+  }
+
+  return created;
+}
+
+export async function listOwnerPassPins(limit = 60): Promise<{
+  pins: OwnerPassPinRecord[];
+  counts: {
+    total: number;
+    available: number;
+    redeemed: number;
+    revoked: number;
+  };
+}> {
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  const rows = await db
+    .select({
+      code: accessVouchers.code,
+      planId: accessVouchers.planId,
+      days: accessVouchers.days,
+      priceNgn: accessVouchers.priceNgn,
+      note: accessVouchers.note,
+      createdByEmail: accessVouchers.createdByEmail,
+      redeemedAt: accessVouchers.redeemedAt,
+      revoked: accessVouchers.revoked,
+      createdAt: accessVouchers.createdAt,
+    })
+    .from(accessVouchers)
+    .orderBy(desc(accessVouchers.createdAt))
+    .limit(safeLimit);
+
+  let available = 0;
+  let redeemed = 0;
+  let revoked = 0;
+
+  const pins: OwnerPassPinRecord[] = rows.map((r) => {
+    const status: OwnerPassPinRecord['status'] = r.redeemedAt
+      ? 'redeemed'
+      : r.revoked
+        ? 'revoked'
+        : 'available';
+    if (status === 'available') available += 1;
+    else if (status === 'redeemed') redeemed += 1;
+    else revoked += 1;
+
+    const plan = getPremiumPlanById(r.planId);
+    return {
+      code: r.code,
+      planId: r.planId,
+      planName: plan?.name || r.planId,
+      days: r.days,
+      priceNgn: r.priceNgn,
+      note: r.note || '',
+      status,
+      createdByEmail: r.createdByEmail,
+      createdAtIso: r.createdAt instanceof Date ? r.createdAt.toISOString() : null,
+      redeemedAtIso: r.redeemedAt instanceof Date ? r.redeemedAt.toISOString() : null,
+    };
+  });
+
+  return {
+    pins,
+    counts: {
+      total: pins.length,
+      available,
+      redeemed,
+      revoked,
+    },
+  };
+}
+
+export async function revokeOwnerPassPin(rawCode: string): Promise<{ code: string; revoked: true }> {
+  const code = normalizeVoucherCode(rawCode);
+  if (!isValidVoucherCodeFormat(code)) {
+    throw new BillingUserError('Invalid Pass PIN format.', 400);
+  }
+  const existing = await db
+    .select({
+      code: accessVouchers.code,
+      redeemedAt: accessVouchers.redeemedAt,
+      revoked: accessVouchers.revoked,
+    })
+    .from(accessVouchers)
+    .where(eq(accessVouchers.code, code))
+    .limit(1);
+
+  if (!existing[0]) {
+    throw new BillingUserError('Pass PIN not found.', 404);
+  }
+  if (existing[0].redeemedAt) {
+    throw new BillingUserError('This Pass PIN has already been redeemed and cannot be revoked.', 409);
+  }
+
+  await db
+    .update(accessVouchers)
+    .set({ revoked: true })
+    .where(and(eq(accessVouchers.code, code), isNull(accessVouchers.redeemedAt)));
+
+  return { code, revoked: true };
+}
+
+export async function redeemAccessPassPin(params: {
+  rawCode: string;
+  uid?: string | null;
+  deviceToken?: string | null;
+  email?: string | null;
+}): Promise<{
+  pro: SignedProReceipt;
+  planName: string;
+  untilDay: number;
+  daysAdded: number;
+}> {
+  const code = normalizeVoucherCode(params.rawCode);
+  if (!isValidVoucherCodeFormat(code)) {
+    throw new BillingUserError('Enter a valid Easy Learn Pass PIN (for example ELRN-XXXX-XXXX).', 400);
+  }
+
+  const { deviceKey } = deriveAuthoritativeDeviceKey(params.deviceToken);
+  const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
+  const effectiveDeviceId = deviceKey || (cleanUid ? `UID_${cleanUid.slice(0, 28)}` : null);
+  if (!effectiveDeviceId) {
+    throw new BillingUserError('A valid device session is required. Refresh the page and try again.', 400);
+  }
+
+  const cleanEmail =
+    typeof params.email === 'string' && isValidEmailAddress(params.email)
+      ? params.email.trim().toLowerCase()
+      : '';
+
+  const curDay = currentEpochDay();
+  const now = new Date();
+
+  const txOutcome = await db.transaction(async (tx) => {
+    const existingRows = await tx
+      .select({
+        code: accessVouchers.code,
+        planId: accessVouchers.planId,
+        days: accessVouchers.days,
+        redeemedAt: accessVouchers.redeemedAt,
+        revoked: accessVouchers.revoked,
+      })
+      .from(accessVouchers)
+      .where(eq(accessVouchers.code, code))
+      .limit(1);
+
+    const voucher = existingRows[0];
+    if (!voucher) {
+      throw new BillingUserError('That Pass PIN was not found. Double-check the characters and try again.', 404);
+    }
+    if (voucher.revoked) {
+      throw new BillingUserError('This Pass PIN has been cancelled by the administrator.', 410);
+    }
+    if (voucher.redeemedAt) {
+      throw new BillingUserError('This Pass PIN has already been used.', 409);
+    }
+
+    // Atomic single-use claim prevents concurrent double redemption
+    const claimed = await tx
+      .update(accessVouchers)
+      .set({
+        redeemedByUid: cleanUid,
+        redeemedByDeviceId: effectiveDeviceId,
+        redeemedAt: now,
+      })
+      .where(
+        and(
+          eq(accessVouchers.code, code),
+          eq(accessVouchers.revoked, false),
+          isNull(accessVouchers.redeemedAt)
+        )
+      )
+      .returning({
+        code: accessVouchers.code,
+        planId: accessVouchers.planId,
+        days: accessVouchers.days,
+      });
+
+    if (!claimed[0]) {
+      throw new BillingUserError('This Pass PIN was just redeemed. Contact the administrator for a new PIN.', 409);
+    }
+
+    const plan = getPremiumPlanById(claimed[0].planId);
+    const resolvedDays = Math.max(1, Number(claimed[0].days || plan?.days || 30));
+    const planName = plan?.name || 'Easy Learn Study Pass';
+
+    const ownerMatch = cleanUid
+      ? or(
+          eq(premiumSubscriptions.uid, cleanUid),
+          and(
+            isNull(premiumSubscriptions.uid),
+            eq(premiumSubscriptions.deviceId, effectiveDeviceId)
+          )
+        )
+      : eq(premiumSubscriptions.deviceId, effectiveDeviceId);
+
+    const activeSubs = await tx
+      .select()
+      .from(premiumSubscriptions)
+      .where(and(ownerMatch, gte(premiumSubscriptions.untilDay, curDay)))
+      .orderBy(desc(premiumSubscriptions.untilDay))
+      .limit(1);
+
+    const baseDay = activeSubs[0] ? Math.max(curDay, activeSubs[0].untilDay) : curDay;
+    const untilDay = baseDay + resolvedDays;
+
+    await tx.insert(premiumSubscriptions).values({
+      uid: cleanUid,
+      deviceId: effectiveDeviceId,
+      email: cleanEmail,
+      planId: claimed[0].planId,
+      source: 'voucher',
+      reference: claimed[0].code,
+      startsDay: curDay,
+      untilDay,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      code: claimed[0].code,
+      planId: claimed[0].planId,
+      planName,
+      startsDay: curDay,
+      untilDay,
+      daysAdded: resolvedDays,
+    };
+  });
+
+  const pro = await signEntitlementReceipt({
+    pid: txOutcome.planId,
+    on: txOutcome.startsDay,
+    until: txOutcome.untilDay,
+    code: txOutcome.code,
+    source: 'voucher',
+    planName: txOutcome.planName,
+  });
+
+  return {
+    pro,
+    planName: txOutcome.planName,
+    untilDay: txOutcome.untilDay,
+    daysAdded: txOutcome.daysAdded,
+  };
+}
+
+function resolveTrialLinkKeyName(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+}): string | null {
+  const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
+  const { deviceKey } = deriveAuthoritativeDeviceKey(params.deviceToken, null, {
+    allowLegacyDeviceIdFallback: false,
+  });
+  const anchor = cleanUid ? `uid_${cleanUid}` : deviceKey ? `dev_${deviceKey}` : null;
+  if (!anchor) return null;
+  const hash = crypto.createHash('sha256').update(`elrn-trial-link-v1:${anchor}`).digest('hex').slice(0, 36);
+  return `trial_link_v1:${hash}`;
+}
+
+function parseTrialLinkJson(raw: string | null | undefined): TrialLinkInfo | null {
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw) as Partial<TrialLinkInfo>;
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.methodType !== 'google_pay' && obj.methodType !== 'card_bank') return null;
+    if (typeof obj.billingEmail !== 'string' || !isValidEmailAddress(obj.billingEmail)) return null;
+    return {
+      linked: true,
+      methodType: obj.methodType,
+      billingEmail: obj.billingEmail,
+      accountLabel: typeof obj.accountLabel === 'string' ? obj.accountLabel : 'Linked payment account',
+      status: obj.status === 'cancelled' ? 'cancelled' : 'active',
+      autoRenew: obj.status === 'cancelled' ? false : Boolean(obj.autoRenew),
+      startedAtIso: typeof obj.startedAtIso === 'string' ? obj.startedAtIso : new Date().toISOString(),
+      endsAtIso: typeof obj.endsAtIso === 'string' ? obj.endsAtIso : new Date(Date.now() + FREE_TRIAL_DURATION_MS).toISOString(),
+      cancelledAtIso: typeof obj.cancelledAtIso === 'string' ? obj.cancelledAtIso : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getLinkedTrialSubscription(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+}): Promise<TrialLinkInfo | null> {
+  const keyName = resolveTrialLinkKeyName(params);
+  if (!keyName) return null;
+  const rows = await db
+    .select({ secretValue: systemSecrets.secretValue })
+    .from(systemSecrets)
+    .where(eq(systemSecrets.keyName, keyName))
+    .limit(1);
+  return parseTrialLinkJson(rows[0]?.secretValue);
+}
+
+/**
+ * Links a student's Google Payment Account or tokenized Paystack billing account to their
+ * 1-day (24-hour) free trial with 1-click Cancel Anytime. Never accepts or persists raw card PANs/CVVs.
+ */
+export async function linkAndStartOneDayTrial(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+  methodType: TrialPaymentMethod;
+  billingEmail: string;
+  accountLabel?: string;
+}): Promise<{ trial: SignedTrialReceipt | null; trialLink: TrialLinkInfo }> {
+  const methodType: TrialPaymentMethod =
+    params.methodType === 'card_bank' ? 'card_bank' : 'google_pay';
+  const cleanEmail = String(params.billingEmail || '').trim().toLowerCase();
+  if (!isValidEmailAddress(cleanEmail)) {
+    throw new BillingUserError(
+      'Enter a valid Google or billing email address to link your 1-day free trial.',
+      400
+    );
+  }
+  const rawLabel = String(params.accountLabel || '').trim().slice(0, 80);
+  if (looksLikeRawCardNumber(rawLabel)) {
+    throw new BillingUserError(
+      'For your security, do not enter raw card numbers here — enter only your Google email or bank/account name.',
+      400
+    );
+  }
+
+  const keyName = resolveTrialLinkKeyName(params);
+  if (!keyName) {
+    throw new BillingUserError(
+      'A valid session is required to link your payment account. Refresh and retry.',
+      400
+    );
+  }
+
+  const trial = await getOrCreateTrialReceipt({
+    uid: params.uid,
+    deviceToken: params.deviceToken,
+  });
+
+  const startedMs = trial?.startedAtMs ?? Date.now();
+  const endsMs = trial?.endsAtMs ?? startedMs + FREE_TRIAL_DURATION_MS;
+  const defaultLabel =
+    methodType === 'google_pay'
+      ? `Google Pay (${cleanEmail})`
+      : rawLabel || `Paystack Billing Account (${cleanEmail})`;
+
+  const trialLink: TrialLinkInfo = {
+    linked: true,
+    methodType,
+    billingEmail: cleanEmail,
+    accountLabel: rawLabel || defaultLabel,
+    status: 'active',
+    autoRenew: true,
+    startedAtIso: new Date(startedMs).toISOString(),
+    endsAtIso: new Date(endsMs).toISOString(),
+    cancelledAtIso: null,
+  };
+
+  const serialized = JSON.stringify(trialLink);
+  const existing = await db
+    .select({ keyName: systemSecrets.keyName })
+    .from(systemSecrets)
+    .where(eq(systemSecrets.keyName, keyName))
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(systemSecrets)
+      .set({ secretValue: serialized })
+      .where(eq(systemSecrets.keyName, keyName));
+  } else {
+    await db
+      .insert(systemSecrets)
+      .values({ keyName, secretValue: serialized })
+      .onConflictDoNothing({ target: systemSecrets.keyName });
+  }
+
+  return { trial, trialLink };
+}
+
+/**
+ * Cancels the student's linked 1-day trial auto-renewal immediately (Cancel Anytime)
+ * while preserving any remaining hours in their current 24-hour trial window.
+ */
+export async function cancelLinkedTrial(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+}): Promise<TrialLinkInfo> {
+  const keyName = resolveTrialLinkKeyName(params);
+  if (!keyName) {
+    throw new BillingUserError('Session not found. Refresh and retry.', 400);
+  }
+  const existing = await getLinkedTrialSubscription(params);
+  if (!existing) {
+    throw new BillingUserError('No linked trial payment method was found for this account.', 404);
+  }
+
+  const updated: TrialLinkInfo = {
+    ...existing,
+    status: 'cancelled',
+    autoRenew: false,
+    cancelledAtIso: new Date().toISOString(),
+  };
+
+  await db
+    .update(systemSecrets)
+    .set({ secretValue: JSON.stringify(updated) })
+    .where(eq(systemSecrets.keyName, keyName));
+
+  return updated;
+}
+
+function resolveSubAutoRenewKeyName(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+}): string | null {
+  const cleanUid = typeof params.uid === 'string' && params.uid.trim() ? params.uid.trim() : null;
+  const { deviceKey } = deriveAuthoritativeDeviceKey(params.deviceToken, null, {
+    allowLegacyDeviceIdFallback: false,
+  });
+  const anchor = cleanUid ? `uid_${cleanUid}` : deviceKey ? `dev_${deviceKey}` : null;
+  if (!anchor) return null;
+  const hash = crypto
+    .createHash('sha256')
+    .update(`elrn-sub-autorenew-v1:${anchor}`)
+    .digest('hex')
+    .slice(0, 36);
+  return `sub_autorenew_v1:${hash}`;
+}
+
+export async function upsertSubscriptionAutoRenewState(
+  params: {
+    uid?: string | null;
+    deviceToken?: unknown;
+  } & SubscriptionAutoRenewInfo
+): Promise<SubscriptionAutoRenewInfo | null> {
+  const keyName = resolveSubAutoRenewKeyName(params);
+  if (!keyName) return null;
+  const plan = getPremiumPlanById(params.planId);
+  const isRecurring = Boolean(plan?.isRecurring);
+  const record: SubscriptionAutoRenewInfo = {
+    planId: plan?.id || params.planId,
+    isRecurring,
+    autoRenew: isRecurring ? Boolean(params.autoRenew) : false,
+    status: !isRecurring ? 'one_time' : params.status === 'cancelled' ? 'cancelled' : 'active',
+    nextBillingAtIso: isRecurring ? params.nextBillingAtIso : null,
+    cancelledAtIso: isRecurring && params.status === 'cancelled' ? params.cancelledAtIso : null,
+  };
+  const serialized = JSON.stringify(record);
+  const existing = await db
+    .select({ keyName: systemSecrets.keyName })
+    .from(systemSecrets)
+    .where(eq(systemSecrets.keyName, keyName))
+    .limit(1);
+  if (existing[0]) {
+    await db
+      .update(systemSecrets)
+      .set({ secretValue: serialized })
+      .where(eq(systemSecrets.keyName, keyName));
+  } else {
+    await db
+      .insert(systemSecrets)
+      .values({ keyName, secretValue: serialized })
+      .onConflictDoNothing({ target: systemSecrets.keyName });
+  }
+  return record;
+}
+
+export async function getSubscriptionAutoRenewState(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+  activePro?: SignedProReceipt | null;
+}): Promise<SubscriptionAutoRenewInfo | null> {
+  const keyName = resolveSubAutoRenewKeyName(params);
+  if (keyName) {
+    const rows = await db
+      .select({ secretValue: systemSecrets.secretValue })
+      .from(systemSecrets)
+      .where(eq(systemSecrets.keyName, keyName))
+      .limit(1);
+    if (rows[0]?.secretValue) {
+      try {
+        const parsed = JSON.parse(rows[0].secretValue) as Partial<SubscriptionAutoRenewInfo>;
+        const plan = getPremiumPlanById(parsed.planId);
+        if (plan) {
+          return {
+            planId: plan.id,
+            isRecurring: plan.isRecurring,
+            autoRenew: plan.isRecurring ? Boolean(parsed.autoRenew) : false,
+            status: !plan.isRecurring
+              ? 'one_time'
+              : parsed.status === 'cancelled'
+                ? 'cancelled'
+                : 'active',
+            nextBillingAtIso:
+              plan.isRecurring && typeof parsed.nextBillingAtIso === 'string'
+                ? parsed.nextBillingAtIso
+                : null,
+            cancelledAtIso:
+              plan.isRecurring && typeof parsed.cancelledAtIso === 'string'
+                ? parsed.cancelledAtIso
+                : null,
+          };
+        }
+      } catch {
+        /* fall through to activePro default */
+      }
+    }
+  }
+
+  if (params.activePro) {
+    const plan = getPremiumPlanById(params.activePro.pid);
+    if (plan) {
+      const daysLeft = Math.max(1, params.activePro.until - currentEpochDay());
+      return {
+        planId: plan.id,
+        isRecurring: plan.isRecurring,
+        autoRenew: plan.isRecurring && params.activePro.source === 'paystack',
+        status: !plan.isRecurring ? 'one_time' : 'active',
+        nextBillingAtIso: plan.isRecurring
+          ? new Date(Date.now() + daysLeft * 86_400_000).toISOString()
+          : null,
+        cancelledAtIso: null,
+      };
+    }
+  }
+  return null;
+}
+
+export async function cancelRecurringSubscription(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+  activePro?: SignedProReceipt | null;
+}): Promise<SubscriptionAutoRenewInfo> {
+  const current = await getSubscriptionAutoRenewState(params);
+  if (!current) {
+    throw new BillingUserError('No active recurring subscription was found on this account.', 404);
+  }
+  if (!current.isRecurring || current.planId === 'lifetime') {
+    throw new BillingUserError(
+      'Lifetime Pass is a one-time payment and is never auto-debited.',
+      400
+    );
+  }
+  const updated = await upsertSubscriptionAutoRenewState({
+    uid: params.uid,
+    deviceToken: params.deviceToken,
+    planId: current.planId,
+    isRecurring: true,
+    autoRenew: false,
+    status: 'cancelled',
+    nextBillingAtIso: current.nextBillingAtIso,
+    cancelledAtIso: new Date().toISOString(),
+  });
+  if (!updated) {
+    throw new BillingUserError('Session not found. Refresh and retry.', 400);
+  }
+  return updated;
+}
+
+export async function resumeRecurringSubscription(params: {
+  uid?: string | null;
+  deviceToken?: unknown;
+  activePro?: SignedProReceipt | null;
+}): Promise<SubscriptionAutoRenewInfo> {
+  const current = await getSubscriptionAutoRenewState(params);
+  if (!current) {
+    throw new BillingUserError('No active subscription was found to resume.', 404);
+  }
+  if (!current.isRecurring || current.planId === 'lifetime') {
+    throw new BillingUserError(
+      'Lifetime Pass is permanent and does not require auto-renewal.',
+      400
+    );
+  }
+  const updated = await upsertSubscriptionAutoRenewState({
+    uid: params.uid,
+    deviceToken: params.deviceToken,
+    planId: current.planId,
+    isRecurring: true,
+    autoRenew: true,
+    status: 'active',
+    nextBillingAtIso: current.nextBillingAtIso,
+    cancelledAtIso: null,
+  });
+  if (!updated) {
+    throw new BillingUserError('Session not found. Refresh and retry.', 400);
+  }
+  return updated;
+}
+
+
+
+

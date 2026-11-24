@@ -360,7 +360,7 @@ export function pickPractice(
 export function bossList(p: UserProgress, t: Topic): string[] {
   const qs = bankForTopic(p, t);
   const toughJamb = isToughJambModeForSubject(resolveExamTrack(p), p.subj, p.jambSubjects);
-  const targetPoolSize = toughJamb ? 9 : BOSS_HP + 2;
+  const targetPoolSize = BOSS_HP + 2;
   const by = (l: number) =>
     qs
       .filter((q) => q.l === l)
@@ -369,18 +369,22 @@ export function bossList(p: UserProgress, t: Topic): string[] {
   const b = by(4);
   const c = by(5);
   let list = (toughJamb
-    ? [c[0], b[0], c[1], b[1], a[0], b[2], c[2], a[1], a[2]]
+    ? [c[0], b[0], c[1], b[1], a[0], b[2], c[2]]
     : [a[0], a[1], b[0], b[1], c[0], c[1], a[2]]
   ).filter(Boolean);
   if (list.length < targetPoolSize) {
     list = list.concat(
       qs
         .filter((q) => !list.includes(q))
-        .sort((x, y) => y.l - x.l)
+        .sort((x, y) => aSortFallback(y, toughJamb) - aSortFallback(x, toughJamb))
         .slice(0, targetPoolSize - list.length)
     );
   }
-  return list.map((q) => q.id);
+  return list.slice(0, targetPoolSize).map((q) => q.id);
+}
+
+function aSortFallback(q: Question, toughJamb: boolean): number {
+  return q.l + (toughJamb && q.w?.length ? 0.25 : 0);
 }
 
 export function dxList(p: UserProgress, topics: Topic[]): string[] {

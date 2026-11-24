@@ -146,8 +146,16 @@ export async function playStudioWavPayload(
   callbacks?: {
     onEnded?: () => void;
     onError?: (err: Error) => void;
+    playbackRate?: number;
   }
 ): Promise<ActiveAudioHandle> {
+  const safeRate =
+    typeof callbacks?.playbackRate === 'number' &&
+    Number.isFinite(callbacks.playbackRate) &&
+    callbacks.playbackRate >= 0.5 &&
+    callbacks.playbackRate <= 2
+      ? callbacks.playbackRate
+      : 1;
   // 1. Prefer Web Audio API when AudioContext can enter 'running' state (immune to async fetch gesture expiry on mobile)
   const AudioCtx = getAudioContextConstructor();
   if (AudioCtx) {
@@ -166,6 +174,7 @@ export async function playStudioWavPayload(
         const audioBuffer = await sharedAudioCtx.decodeAudioData(arrayBuf);
         const source = sharedAudioCtx.createBufferSource();
         source.buffer = audioBuffer;
+        source.playbackRate.value = safeRate;
         source.connect(sharedAudioCtx.destination);
 
         let stoppedManually = false;
@@ -209,6 +218,7 @@ export async function playStudioWavPayload(
   audio.pause();
   audio.muted = false;
   audio.volume = 1;
+  audio.playbackRate = safeRate;
   audio.setAttribute('playsinline', 'true');
   audio.src = objectUrl;
 

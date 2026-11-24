@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {
   authenticateAccount,
   buildRegisteredAccount,
+  findAccountByEmail,
   generateScholarOtp,
+  registerAccountStrict,
+  resetAccountPasswordWithGoogle,
   validateLoginInput,
   validateOtpCode,
   validateRegisterInput,
@@ -61,6 +64,46 @@ test('buildRegisteredAccount & authenticateAccount round-trip by username or ema
 
   const wrongPass = authenticateAccount(accounts, 'Chinedu', 'wrong99');
   assert.equal(wrongPass.ok, false);
+});
+
+test('registerAccountStrict blocks duplicate emails (case-insensitive) and resetAccountPasswordWithGoogle updates passcode', () => {
+  const first = registerAccountStrict([], {
+    username: 'Zainab',
+    email: 'Zainab@EasyLearn.ng',
+    password: 'oldPass123',
+    classLevel: 'ss3',
+    subjs: ['eng', 'maths', 'chem', 'phys'],
+    target: 85,
+    nowMs: 1700000001000,
+  });
+  assert.equal(first.ok, true);
+  assert.equal(first.duplicateEmail, false);
+  if (!first.ok) return;
+
+  const duplicateAttempt = registerAccountStrict(first.accounts, {
+    username: 'Zainab Clone',
+    email: '  zainab@easylearn.ng  ',
+    password: 'anotherPass',
+    classLevel: 'ss1',
+    subjs: ['eng'],
+    target: 70,
+    nowMs: 1700000002000,
+  });
+  assert.equal(duplicateAttempt.ok, false);
+  assert.equal(duplicateAttempt.duplicateEmail, true);
+  assert.ok(findAccountByEmail(first.accounts, 'ZAINAB@EASYLEARN.NG'));
+
+  const recovered = resetAccountPasswordWithGoogle(first.accounts, {
+    email: 'zainab@easylearn.ng',
+    newPassword: 'newGooglePass2027',
+    nowMs: 1700000003000,
+  });
+  assert.equal(recovered.accounts.length, 1);
+  assert.equal(authenticateAccount(recovered.accounts, 'zainab@easylearn.ng', 'oldPass123').ok, false);
+  assert.equal(
+    authenticateAccount(recovered.accounts, 'zainab@easylearn.ng', 'newGooglePass2027').ok,
+    true
+  );
 });
 
 test('49-subject matrix: Civic, Further Maths, Geography, DigiTech & DataProc have 30 SS1-SS3 topics and ZERO labs', () => {

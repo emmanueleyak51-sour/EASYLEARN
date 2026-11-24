@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -28,28 +30,42 @@ import {
   listDuelEntriesByDuelId,
   listPublicLeaderboard,
   publishDuelAndScoreEntry,
+  recoverEmailPasswordViaGoogle,
+  registerUniqueEmailAccount,
   saveCloudSyncBundle,
   upsertDailyCbtStanding,
   upsertLeaderboardStanding,
+  verifyEmailPasswordLogin,
 } from './src/db/repository.ts';
 import {
   BillingUserError,
+  cancelLinkedTrial,
+  cancelRecurringSubscription,
   completeVerifiedPaystackTransaction,
-  createAdminVoucherBatch,
+  createOwnerPassPins,
   createPendingPaystackTransaction,
   deriveAuthoritativeDeviceKey,
   getActiveSubscriptionReceipt,
   getAdminBillingOverview,
   getEntitlementPublicKeyJwk,
+  getLinkedTrialSubscription,
   getOrCreateTrialReceipt,
-  redeemAccessVoucher,
+  getSubscriptionAutoRenewState,
+  linkAndStartOneDayTrial,
+  listOwnerPassPins,
+  redeemAccessPassPin,
+  resumeRecurringSubscription,
+  revokeOwnerPassPin,
 } from './src/db/billingRepository.ts';
 import {
   PREMIUM_PLANS,
+  calculatePaystackSeatQuote,
   getPremiumPlanById,
+  isConfiguredPaystackSecretKey,
   isValidDeviceSecretToken,
   isValidEmailAddress,
   isValidPaystackReference,
+  parseScholarEmailList,
 } from './src/utils/paywallLogic.ts';
 import { SUBJECT_TUTOR_REGISTRY } from './src/utils/tutorRegistry.ts';
 import { cleanBibleVerseText, validateBibleQuery, validateQuranSurah } from './src/utils/studioCalculators.ts';
@@ -112,11 +128,36 @@ const DATAPROC_COACH_STYLE =
   'A warm, razor-sharp, authoritative female Nigerian Database Architect and Data Processing professor teaching relational databases, normalization, SQL, spreadsheets, and data integrity live — NEVER sounding like a flat textbook reader. ' +
   'Speaks with poised classroom warmth, crystal-clear logic on primary/foreign keys and SQL clauses, and sharp emphasis on exam watchouts.';
 
-type VoiceProfile = SubjectId | 'math' | 'fmath' | 'mathLab';
+const NOVEL_NARRATOR_WARM_STYLE =
+  'A warm, deeply expressive West African literary audiobook narrator reading a celebrated novel study chapter aloud with vivid emotional cadence, crisp diction, thoughtful pauses between turning points, and engaging storyteller presence.';
+
+const NOVEL_NARRATOR_CLASSIC_STYLE =
+  'A poised, resonant classic literary narrator with BBC-calibre articulation, rich dramatic pacing, clear character emphasis, and unhurried storytelling clarity for serious examination scholars.';
+
+const NOVEL_NARRATOR_CLEAR_STYLE =
+  'A bright, crystal-clear, encouraging female Nigerian literature educator narrating chapter events and memory anchors aloud with lively rhythm, crisp pronunciation of African and English names, and high recall clarity.';
+
+type VoiceProfile =
+  | SubjectId
+  | 'math'
+  | 'fmath'
+  | 'mathLab'
+  | 'novelWarm'
+  | 'novelClassic'
+  | 'novelClear';
 
 function resolveVoiceProfile(raw: unknown): VoiceProfile {
   if (typeof raw !== 'string') return 'eng';
-  if (raw === 'math' || raw === 'fmath' || raw === 'mathLab') return raw;
+  if (
+    raw === 'math' ||
+    raw === 'fmath' ||
+    raw === 'mathLab' ||
+    raw === 'novelWarm' ||
+    raw === 'novelClassic' ||
+    raw === 'novelClear'
+  ) {
+    return raw;
+  }
   if (Object.prototype.hasOwnProperty.call(SUBJECT_TUTOR_REGISTRY, raw)) {
     return raw as SubjectId;
   }
@@ -126,6 +167,9 @@ function resolveVoiceProfile(raw: unknown): VoiceProfile {
 function voiceProfileToSubjectId(profile: VoiceProfile): SubjectId {
   if (profile === 'math' || profile === 'mathLab') return 'maths';
   if (profile === 'fmath') return 'fmaths';
+  if (profile === 'novelWarm' || profile === 'novelClassic' || profile === 'novelClear') {
+    return 'lit';
+  }
   return profile;
 }
 
@@ -167,11 +211,37 @@ function formatGeminiError(err: unknown): { status: number; message: string } {
   };
 }
 
-// Bounded in-memory cache so replaying or pre-synthesizing any step/chapter is instant
+// Bounded in-memory + persistent tmpdir cache + in-flight deduplication + 429 backoff
 const ttsCache = new Map<string, string>();
+const inFlightTts = new Map<string, Promise<string>>();
 const MAX_TTS_CACHE = 256;
+const TTS_DISK_DIR = path.join(os.tmpdir(), 'eyak-studio-tts-v3');
+let ttsUpstreamChain: Promise<void> = Promise.resolve();
 
-function setCachedTts(key: string, audioBase64: string) {
+function getDiskCachePath(cacheKey: string): string {
+  const digest = crypto.createHash('sha256').update(cacheKey).digest('hex');
+  return path.join(TTS_DISK_DIR, `${digest}.b64`);
+}
+
+function readCachedTts(cacheKey: string): string | null {
+  const mem = ttsCache.get(cacheKey);
+  if (mem) return mem;
+  try {
+    const filePath = getDiskCachePath(cacheKey);
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8').trim();
+      if (data.length > 64) {
+        setMemoryCachedTts(cacheKey, data);
+        return data;
+      }
+    }
+  } catch {
+    /* ignore disk cache read errors */
+  }
+  return null;
+}
+
+function setMemoryCachedTts(key: string, audioBase64: string) {
   if (ttsCache.size >= MAX_TTS_CACHE) {
     const oldest = ttsCache.keys().next().value;
     if (oldest) ttsCache.delete(oldest);
@@ -179,86 +249,278 @@ function setCachedTts(key: string, audioBase64: string) {
   ttsCache.set(key, audioBase64);
 }
 
-async function generateStudioTtsWav(scriptText: string, profile: VoiceProfile = 'chem'): Promise<string> {
-  const cacheKey = `tts-v3:${profile}:${scriptText}`;
-  const hit = ttsCache.get(cacheKey);
-  if (hit) return hit;
+function persistCachedTts(key: string, audioBase64: string) {
+  setMemoryCachedTts(key, audioBase64);
+  try {
+    fs.mkdirSync(TTS_DISK_DIR, { recursive: true });
+    fs.writeFileSync(getDiskCachePath(key), audioBase64, 'utf8');
+  } catch {
+    /* ignore disk cache write errors */
+  }
+}
 
-  const ai = createAiClient();
-  const isMathLab = profile === 'mathLab';
-  const subjId = voiceProfileToSubjectId(profile);
-  const meta = SUBJECT_TUTOR_REGISTRY[subjId];
-  const voiceName = isMathLab ? 'Puck' : meta.geminiVoice;
-  const stylePrompt =
-    subjId === 'dataproc'
-      ? DATAPROC_COACH_STYLE
-      : subjId === 'digitech'
-        ? DIGITECH_COACH_STYLE
-        : subjId === 'civic'
-          ? CIVIC_COACH_STYLE
-          : subjId === 'eng'
-            ? ENG_COACH_STYLE
-            : subjId === 'econ'
-              ? ECON_COACH_STYLE
-              : subjId === 'geog'
-                ? GEOG_COACH_STYLE
-                : subjId === 'agric'
-                  ? AGRIC_COACH_STYLE
-                  : subjId === 'bio'
-                    ? BIO_COACH_STYLE
-                    : subjId === 'phys'
-                      ? PHYS_COACH_STYLE
-                      : subjId === 'fmaths'
-                        ? FMATH_COACH_STYLE
-                        : isMathLab
-                          ? MATH_LAB_STYLE
-                          : subjId === 'maths'
-                            ? MATH_COACH_STYLE
-                            : subjId === 'chem'
-                              ? MAD_SCIENTIST_STYLE
-                              : meta.voiceStyle;
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  const modelsToTry = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'];
-  let lastErr: unknown = null;
+function wrapPcm24kMonoToWav(pcm: Buffer, sampleRate = 24000): Buffer {
+  const header = Buffer.alloc(44);
+  const dataLen = pcm.length;
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + dataLen, 4);
+  header.write('WAVE', 8, 'ascii');
+  header.write('fmt ', 12, 'ascii');
+  header.writeUInt32LE(16, 16); // PCM subchunk size
+  header.writeUInt16LE(1, 20); // AudioFormat = 1 (Linear PCM)
+  header.writeUInt16LE(1, 22); // NumChannels = 1 (Mono)
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28); // ByteRate = sampleRate * 1 * 2
+  header.writeUInt16LE(2, 32); // BlockAlign
+  header.writeUInt16LE(16, 34); // BitsPerSample
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(dataLen, 40);
+  return Buffer.concat([header, pcm]);
+}
 
-  for (const modelName of modelsToTry) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: scriptText,
-                speechMetadata: {
-                  style: stylePrompt,
-                },
-              },
-            ],
-          },
-        ],
-        config: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName },
-            },
+async function synthesizeViaGeminiLiveWav(
+  ai: GoogleGenAI,
+  scriptText: string,
+  voiceName: string,
+  stylePrompt: string
+): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const pcmChunks: Buffer[] = [];
+    let settled = false;
+    let liveSession: Session | null = null;
+
+    const finish = (err?: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (liveSession) {
+        try {
+          liveSession.close();
+        } catch {
+          /* ignore */
+        }
+        liveSession = null;
+      }
+      if (err) {
+        reject(err);
+        return;
+      }
+      const combinedPcm = Buffer.concat(pcmChunks);
+      if (combinedPcm.length < 480) {
+        reject(new Error('Studio audio stream returned empty.'));
+        return;
+      }
+      const wavBuf = wrapPcm24kMonoToWav(combinedPcm, 24000);
+      resolve(wavBuf.toString('base64'));
+    };
+
+    const timeoutId = setTimeout(() => {
+      if (pcmChunks.length > 0) {
+        finish();
+      } else {
+        finish(new Error('Timed out waiting for studio voice audio.'));
+      }
+    }, 14_000);
+
+    const sessionPromise = ai.live.connect({
+      model: 'gemini-3.8-live',
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName },
           },
         },
+        systemInstruction:
+          `${stylePrompt}\n\n` +
+          'CRITICAL VOICEOVER MODE: Speak ONLY the exact text provided by the user verbatim, in your natural spoken classroom voice. Do NOT add any extra words, preambles, or commentary before or after.',
+      },
+      callbacks: {
+        onmessage: (message: LiveServerMessage) => {
+          const content = message.serverContent;
+          for (const part of content?.modelTurn?.parts ?? []) {
+            if (part.inlineData?.data) {
+              pcmChunks.push(Buffer.from(part.inlineData.data, 'base64'));
+            }
+          }
+          if (content?.turnComplete) {
+            finish();
+          }
+        },
+        onerror: (err: unknown) => {
+          finish(err);
+        },
+        onclose: () => {
+          if (!settled) {
+            if (pcmChunks.length > 0) finish();
+            else finish(new Error('Studio audio session closed before audio arrived.'));
+          }
+        },
+      },
+    });
+
+    sessionPromise
+      .then((session) => {
+        if (settled) {
+          session.close();
+          return;
+        }
+        liveSession = session;
+        session.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text: scriptText }] }],
+          turnComplete: true,
+        });
+      })
+      .catch((err) => {
+        finish(err);
       });
+  });
+}
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        setCachedTts(cacheKey, base64Audio);
-        return base64Audio;
+async function generateStudioTtsWav(scriptText: string, profile: VoiceProfile = 'chem'): Promise<string> {
+  const cacheKey = `tts-v3:${profile}:${scriptText}`;
+  const hit = readCachedTts(cacheKey);
+  if (hit) return hit;
+
+  const existingFlight = inFlightTts.get(cacheKey);
+  if (existingFlight) return existingFlight;
+
+  const flight = (async (): Promise<string> => {
+    const prev = ttsUpstreamChain;
+    let releaseQueue!: () => void;
+    ttsUpstreamChain = new Promise<void>((resolve) => {
+      releaseQueue = resolve;
+    });
+    await prev.catch(() => {});
+
+    try {
+      const recheck = readCachedTts(cacheKey);
+      if (recheck) return recheck;
+
+      const ai = createAiClient();
+      const isMathLab = profile === 'mathLab';
+      const subjId = voiceProfileToSubjectId(profile);
+      const meta = SUBJECT_TUTOR_REGISTRY[subjId];
+      const voiceName =
+        profile === 'novelWarm'
+          ? 'Charon'
+          : profile === 'novelClassic'
+            ? 'Fenrir'
+            : profile === 'novelClear'
+              ? 'Kore'
+              : isMathLab
+                ? 'Puck'
+                : meta.geminiVoice;
+      const stylePrompt =
+        profile === 'novelWarm'
+          ? NOVEL_NARRATOR_WARM_STYLE
+          : profile === 'novelClassic'
+            ? NOVEL_NARRATOR_CLASSIC_STYLE
+            : profile === 'novelClear'
+              ? NOVEL_NARRATOR_CLEAR_STYLE
+              : subjId === 'dataproc'
+                ? DATAPROC_COACH_STYLE
+                : subjId === 'digitech'
+                  ? DIGITECH_COACH_STYLE
+                  : subjId === 'civic'
+                    ? CIVIC_COACH_STYLE
+                    : subjId === 'eng'
+                      ? ENG_COACH_STYLE
+                      : subjId === 'econ'
+                        ? ECON_COACH_STYLE
+                        : subjId === 'geog'
+                          ? GEOG_COACH_STYLE
+                          : subjId === 'agric'
+                            ? AGRIC_COACH_STYLE
+                            : subjId === 'bio'
+                              ? BIO_COACH_STYLE
+                              : subjId === 'phys'
+                                ? PHYS_COACH_STYLE
+                                : subjId === 'fmaths'
+                                  ? FMATH_COACH_STYLE
+                                  : isMathLab
+                                    ? MATH_LAB_STYLE
+                                    : subjId === 'maths'
+                                      ? MATH_COACH_STYLE
+                                      : subjId === 'chem'
+                                        ? MAD_SCIENTIST_STYLE
+                                        : meta.voiceStyle;
+
+      const modelsToTry = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts'];
+      let lastErr: unknown = null;
+      let sawRateLimit = false;
+
+      for (const modelName of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    text: scriptText,
+                    speechMetadata: {
+                      style: stylePrompt,
+                    },
+                  },
+                ],
+              },
+            ],
+            config: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName },
+                },
+              },
+            },
+          });
+
+          const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          if (base64Audio) {
+            persistCachedTts(cacheKey, base64Audio);
+            return base64Audio;
+          }
+        } catch (err) {
+          lastErr = err;
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+            sawRateLimit = true;
+          }
+        }
       }
-    } catch (err) {
-      lastErr = err;
-    }
-  }
 
-  throw lastErr || new Error('Gemini TTS returned an empty audio response.');
+      // When unary TTS free-tier quota is exhausted (429), seamlessly synthesize via Gemini Live native audio ('gemini-3.8-live')
+      if (sawRateLimit) {
+        try {
+          const liveWavBase64 = await synthesizeViaGeminiLiveWav(
+            ai,
+            scriptText,
+            voiceName,
+            stylePrompt
+          );
+          persistCachedTts(cacheKey, liveWavBase64);
+          return liveWavBase64;
+        } catch (liveErr) {
+          lastErr = liveErr;
+        }
+      }
+
+      throw lastErr || new Error('Studio voice engine returned an empty audio response.');
+    } finally {
+      inFlightTts.delete(cacheKey);
+      await sleepMs(150);
+      releaseQueue();
+    }
+  })();
+
+  inFlightTts.set(cacheKey, flight);
+  return flight;
 }
 
 function getClientIp(req: http.IncomingMessage): string {
@@ -337,10 +599,22 @@ async function startServer() {
     next();
   });
 
-  app.use(express.json({ limit: '512kb' }));
+  app.use(
+    express.json({
+      limit: '512kb',
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      },
+    })
+  );
 
-  // Block cross-site state-changing API requests (CSRF / cross-origin quota abuse)
+  // Block cross-site state-changing API requests (CSRF / cross-origin quota abuse),
+  // exempting server-to-server Paystack webhook which verifies HMAC-SHA512 signature directly.
   app.use('/api', (req, res, next) => {
+    if (req.path === '/billing/paystack/webhook') {
+      next();
+      return;
+    }
     const allowed = isAllowedApiMutationRequest({
       method: req.method,
       originHeader: typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
@@ -369,7 +643,8 @@ async function startServer() {
   const wsUpgradeLimiter = new SlidingWindowRateLimiter({ maxRequests: 30, windowMs: 60_000 });
   const refLimiter = new SlidingWindowRateLimiter({ maxRequests: 60, windowMs: 60_000 });
   const billingLimiter = new SlidingWindowRateLimiter({ maxRequests: 40, windowMs: 60_000 });
-  const redeemLimiter = new SlidingWindowRateLimiter({ maxRequests: 12, windowMs: 60_000 });
+  const passPinRedeemLimiter = new SlidingWindowRateLimiter({ maxRequests: 10, windowMs: 10 * 60_000 });
+  const webhookLimiter = new SlidingWindowRateLimiter({ maxRequests: 120, windowMs: 60_000 });
 
   const enforceRateLimit =
     (limiter: SlidingWindowRateLimiter): express.RequestHandler =>
@@ -406,8 +681,10 @@ async function startServer() {
     }
   };
 
+  const novelTtsLimiter = new SlidingWindowRateLimiter({ maxRequests: 60, windowMs: 60_000 });
   app.post('/api/chem/tts', enforceRateLimit(ttsLimiter), handleTtsRequest);
   app.post('/api/lab/tts', enforceRateLimit(ttsLimiter), handleTtsRequest);
+  app.post('/api/novels/tts', enforceRateLimit(novelTtsLimiter), handleTtsRequest);
 
   // Source A — Real Past Questions Fetcher Proxy (ALOC v1 API)
   app.post('/api/question-bank/aloc', enforceRateLimit(alocLimiter), async (req, res) => {
@@ -606,7 +883,7 @@ async function startServer() {
 
       const rawText = response.text;
       if (!rawText) {
-        res.status(502).json({ error: 'Gemini returned an empty response for this batch.' });
+        res.status(502).json({ error: 'Question engine returned an empty response for this batch.' });
         return;
       }
 
@@ -614,12 +891,12 @@ async function startServer() {
       try {
         items = JSON.parse(rawText);
       } catch {
-        res.status(502).json({ error: 'Gemini returned invalid JSON for this batch. Retrying...' });
+        res.status(502).json({ error: 'Question engine returned invalid data for this batch. Retrying...' });
         return;
       }
 
       if (!Array.isArray(items)) {
-        res.status(502).json({ error: 'Gemini response was not an array of questions.' });
+        res.status(502).json({ error: 'Question engine returned an unexpected format.' });
         return;
       }
 
@@ -673,6 +950,91 @@ async function startServer() {
     } catch (err) {
       const formatted = formatGeminiError(err);
       res.status(formatted.status).json({ error: formatted.message });
+    }
+  });
+
+  // ── Unique Email Registration & Google-Verified Password Recovery ──
+  const emailAuthLimiter = new SlidingWindowRateLimiter({ maxRequests: 25, windowMs: 60_000 });
+
+  app.post('/api/auth/register-email', enforceRateLimit(emailAuthLimiter), async (req, res) => {
+    try {
+      const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName.trim() : '';
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+
+      if (!isValidEmailAddress(email)) {
+        res.status(400).json({ error: 'Enter a valid email address.' });
+        return;
+      }
+      if (displayName.length < 2 || displayName.length > 60) {
+        res.status(400).json({ error: 'First name must be between 2 and 60 characters.' });
+        return;
+      }
+      if (password.length < 4 || password.length > 128) {
+        res.status(400).json({ error: 'Password must be at least 4 characters long.' });
+        return;
+      }
+
+      const result = await registerUniqueEmailAccount({ email, displayName, password });
+      if (!result.ok) {
+        res.status(409).json({ duplicateEmail: true, error: result.error });
+        return;
+      }
+      res.json({ ok: true, email: result.email, displayName: result.displayName });
+    } catch (err) {
+      console.error('Failed to register email account:', err);
+      res.status(500).json({ error: 'Could not verify account registration right now.' });
+    }
+  });
+
+  app.post('/api/auth/login-email', enforceRateLimit(emailAuthLimiter), async (req, res) => {
+    try {
+      const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      if (!isValidEmailAddress(email) || password.length < 4) {
+        res.status(400).json({ error: 'Enter your email address and password.' });
+        return;
+      }
+      const result = await verifyEmailPasswordLogin({ email, password });
+      if (!result.ok) {
+        res.status(result.notFound ? 404 : 401).json({
+          ok: false,
+          notFound: Boolean(result.notFound),
+          error: result.error,
+        });
+        return;
+      }
+      res.json({ ok: true, email: result.email, displayName: result.displayName });
+    } catch (err) {
+      console.error('Failed to verify email login:', err);
+      res.status(500).json({ error: 'Could not verify sign-in right now.' });
+    }
+  });
+
+  app.post('/api/auth/google-recover', enforceRateLimit(emailAuthLimiter), requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const verifiedEmail = req.user?.email?.trim().toLowerCase() || '';
+      if (!verifiedEmail) {
+        res.status(401).json({
+          error: 'Google verification with an email address is required before resetting your password.',
+        });
+        return;
+      }
+      const newPassword =
+        typeof req.body?.newPassword === 'string' ? req.body.newPassword : undefined;
+      if (newPassword !== undefined && (newPassword.length < 4 || newPassword.length > 128)) {
+        res.status(400).json({ error: 'New password must be at least 4 characters long.' });
+        return;
+      }
+      const result = await recoverEmailPasswordViaGoogle({
+        verifiedEmail,
+        displayName: req.user?.name || undefined,
+        newPassword,
+      });
+      res.json(result);
+    } catch (err) {
+      console.error('Failed to complete Google recovery:', err);
+      res.status(500).json({ error: 'Could not complete Google account recovery right now.' });
     }
   });
 
@@ -920,31 +1282,50 @@ async function startServer() {
     }
   });
 
-  // ── EYAK Premium Pass, Voucher Activation & Paystack Checkout Endpoints ──
+  const getConfiguredPaystackSecretKey = (): string | null => {
+    const raw = process.env.PAYSTACK_SECRET_KEY?.trim() || '';
+    return isConfiguredPaystackSecretKey(raw) ? raw : null;
+  };
+
+  // ── Easy Learn 100% Automated Paystack Checkout, Sponsorship & Webhook Endpoints ──
   app.get('/api/billing/status', enforceRateLimit(billingLimiter), async (req, res) => {
     try {
       const decoded = await tryDecodeBearerToken(req);
       const rawDeviceToken =
         typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : null;
-      const [pro, trial, entitlementPublicKey] = await Promise.all([
+      const verifiedEmail =
+        decoded?.email_verified && typeof decoded.email === 'string' ? decoded.email : null;
+      const [pro, trial, trialLink, entitlementPublicKey] = await Promise.all([
         getActiveSubscriptionReceipt({
           uid: decoded?.uid || null,
           deviceToken: rawDeviceToken,
           email: decoded?.email || null,
+          verifiedEmail,
         }),
         getOrCreateTrialReceipt({
           uid: decoded?.uid || null,
           deviceToken: rawDeviceToken,
         }),
+        getLinkedTrialSubscription({
+          uid: decoded?.uid || null,
+          deviceToken: rawDeviceToken,
+        }),
         getEntitlementPublicKeyJwk(),
       ]);
+      const subscriptionAutoRenew = await getSubscriptionAutoRenewState({
+        uid: decoded?.uid || null,
+        deviceToken: rawDeviceToken,
+        activePro: pro,
+      });
       res.json({
         plans: PREMIUM_PLANS,
-        paystackEnabled: Boolean(process.env.PAYSTACK_SECRET_KEY?.trim()),
+        paystackEnabled: Boolean(getConfiguredPaystackSecretKey()),
         isAdmin: isAdminDecodedUser(decoded),
         entitlementPublicKey,
         pro,
         trial,
+        trialLink,
+        subscriptionAutoRenew,
       });
     } catch (err) {
       console.error('Failed to check billing status:', err);
@@ -952,49 +1333,178 @@ async function startServer() {
     }
   });
 
-  app.post('/api/billing/redeem', enforceRateLimit(redeemLimiter), async (req, res) => {
+  // ── 1-Day Free Trial Google Pay / Payment Account Linking + 1-Click Cancel Anytime ──
+  app.post('/api/billing/trial/link', enforceRateLimit(billingLimiter), async (req, res) => {
     try {
       const decoded = await tryDecodeBearerToken(req);
       const rawDeviceToken =
-        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : null;
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      const methodType = req.body?.methodType === 'card_bank' ? 'card_bank' : 'google_pay';
+      const billingEmail =
+        typeof req.body?.billingEmail === 'string'
+          ? req.body.billingEmail
+          : decoded?.email || '';
+      const accountLabel =
+        typeof req.body?.accountLabel === 'string' ? req.body.accountLabel : '';
+
       const [result, entitlementPublicKey] = await Promise.all([
-        redeemAccessVoucher({
-          rawCode: req.body?.code,
-          deviceToken: rawDeviceToken,
+        linkAndStartOneDayTrial({
           uid: decoded?.uid || null,
-          email: decoded?.email || null,
+          deviceToken: isValidDeviceSecretToken(rawDeviceToken) ? rawDeviceToken : undefined,
+          methodType,
+          billingEmail,
+          accountLabel,
         }),
         getEntitlementPublicKeyJwk(),
       ]);
-      res.json({ ok: true, entitlementPublicKey, ...result });
+
+      res.json({
+        ok: true,
+        entitlementPublicKey,
+        trial: result.trial,
+        trialLink: result.trialLink,
+      });
+    } catch (err) {
+      if (err instanceof BillingUserError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      console.error('Failed to link 1-day free trial payment account:', err);
+      res.status(500).json({ error: 'Unable to link your payment account right now.' });
+    }
+  });
+
+  app.post('/api/billing/trial/cancel', enforceRateLimit(billingLimiter), async (req, res) => {
+    try {
+      const decoded = await tryDecodeBearerToken(req);
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      const trialLink = await cancelLinkedTrial({
+        uid: decoded?.uid || null,
+        deviceToken: isValidDeviceSecretToken(rawDeviceToken) ? rawDeviceToken : undefined,
+      });
+      res.json({ ok: true, trialLink });
+    } catch (err) {
+      if (err instanceof BillingUserError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      console.error('Failed to cancel linked 1-day trial:', err);
+      res.status(500).json({ error: 'Unable to cancel your trial right now.' });
+    }
+  });
+
+  // ── Recurring Plan Auto-Debit Control (Monthly, 6-Month, Yearly — excludes Lifetime) ──
+  app.post('/api/billing/subscription/cancel', enforceRateLimit(billingLimiter), async (req, res) => {
+    try {
+      const decoded = await tryDecodeBearerToken(req);
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      const verifiedEmail =
+        decoded?.email_verified && typeof decoded.email === 'string' ? decoded.email : null;
+      const activePro = await getActiveSubscriptionReceipt({
+        uid: decoded?.uid || null,
+        deviceToken: rawDeviceToken,
+        email: decoded?.email || null,
+        verifiedEmail,
+      });
+      const subscriptionAutoRenew = await cancelRecurringSubscription({
+        uid: decoded?.uid || null,
+        deviceToken: isValidDeviceSecretToken(rawDeviceToken) ? rawDeviceToken : undefined,
+        activePro,
+      });
+      res.json({ ok: true, subscriptionAutoRenew });
+    } catch (err) {
+      if (err instanceof BillingUserError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      console.error('Failed to cancel recurring subscription:', err);
+      res.status(500).json({ error: 'Unable to cancel auto-renewal right now.' });
+    }
+  });
+
+  app.post('/api/billing/subscription/resume', enforceRateLimit(billingLimiter), async (req, res) => {
+    try {
+      const decoded = await tryDecodeBearerToken(req);
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      const verifiedEmail =
+        decoded?.email_verified && typeof decoded.email === 'string' ? decoded.email : null;
+      const activePro = await getActiveSubscriptionReceipt({
+        uid: decoded?.uid || null,
+        deviceToken: rawDeviceToken,
+        email: decoded?.email || null,
+        verifiedEmail,
+      });
+      const subscriptionAutoRenew = await resumeRecurringSubscription({
+        uid: decoded?.uid || null,
+        deviceToken: isValidDeviceSecretToken(rawDeviceToken) ? rawDeviceToken : undefined,
+        activePro,
+      });
+      res.json({ ok: true, subscriptionAutoRenew });
+    } catch (err) {
+      if (err instanceof BillingUserError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      console.error('Failed to resume recurring subscription:', err);
+      res.status(500).json({ error: 'Unable to resume auto-renewal right now.' });
+    }
+  });
+
+  app.post('/api/billing/redeem', enforceRateLimit(passPinRedeemLimiter), async (req, res) => {
+    try {
+      const rawCode = typeof req.body?.code === 'string' ? req.body.code : '';
+      const rawDeviceToken =
+        typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
+      const decoded = await tryDecodeBearerToken(req);
+
+      const [redeemed, entitlementPublicKey] = await Promise.all([
+        redeemAccessPassPin({
+          rawCode,
+          uid: decoded?.uid || null,
+          deviceToken: isValidDeviceSecretToken(rawDeviceToken) ? rawDeviceToken : null,
+          email: decoded?.email || (typeof req.body?.email === 'string' ? req.body.email : null),
+        }),
+        getEntitlementPublicKeyJwk(),
+      ]);
+
+      res.json({
+        ok: true,
+        entitlementPublicKey,
+        ...redeemed,
+      });
     } catch (err) {
       if (err instanceof BillingUserError) {
         res.status(err.statusCode).json({ error: err.message });
         return;
       }
       console.error('Failed to redeem Pass PIN:', err);
-      res.status(500).json({ error: 'Unable to verify Pass PIN right now. Please retry.' });
+      res.status(500).json({ error: 'Could not activate Pass PIN right now. Please try again.' });
     }
   });
 
   app.post('/api/billing/paystack/initialize', enforceRateLimit(billingLimiter), async (req, res) => {
     try {
-      const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+      const secretKey = getConfiguredPaystackSecretKey();
       if (!secretKey) {
-        res.status(503).json({
+        res.status(200).json({
+          ok: false,
+          paystackDisabled: true,
           error:
-            'Online card and bank-transfer checkout is not enabled yet. Switch to Enter Pass PIN to activate immediately.',
+            'Paystack online checkout is awaiting an active PAYSTACK_SECRET_KEY (sk_live_... or sk_test_...) in environment settings.',
         });
         return;
       }
 
       const plan = getPremiumPlanById(typeof req.body?.planId === 'string' ? req.body.planId : '');
       if (!plan) {
-        res.status(400).json({ error: 'Choose a valid EYAK Premium plan.' });
+        res.status(400).json({ error: 'Choose a valid Easy Learn Premium plan.' });
         return;
       }
       if (!isValidEmailAddress(req.body?.email)) {
-        res.status(400).json({ error: 'Enter a valid email address for your payment receipt.' });
+        res.status(400).json({ error: 'Enter a valid email address for your Paystack receipt.' });
         return;
       }
       const rawDeviceToken =
@@ -1009,6 +1519,13 @@ async function startServer() {
       const { deviceKey } = deriveAuthoritativeDeviceKey(rawDeviceToken);
       const reference = `eyak_${plan.id}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
       const callbackUrl = buildSafeBillingCallbackUrl(req, reference);
+
+      const paystackPlanCodeMap: Partial<Record<string, string>> = {
+        monthly: process.env.PAYSTACK_PLAN_MONTHLY?.trim(),
+        biannual: process.env.PAYSTACK_PLAN_BIANNUAL?.trim(),
+        annual: process.env.PAYSTACK_PLAN_ANNUAL?.trim(),
+      };
+      const recurringPlanCode = plan.isRecurring ? paystackPlanCodeMap[plan.id] : undefined;
 
       const upstream = await fetch('https://api.paystack.co/transaction/initialize', {
         method: 'POST',
@@ -1025,8 +1542,12 @@ async function startServer() {
           currency: 'NGN',
           reference,
           callback_url: callbackUrl,
+          ...(recurringPlanCode ? { plan: recurringPlanCode } : {}),
           metadata: {
             planId: plan.id,
+            recurring: plan.isRecurring,
+            autoRenew: plan.isRecurring,
+            billingCycleDays: plan.days,
             deviceId: deviceKey || '',
             uid: decoded?.uid || '',
           },
@@ -1044,9 +1565,19 @@ async function startServer() {
         authUrl.startsWith('https://checkout.paystack.com/') ||
         authUrl.startsWith('https://standard.paystack.co/');
 
+      if (upstream.status === 401 || upstream.status === 403) {
+        res.status(200).json({
+          ok: false,
+          paystackDisabled: true,
+          error:
+            'Paystack rejected PAYSTACK_SECRET_KEY. Update PAYSTACK_SECRET_KEY in environment settings with an active sk_live_... or sk_test_... key from your Paystack Dashboard.',
+        });
+        return;
+      }
+
       if (!upstream.ok || !payload?.status || !isTrustedPaystackCheckout) {
         res.status(502).json({
-          error: 'Could not start Paystack checkout right now. Please try again or use a Pass PIN.',
+          error: 'Could not start Paystack checkout right now. Please try again in a moment.',
         });
         return;
       }
@@ -1076,25 +1607,158 @@ async function startServer() {
     }
   });
 
+  // Automated Parent Sponsorship & School Seat Checkout via Paystack (1 to 200 scholars, zero PINs)
+  app.post(
+    '/api/billing/paystack/sponsor-initialize',
+    enforceRateLimit(billingLimiter),
+    async (req, res) => {
+      try {
+        const plan = getPremiumPlanById(
+          typeof req.body?.planId === 'string' ? req.body.planId : 'annual'
+        );
+        if (!plan) {
+          res.status(400).json({ error: 'Choose a valid Easy Learn study pass duration.' });
+          return;
+        }
+
+        const payerEmail =
+          typeof req.body?.payerEmail === 'string' ? req.body.payerEmail.trim().toLowerCase() : '';
+        if (!isValidEmailAddress(payerEmail)) {
+          res.status(400).json({
+            error: 'Enter a valid receipt email address (for example parent@gmail.com).',
+          });
+          return;
+        }
+
+        const parsedScholars = parseScholarEmailList(req.body?.scholarEmails, 200);
+        if (parsedScholars.invalidEntries.length > 0) {
+          res.status(400).json({
+            error: `Check scholar email format: "${parsedScholars.invalidEntries[0]}" is not a valid email address.`,
+          });
+          return;
+        }
+        if (parsedScholars.emails.length < 1) {
+          res.status(400).json({
+            error: 'Enter at least one scholar account email address to activate automatically.',
+          });
+          return;
+        }
+
+        const quote = calculatePaystackSeatQuote(parsedScholars.emails.length, plan.id);
+        const secretKey = getConfiguredPaystackSecretKey();
+        if (!secretKey) {
+          res.status(200).json({
+            ok: false,
+            paystackDisabled: true,
+            quote,
+            error:
+              'Paystack live key is not configured in environment settings yet. Once PAYSTACK_SECRET_KEY is added, this button opens Paystack checkout directly.',
+          });
+          return;
+        }
+
+        const reference = `eyak_seat_${plan.id}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+        const callbackUrl = buildSafeBillingCallbackUrl(req, reference);
+
+        const upstream = await fetch('https://api.paystack.co/transaction/initialize', {
+          method: 'POST',
+          redirect: 'error',
+          signal: AbortSignal.timeout(12_000),
+          headers: {
+            Authorization: `Bearer ${secretKey}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            email: payerEmail,
+            amount: quote.totalKobo,
+            currency: 'NGN',
+            reference,
+            callback_url: callbackUrl,
+            metadata: {
+              planId: plan.id,
+              seats: quote.seats,
+              discountPct: quote.discountPct,
+              sponsorCheckout: true,
+            },
+          }),
+        });
+
+        const payload = (await upstream.json().catch(() => null)) as {
+          status?: boolean;
+          data?: { authorization_url?: string; reference?: string };
+        } | null;
+
+        const authUrl = payload?.data?.authorization_url || '';
+        const isTrustedPaystackCheckout =
+          authUrl.startsWith('https://checkout.paystack.com/') ||
+          authUrl.startsWith('https://standard.paystack.co/');
+
+        if (upstream.status === 401 || upstream.status === 403) {
+          res.status(200).json({
+            ok: false,
+            paystackDisabled: true,
+            quote,
+            error:
+              'Paystack rejected PAYSTACK_SECRET_KEY. Update PAYSTACK_SECRET_KEY in environment settings with an active sk_live_... or sk_test_... key from your Paystack Dashboard.',
+          });
+          return;
+        }
+
+        if (!upstream.ok || !payload?.status || !isTrustedPaystackCheckout) {
+          res.status(502).json({
+            error: 'Could not start Paystack checkout right now. Please try again in a moment.',
+          });
+          return;
+        }
+
+        const finalRef =
+          typeof payload?.data?.reference === 'string' &&
+          isValidPaystackReference(payload.data.reference)
+            ? payload.data.reference.trim()
+            : reference;
+
+        await createPendingPaystackTransaction({
+          reference: finalRef,
+          planId: plan.id,
+          amountKobo: quote.totalKobo,
+          email: parsedScholars.emails.join(','),
+          systemDeviceKey: 'PAYSTACK_SPONSOR',
+        });
+
+        res.json({
+          ok: true,
+          authorizationUrl: authUrl,
+          reference: finalRef,
+          seats: quote.seats,
+          totalNgn: quote.totalNgn,
+        });
+      } catch (err) {
+        console.error('Failed to initialize Paystack sponsor checkout:', err);
+        res.status(502).json({ error: 'Unable to reach Paystack right now. Please retry shortly.' });
+      }
+    }
+  );
+
   app.post('/api/billing/paystack/verify', enforceRateLimit(billingLimiter), async (req, res) => {
     try {
-      const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+      const secretKey = getConfiguredPaystackSecretKey();
       if (!secretKey) {
-        res.status(503).json({ error: 'Online payment verification is not configured.' });
+        res.status(200).json({
+          ok: false,
+          paystackDisabled: true,
+          error: 'Paystack payment verification requires an active PAYSTACK_SECRET_KEY in environment settings.',
+        });
         return;
       }
 
       const rawRef = typeof req.body?.reference === 'string' ? req.body.reference.trim() : '';
       if (!isValidPaystackReference(rawRef)) {
-        res.status(400).json({ error: 'A valid payment reference is required.' });
+        res.status(400).json({ error: 'A valid Paystack payment reference is required.' });
         return;
       }
       const rawDeviceToken =
         typeof req.headers['x-device-token'] === 'string' ? req.headers['x-device-token'] : '';
-      if (!isValidDeviceSecretToken(rawDeviceToken)) {
-        res.status(400).json({ error: 'A valid secure device session is required. Refresh and retry.' });
-        return;
-      }
 
       const decoded = await tryDecodeBearerToken(req);
       const upstream = await fetch(
@@ -1141,8 +1805,8 @@ async function startServer() {
           verifiedPlanId: planMeta?.id || null,
           paidAmountKobo: Number(payload.data.amount || 0),
           currency: String(payload.data.currency || 'NGN'),
-          customerEmail: String(payload.data.customer?.email || decoded?.email || 'student@eyak.ng'),
-          deviceToken: rawDeviceToken,
+          customerEmail: String(payload.data.customer?.email || decoded?.email || 'student@easylearn.ng'),
+          deviceToken: isValidDeviceSecretToken(rawDeviceToken) ? rawDeviceToken : undefined,
           uid: decoded?.uid || null,
         }),
         getEntitlementPublicKeyJwk(),
@@ -1159,7 +1823,76 @@ async function startServer() {
     }
   });
 
-  // ── Owner / Admin Pass PIN Studio Endpoints ──
+  // Server-to-server Paystack Webhook (HMAC-SHA512 verified) for automatic background activation
+  app.post('/api/billing/paystack/webhook', enforceRateLimit(webhookLimiter), async (req, res) => {
+    try {
+      const secretKey = getConfiguredPaystackSecretKey();
+      if (!secretKey) {
+        res.status(503).json({ error: 'Paystack webhook secret not configured.' });
+        return;
+      }
+      const signature =
+        typeof req.headers['x-paystack-signature'] === 'string'
+          ? req.headers['x-paystack-signature'].trim().toLowerCase()
+          : '';
+      const rawBody = (req as express.Request & { rawBody?: Buffer }).rawBody;
+      if (!signature || !rawBody || !/^[0-9a-f]{128}$/.test(signature)) {
+        res.status(401).json({ error: 'Invalid Paystack webhook signature.' });
+        return;
+      }
+
+      const expectedHex = crypto
+        .createHmac('sha512', secretKey)
+        .update(rawBody)
+        .digest('hex')
+        .toLowerCase();
+      const expectedBuf = Buffer.from(expectedHex, 'utf8');
+      const actualBuf = Buffer.from(signature, 'utf8');
+      if (
+        expectedBuf.length !== actualBuf.length ||
+        !crypto.timingSafeEqual(expectedBuf, actualBuf)
+      ) {
+        res.status(401).json({ error: 'Paystack signature verification failed.' });
+        return;
+      }
+
+      const event = typeof req.body?.event === 'string' ? req.body.event : '';
+      const data = req.body?.data as
+        | {
+            reference?: string;
+            status?: string;
+            amount?: number;
+            currency?: string;
+            customer?: { email?: string };
+            metadata?: { planId?: string };
+          }
+        | undefined;
+
+      if (
+        event === 'charge.success' &&
+        data?.status === 'success' &&
+        typeof data.reference === 'string' &&
+        isValidPaystackReference(data.reference)
+      ) {
+        const planMeta = getPremiumPlanById(data.metadata?.planId || null);
+        await completeVerifiedPaystackTransaction({
+          reference: data.reference.trim(),
+          verifiedPlanId: planMeta?.id || null,
+          paidAmountKobo: Number(data.amount || 0),
+          currency: String(data.currency || 'NGN'),
+          customerEmail: String(data.customer?.email || 'student@easylearn.ng'),
+          allowServerWebhook: true,
+        });
+      }
+
+      res.status(200).json({ received: true });
+    } catch (err) {
+      console.error('Paystack webhook processing error:', err);
+      res.status(500).json({ error: 'Webhook processing error.' });
+    }
+  });
+
+  // ── Owner Read-Only Paystack Revenue & Subscriptions Monitor ──
   app.get(
     '/api/admin/billing/overview',
     enforceRateLimit(billingLimiter),
@@ -1173,8 +1906,28 @@ async function startServer() {
         const overview = await getAdminBillingOverview();
         res.json(overview);
       } catch (err) {
-        console.error('Failed to load admin billing overview:', err);
-        res.status(500).json({ error: 'Unable to load voucher overview right now.' });
+        console.error('Failed to load admin Paystack overview:', err);
+        res.status(500).json({ error: 'Unable to load Paystack billing overview right now.' });
+      }
+    }
+  );
+
+  // ── Owner-Only Pass PIN Studio (STRICTLY locked to verified owner Google account) ──
+  app.get(
+    '/api/admin/billing/vouchers',
+    enforceRateLimit(billingLimiter),
+    requireVerifiedAuth,
+    async (req: AuthRequest, res) => {
+      if (!isAdminDecodedUser(req.user)) {
+        res.status(403).json({ error: 'Forbidden: Only the platform owner can view Pass PINs.' });
+        return;
+      }
+      try {
+        const result = await listOwnerPassPins(80);
+        res.json({ ok: true, ...result });
+      } catch (err) {
+        console.error('Failed to list owner Pass PINs:', err);
+        res.status(500).json({ error: 'Unable to load your Pass PINs right now.' });
       }
     }
   );
@@ -1185,24 +1938,50 @@ async function startServer() {
     requireVerifiedAuth,
     async (req: AuthRequest, res) => {
       if (!isAdminDecodedUser(req.user)) {
-        res.status(403).json({ error: 'Forbidden: Owner account required.' });
+        res.status(403).json({ error: 'Forbidden: Only the platform owner can create Pass PINs.' });
         return;
       }
       try {
-        const batch = await createAdminVoucherBatch({
-          planId: typeof req.body?.planId === 'string' ? req.body.planId : '',
-          count: Number(req.body?.count ?? 1),
-          note: typeof req.body?.note === 'string' ? req.body.note : '',
-          adminEmail: req.user!.email!,
+        const planId = typeof req.body?.planId === 'string' ? req.body.planId : 'monthly';
+        const count = Number(req.body?.count ?? 1);
+        const note = typeof req.body?.note === 'string' ? req.body.note : '';
+        const created = await createOwnerPassPins({
+          planId,
+          count,
+          note,
+          createdByEmail: req.user!.email!,
         });
-        res.json({ ok: true, batch });
+        res.status(201).json({ ok: true, created });
       } catch (err) {
         if (err instanceof BillingUserError) {
           res.status(err.statusCode).json({ error: err.message });
           return;
         }
-        console.error('Failed to generate admin voucher batch:', err);
+        console.error('Failed to create owner Pass PINs:', err);
         res.status(500).json({ error: 'Unable to generate Pass PINs right now.' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/billing/vouchers/:code/revoke',
+    enforceRateLimit(billingLimiter),
+    requireVerifiedAuth,
+    async (req: AuthRequest, res) => {
+      if (!isAdminDecodedUser(req.user)) {
+        res.status(403).json({ error: 'Forbidden: Only the platform owner can revoke Pass PINs.' });
+        return;
+      }
+      try {
+        const result = await revokeOwnerPassPin(String(req.params.code || ''));
+        res.json({ ok: true, ...result });
+      } catch (err) {
+        if (err instanceof BillingUserError) {
+          res.status(err.statusCode).json({ error: err.message });
+          return;
+        }
+        console.error('Failed to revoke owner Pass PIN:', err);
+        res.status(500).json({ error: 'Unable to revoke Pass PIN right now.' });
       }
     }
   );
@@ -1249,7 +2028,7 @@ async function startServer() {
         const upstreamUrl = `https://bolls.life/get-text/${encodeURIComponent(bollsCode)}/${check.bookNumber}/${check.chapter}/`;
         const upstream = await fetch(upstreamUrl, {
           signal: AbortSignal.timeout(8000),
-          headers: { Accept: 'application/json', 'User-Agent': 'EYAK-Study-Reader/1.0' },
+          headers: { Accept: 'application/json', 'User-Agent': 'EasyLearn-Study-Reader/1.0' },
         });
         if (!upstream.ok) {
           res.status(502).json({ error: 'Could not reach the online Bible library right now.' });
@@ -1271,7 +2050,7 @@ async function startServer() {
         const upstreamUrl = `https://bible-api.com/${encodeURIComponent(`${check.book} ${check.chapter}`)}?translation=${encodeURIComponent(check.version)}`;
         const upstream = await fetch(upstreamUrl, {
           signal: AbortSignal.timeout(8000),
-          headers: { Accept: 'application/json', 'User-Agent': 'EYAK-Study-Reader/1.0' },
+          headers: { Accept: 'application/json', 'User-Agent': 'EasyLearn-Study-Reader/1.0' },
         });
         if (!upstream.ok) {
           res.status(502).json({ error: 'Could not reach the online Bible library right now.' });
@@ -1336,7 +2115,7 @@ async function startServer() {
       const upstreamUrl = `https://api.alquran.cloud/v1/surah/${check.surah}/editions/quran-uthmani,en.transliteration,en.sahih,en.yusufali,en.pickthall`;
       const upstream = await fetch(upstreamUrl, {
         signal: AbortSignal.timeout(8000),
-        headers: { Accept: 'application/json', 'User-Agent': 'EYAK-Study-Reader/1.0' },
+        headers: { Accept: 'application/json', 'User-Agent': 'EasyLearn-Study-Reader/1.0' },
       });
       if (!upstream.ok) {
         res.status(502).json({ error: 'Could not reach the online Qur’an library right now.' });
@@ -1718,14 +2497,33 @@ export class ErrorOverlay extends HTMLElement {}
     });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('manifest.webmanifest')) {
+            res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          } else if (
+            filePath.endsWith('sw.js') ||
+            filePath.endsWith('registerSW.js') ||
+            filePath.endsWith('index.html')
+          ) {
+            if (filePath.endsWith('sw.js') || filePath.endsWith('registerSW.js')) {
+              res.setHeader('Service-Worker-Allowed', '/');
+            }
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          }
+        },
+      })
+    );
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`EYAK server listening on http://0.0.0.0:${PORT}`);
+    console.log(`Easy Learn server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

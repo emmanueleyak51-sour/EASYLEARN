@@ -46,3 +46,11 @@ test('computeSubjectSwitchDirection resolves canonical subject direction', () =>
   assert.equal(computeSubjectSwitchDirection('econ', 'eng'), -1);
   assert.equal(computeSubjectSwitchDirection('civic', 'civic'), 0);
 });
+
+test('landing website transitions smoothly via crossfade to welcome and home', () => {
+  assert.equal(SCREEN_HIERARCHY_DEPTH.landing, 0);
+  assert.deepEqual(computeScreenTransition('landing', 'welcome'), { kind: 'fade', direction: 1 });
+  assert.deepEqual(computeScreenTransition('welcome', 'landing'), { kind: 'fade', direction: -1 });
+  assert.deepEqual(computeScreenTransition('home', 'landing'), { kind: 'fade', direction: -1 });
+});
+

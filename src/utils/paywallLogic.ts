@@ -10,13 +10,48 @@ export interface PremiumPlanDef {
   days: number;
   priceNgn: number;
   priceKobo: number;
+  isRecurring: boolean;
+  billingCycleLabel: string;
   popular?: boolean;
   savingsBadge?: string;
   blurb: string;
 }
 
 export const FREE_STARTER_TOPIC_COUNT = 2;
-export const FREE_TRIAL_DAYS = 3;
+export const FREE_TRIAL_DAYS = 1;
+export const FREE_TRIAL_DURATION_MS = 24 * 60 * 60 * 1000;
+export const FREE_TRIAL_WARNING_THRESHOLD_MS = 2 * 60 * 60 * 1000;
+
+export type TrialPaymentMethod = 'google_pay' | 'card_bank';
+
+export interface TrialLinkInfo {
+  linked: boolean;
+  methodType: TrialPaymentMethod;
+  billingEmail: string;
+  accountLabel: string;
+  status: 'active' | 'cancelled';
+  autoRenew: boolean;
+  startedAtIso: string;
+  endsAtIso: string;
+  cancelledAtIso: string | null;
+}
+
+export interface SubscriptionAutoRenewInfo {
+  planId: PremiumPlanId;
+  isRecurring: boolean;
+  autoRenew: boolean;
+  status: 'active' | 'cancelled' | 'one_time';
+  nextBillingAtIso: string | null;
+  cancelledAtIso: string | null;
+}
+
+export interface TrialCountdownSnapshot {
+  remainingMs: number;
+  formattedCountdown: string;
+  isWarning: boolean;
+  isExpired: boolean;
+  endsAtMs: number;
+}
 
 export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
   {
@@ -26,6 +61,8 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     days: 30,
     priceNgn: 1000,
     priceKobo: 100_000,
+    isRecurring: true,
+    billingCycleLabel: 'Auto-renews monthly · Cancel anytime',
     blurb: 'Full access to all 49 subjects, tutors, CBT mocks, virtual labs and colour themes.',
   },
   {
@@ -35,6 +72,8 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     days: 180,
     priceNgn: 4500,
     priceKobo: 450_000,
+    isRecurring: true,
+    billingCycleLabel: 'Auto-renews every 6 months · Cancel anytime',
     savingsBadge: 'Save ₦1,500',
     blurb: '6 months of full unrestricted access across all classes and exams — save ₦1,500.',
   },
@@ -45,6 +84,8 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     days: 365,
     priceNgn: 9000,
     priceKobo: 900_000,
+    isRecurring: true,
+    billingCycleLabel: 'Auto-renews yearly · Cancel anytime',
     popular: true,
     savingsBadge: 'Save ₦3,000',
     blurb: 'Full academic year for JAMB UTME, WAEC and NECO with every tutor, lab and theme.',
@@ -56,10 +97,17 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     days: 36500,
     priceNgn: 27800,
     priceKobo: 2_780_000,
+    isRecurring: false,
+    billingCycleLabel: 'One-time payment · Never auto-debited',
     savingsBadge: 'Pay once',
     blurb: 'Pay once for permanent lifetime access across SS1–SS3, JAMB UTME, WAEC and NECO.',
   },
 ];
+
+export function isRecurringPlanId(id?: string | null): boolean {
+  const plan = getPremiumPlanById(id);
+  return Boolean(plan?.isRecurring);
+}
 
 export function getPremiumPlanById(id?: string | null): PremiumPlanDef | null {
   if (!id) return null;
@@ -109,11 +157,9 @@ export interface TrialStatusSnapshot {
 }
 
 /**
- * Computes the student's 3-day post-login starter trial window (`startedDay` .. `startedDay + 2`).
- * On Day 1 (`currentDay === startedDay`), `daysRemaining === 3`.
- * On Day 2 (`currentDay === startedDay + 1`), `daysRemaining === 2`.
- * On Day 3 (`currentDay === startedDay + 2`), `daysRemaining === 1`.
- * From Day 4 onward (`currentDay >= startedDay + 3`), `daysRemaining === 0` and `isTrialExpired === true`.
+ * Computes the student's 1-day (24-hour) free trial day-window (`startedDay` .. `startedDay`).
+ * On Day 1 (`currentDay === startedDay`), `daysRemaining === 1`.
+ * From Day 2 onward (`currentDay >= startedDay + 1`), `daysRemaining === 0` and `isTrialExpired === true`.
  */
 export function computeTrialStatus(
   progress: Pick<UserProgress, 'trial'>,
@@ -138,6 +184,78 @@ export function computeTrialStatus(
 }
 
 /**
+ * Formats a millisecond trial countdown into `HH:MM:SS` (e.g. `23:59:42`, `01:12:08`, `00:00:00`).
+ */
+export function formatTrialCountdown(remainingMs: number): string {
+  const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+/**
+ * Computes the exact live millisecond countdown for the student's 1-day (24-hour) free trial.
+ * Uses the linked trial's exact `endsAtIso` when present, else `trial.endsAtMs` / `trial.startedAtMs + 24h`,
+ * and always enforces day-based expiry if `computeTrialStatus` marks the trial expired.
+ */
+export function computeTrialCountdownStatus(params: {
+  trial?: UserProgress['trial'];
+  trialLink?: TrialLinkInfo | null;
+  nowMs?: number;
+  currentDay?: number;
+}): TrialCountdownSnapshot {
+  const nowMs = params.nowMs ?? Date.now();
+  const curDay = params.currentDay ?? currentEpochDay();
+  const dayStatus = computeTrialStatus({ trial: params.trial }, curDay);
+
+  let endsAtMs: number;
+  const parsedLinkEnd =
+    params.trialLink?.endsAtIso ? Date.parse(params.trialLink.endsAtIso) : Number.NaN;
+  if (Number.isFinite(parsedLinkEnd)) {
+    endsAtMs = parsedLinkEnd;
+  } else if (
+    typeof params.trial?.endsAtMs === 'number' &&
+    Number.isFinite(params.trial.endsAtMs) &&
+    params.trial.endsAtMs > 0
+  ) {
+    endsAtMs = params.trial.endsAtMs;
+  } else if (
+    typeof params.trial?.startedAtMs === 'number' &&
+    Number.isFinite(params.trial.startedAtMs) &&
+    params.trial.startedAtMs > 0
+  ) {
+    endsAtMs = params.trial.startedAtMs + FREE_TRIAL_DURATION_MS;
+  } else {
+    const tzOffsetMs = new Date(nowMs).getTimezoneOffset() * 60000;
+    endsAtMs = (dayStatus.startedDay + FREE_TRIAL_DAYS) * 86400000 + tzOffsetMs;
+  }
+
+  const rawRemainingMs = Math.max(0, endsAtMs - nowMs);
+  const isExpired = dayStatus.isTrialExpired || rawRemainingMs <= 0;
+  const remainingMs = isExpired ? 0 : rawRemainingMs;
+  const isWarning = !isExpired && remainingMs <= FREE_TRIAL_WARNING_THRESHOLD_MS;
+
+  return {
+    remainingMs,
+    formattedCountdown: formatTrialCountdown(remainingMs),
+    isWarning,
+    isExpired,
+    endsAtMs,
+  };
+}
+
+/**
+ * Guard helper that detects if a user accidentally typed a raw 13-19 digit payment card number
+ * into a display label field so raw PANs are never accepted or persisted.
+ */
+export function looksLikeRawCardNumber(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  const digits = raw.replace(/[\s-]+/g, '');
+  return /\d{13,19}/.test(digits);
+}
+
+/**
  * Legacy helper retained for starter indicator compatibility.
  */
 export function isFreeStarterTopic(
@@ -149,9 +267,9 @@ export function isFreeStarterTopic(
 }
 
 /**
- * During the 3-day starter trial (`!isTrialExpired`), basic topic notes, lessons,
+ * During the 1-day free trial (`!isTrialExpired`), basic topic notes, lessons,
  * practice and topic tests are accessible while Tutors, Themes, CBT Mocks and Labs stay locked.
- * Once the 3-day trial expires, all topics are locked until the student activates any plan.
+ * Once the 1-day trial expires, everything in the app is locked until the student subscribes.
  */
 export function isTopicPaywalled(
   progress: Pick<UserProgress, 'pro' | 'owner' | 'trial'>,
@@ -165,9 +283,9 @@ export function isTopicPaywalled(
 }
 
 /**
- * During the unsubscribed 3-day starter trial, CBT Mock Exam is locked except on
+ * During the unsubscribed 1-day free trial, CBT Mock Exam is locked except on
  * National CBT Saturdays (WAT), where the 'sprint' preset opens so every student
- * can compete in the Saturday CBT cohort ranking! Any paid plan unlocks every CBT mode.
+ * can compete in the Saturday CBT cohort ranking. Any paid plan unlocks every CBT mode.
  */
 export function isCbtPresetPaywalled(
   progress: Pick<UserProgress, 'pro' | 'owner'>,
@@ -196,12 +314,13 @@ export function formatPremiumRemaining(
 }
 
 /**
- * Strips spaces/punctuation and formats 12-character EYAK codes as EYAK-XXXX-XXXX.
+ * Strips spaces/punctuation and formats 12-character Easy Learn (ELRN) or legacy EYAK
+ * Pass PINs cleanly as ELRN-XXXX-XXXX / EYAK-XXXX-XXXX.
  */
 export function normalizeVoucherCode(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   const alnum = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
-  if (alnum.length === 12 && alnum.startsWith('EYAK')) {
+  if (alnum.length === 12 && (alnum.startsWith('ELRN') || alnum.startsWith('EYAK'))) {
     return `${alnum.slice(0, 4)}-${alnum.slice(4, 8)}-${alnum.slice(8, 12)}`;
   }
   return alnum;
@@ -210,6 +329,38 @@ export function normalizeVoucherCode(raw: unknown): string {
 export function isValidVoucherCodeFormat(raw: unknown): boolean {
   const norm = normalizeVoucherCode(raw);
   return /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(norm) || /^[A-Z0-9]{8,24}$/.test(norm);
+}
+
+export function buildPassPinWhatsAppUrl(params: {
+  code: string;
+  planName: string;
+  days: number;
+  note?: string;
+}): string {
+  const durationLabel = params.days >= 3650 ? 'Lifetime access' : `${params.days} days`;
+  const lines = [
+    'Your Easy Learn Study Pass PIN is ready!',
+    `Pass PIN: ${params.code}`,
+    `Plan: ${params.planName} (${durationLabel})`,
+    params.note?.trim() ? `For: ${params.note.trim()}` : '',
+    'How to activate: Open Easy Learn -> Settings -> Activate Pass PIN, then paste your PIN.',
+  ].filter(Boolean);
+  return `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`;
+}
+
+export function formatPassPinClipboardBatch(
+  pins: ReadonlyArray<{ code: string; planName: string; days: number; note?: string }>
+): string {
+  if (pins.length === 1) {
+    return pins[0].code;
+  }
+  return pins
+    .map((p, idx) => {
+      const dur = p.days >= 3650 ? 'Lifetime' : `${p.days}d`;
+      const suffix = p.note?.trim() ? ` — ${p.note.trim()}` : '';
+      return `${idx + 1}. ${p.code} (${p.planName}, ${dur})${suffix}`;
+    })
+    .join('\n');
 }
 
 export function sanitizeDeviceId(raw: unknown): string {
@@ -394,3 +545,105 @@ export function isValidPaystackReference(raw: unknown): boolean {
   if (typeof raw !== 'string') return false;
   return /^[a-zA-Z0-9_-]{6,80}$/.test(raw.trim());
 }
+
+/**
+ * Validates that a server-side Paystack secret key matches Paystack's `sk_live_...` or `sk_test_...`
+ * format and is not an unreplaced placeholder value or client public key (`pk_...`).
+ */
+export function isConfiguredPaystackSecretKey(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim();
+  if (!/^sk_(live|test)_[a-zA-Z0-9]{16,128}$/.test(trimmed)) return false;
+  if (/^sk_(live|test)_(your|replace|example|placeholder|xxx|key|secret|dummy|sample)/i.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
+
+export interface ParsedScholarEmailList {
+  emails: string[];
+  invalidEntries: string[];
+}
+
+/**
+ * Parses comma, semicolon, or newline-separated scholar emails for Paystack sponsorship
+ * and bulk school seat checkouts, deduplicating normalized lowercase emails.
+ */
+export function parseScholarEmailList(
+  raw: unknown,
+  maxCount = 200
+): ParsedScholarEmailList {
+  const source = Array.isArray(raw)
+    ? raw.map((item) => (typeof item === 'string' ? item : '')).join('\n')
+    : typeof raw === 'string'
+      ? raw
+      : '';
+
+  const tokens = source
+    .split(/[\n,;]+/)
+    .map((part) => part.trim().toLowerCase())
+    .filter((part) => part.length > 0);
+
+  const seen = new Set<string>();
+  const emails: string[] = [];
+  const invalidEntries: string[] = [];
+
+  for (const token of tokens) {
+    if (!isValidEmailAddress(token)) {
+      invalidEntries.push(token);
+      continue;
+    }
+    if (!seen.has(token)) {
+      seen.add(token);
+      emails.push(token);
+      if (emails.length >= maxCount) break;
+    }
+  }
+
+  return { emails, invalidEntries };
+}
+
+export interface PaystackSeatQuote {
+  seats: number;
+  planId: PremiumPlanId;
+  planName: string;
+  unitPriceNgn: number;
+  discountPct: number;
+  subtotalNgn: number;
+  savingsNgn: number;
+  totalNgn: number;
+  totalKobo: number;
+  perSeatFinalNgn: number;
+}
+
+/**
+ * Computes exact server-authoritative Naira and kobo totals for 1-to-N scholar seats on Paystack
+ * (15% automatic cohort discount for 10–49 scholars, 25% for 50+ scholars).
+ */
+export function calculatePaystackSeatQuote(
+  rawSeats: number,
+  rawPlanId?: string | null
+): PaystackSeatQuote {
+  const plan = getPremiumPlanById(rawPlanId) || PREMIUM_PLANS[2];
+  const seats = Math.max(1, Math.min(5000, Math.round(Number(rawSeats) || 1)));
+  const discountPct = seats >= 50 ? 25 : seats >= 10 ? 15 : 0;
+  const subtotalNgn = seats * plan.priceNgn;
+  const savingsNgn = Math.round((subtotalNgn * discountPct) / 100);
+  const totalNgn = subtotalNgn - savingsNgn;
+  const totalKobo = totalNgn * 100;
+  const perSeatFinalNgn = Math.round(totalNgn / seats);
+
+  return {
+    seats,
+    planId: plan.id,
+    planName: plan.name,
+    unitPriceNgn: plan.priceNgn,
+    discountPct,
+    subtotalNgn,
+    savingsNgn,
+    totalNgn,
+    totalKobo,
+    perSeatFinalNgn,
+  };
+}
+

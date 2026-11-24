@@ -74,6 +74,7 @@ export type ClockFormat = '12h' | '24h';
 export type ExamTrack = 'jamb' | 'waec' | 'both';
 
 export type ScreenName =
+  | 'landing'
   | 'welcome'
   | 'examsetup'
   | 'dxintro'
@@ -98,6 +99,7 @@ export type ScreenName =
   | 'transcript'
   | 'duel'
   | 'leaderboard'
+  | 'novels'
   | 'more'
   | 'subjs';
 
@@ -421,6 +423,8 @@ export interface UserProgress {
   trial?: {
     startedDay: number;
     untilDay: number;
+    startedAtMs?: number;
+    endsAtMs?: number;
     sig?: string;
   } | null;
   owner: number;
@@ -478,6 +482,21 @@ export interface UserProgress {
     themes: string;
     events: string;
   };
+  novelProgress?: Record<
+    string,
+    {
+      chaptersRead: number[];
+      quizBestScore?: number;
+      quizTotal?: number;
+      notes?: string;
+      chapterQuizPassed?: number[];
+      chapterQuizScores?: Record<number, { best: number; total: number }>;
+      finalExamBestScore?: number;
+      finalExamTotal?: number;
+      finalExamPassed?: boolean;
+      rankPointsAwarded?: number;
+    }
+  >;
 }
 
 export interface QuizSession {

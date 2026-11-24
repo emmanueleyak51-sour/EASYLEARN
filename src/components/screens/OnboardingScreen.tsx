@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from 'react';
+import { signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider } from '../../firebase';
 import type { ChemClassId, SubjectId } from '../../types';
 import { SUBJECT_INFO } from '../../utils/engine';
 import {
   authenticateAccount,
-  buildRegisteredAccount,
   loadAccounts,
+  registerAccountStrict,
+  resetAccountPasswordWithGoogle,
   saveAccounts,
   setSessionUnlocked,
   validateRegisterInput,
@@ -78,19 +81,32 @@ const SAMPLE_QUESTIONS: SampleQuestionSpec[] = [
   },
 ];
 
+export interface ConnectedBlueprintNotice {
+  trackLabel: string;
+  campusGoal?: string;
+  subjectNames: string;
+  selectedPlanLabel?: string;
+  destinationNote?: string;
+}
+
 export function WelcomeScreen({
   initialName,
   initialSubjs,
   initialClassLevel = 'ss1',
   initialTarget,
+  initialAuthMode,
+  connectedSummary,
   onComplete,
   onAuthenticated,
   onSkipToDemo,
+  onBackToWebsite,
 }: {
   initialName: string;
   initialSubjs: SubjectId[];
   initialClassLevel?: ChemClassId;
   initialTarget: number;
+  initialAuthMode?: SplitMode;
+  connectedSummary?: ConnectedBlueprintNotice | null;
   onComplete: (cfg: {
     name: string;
     subjs: SubjectId[];
@@ -105,14 +121,20 @@ export function WelcomeScreen({
     isExisting: boolean;
   }) => void;
   onSkipToDemo: () => void;
+  onBackToWebsite?: () => void;
 }) {
   const accounts = useMemo(() => loadAccounts(), []);
   const hasReturningStudent = Boolean(initialName.trim() || accounts.length > 0);
 
-  const [mode, setMode] = useState<SplitMode>(hasReturningStudent ? 'login' : 'register');
+  const [mode, setMode] = useState<SplitMode>(initialAuthMode || 'register');
 
-  // Interactive sample question state
-  const [sampleIdx, setSampleIdx] = useState(0);
+  // Interactive sample question state matched to preferred subject when possible
+  const [sampleIdx, setSampleIdx] = useState(() => {
+    const first = initialSubjs?.[0];
+    if (first === 'eng') return 1;
+    if (first === 'chem') return 2;
+    return 0;
+  });
   const [samplePicked, setSamplePicked] = useState<number | null>(null);
   const sample = SAMPLE_QUESTIONS[sampleIdx];
 
@@ -121,13 +143,24 @@ export function WelcomeScreen({
   const [loginPass, setLoginPass] = useState('');
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
 
-  // Create account state
-  const [regName, setRegName] = useState(initialName || '');
+  // Create account state (always start blank so a public link never prefills another user's name)
+  const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPass, setRegPass] = useState('');
   const [showRegPass, setShowRegPass] = useState(false);
   const [regError, setRegError] = useState('');
+
+  // Forgot-password via Google verification state
+  const [googleVerifiedRecovery, setGoogleVerifiedRecovery] = useState<{
+    email: string;
+    displayName: string;
+    idToken: string;
+  } | null>(null);
+  const [recoveryNewPass, setRecoveryNewPass] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
 
   const defaultSubjs: SubjectId[] =
     initialSubjs && initialSubjs.length > 0 ? initialSubjs : ['eng', 'maths'];
@@ -152,56 +185,289 @@ export function WelcomeScreen({
     });
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loginId.trim() || !loginPass.trim()) {
-      setLoginError('Enter your email or username and your password.');
-      return;
-    }
-    const currentAccounts = loadAccounts();
-    const res = authenticateAccount(currentAccounts, loginId, loginPass, initialName);
-    if (!res.ok) {
-      setLoginError(res.error || 'Check your sign-in details and try again.');
-      return;
-    }
+  const redirectToLoginForExistingEmail = (email: string, noticeMessage?: string) => {
+    setMode('login');
+    setLoginId(email);
+    setLoginPass('');
     setLoginError('');
-    const acc = res.account;
-    finalizeEntry({
-      name: acc ? acc.username : initialName.trim() || loginId.trim(),
-      subjs: acc?.subjs?.length ? acc.subjs : defaultSubjs,
-      classLevel: acc?.classLevel || initialClassLevel || 'all',
-      target: acc?.target || initialTarget || 75,
-      isExisting: true,
-    });
+    setRegError('');
+    setLoginNotice(
+      noticeMessage ||
+        `An Easy Learn account already exists for ${email}. Sign in with your password below, or tap "Forgot password? Recover with Google".`
+    );
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (authBusy) return;
+    const cleanId = loginId.trim();
+    if (!cleanId || !loginPass.trim()) {
+      setLoginError('Enter your email address and your password.');
+      return;
+    }
+    setAuthBusy(true);
+    setLoginError('');
+    setLoginNotice('');
+
+    try {
+      const currentAccounts = loadAccounts();
+      const isEmail = cleanId.includes('@');
+
+      if (isEmail) {
+        try {
+          const resp = await fetch('/api/auth/login-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanId.toLowerCase(), password: loginPass }),
+          });
+          const body = await resp.json().catch(() => ({}));
+          if (resp.ok && body?.ok) {
+            const synced = resetAccountPasswordWithGoogle(currentAccounts, {
+              email: body.email || cleanId.toLowerCase(),
+              displayName: body.displayName,
+              newPassword: loginPass,
+              subjs: defaultSubjs,
+              target: initialTarget || 75,
+            });
+            saveAccounts(synced.accounts);
+            finalizeEntry({
+              name: synced.account.username,
+              subjs: synced.account.subjs,
+              classLevel: synced.account.classLevel,
+              target: synced.account.target,
+              isExisting: true,
+            });
+            return;
+          }
+          if (resp.status === 401) {
+            setLoginError(
+              typeof body?.error === 'string'
+                ? body.error
+                : 'Incorrect password. Try again or tap "Forgot password? Recover with Google".'
+            );
+            return;
+          }
+        } catch {
+          /* offline or server unavailable — fall through to local account verification */
+        }
+      }
+
+      const res = authenticateAccount(currentAccounts, cleanId, loginPass, initialName);
+      if (!res.ok) {
+        setLoginError(
+          res.error ||
+            'Incorrect details. Check your password or tap "Forgot password? Recover with Google".'
+        );
+        return;
+      }
+      const acc = res.account;
+      finalizeEntry({
+        name: acc ? acc.username : initialName.trim() || cleanId,
+        subjs: acc?.subjs?.length ? acc.subjs : defaultSubjs,
+        classLevel: acc?.classLevel || initialClassLevel || 'all',
+        target: acc?.target || initialTarget || 75,
+        isExisting: true,
+      });
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (authBusy) return;
     const check = validateRegisterInput(regName, regEmail, regPass);
     if (!check.ok) {
       setRegError(check.error || 'Fill in your first name, email address and password.');
       return;
     }
-    setRegError('');
-    const current = loadAccounts();
+
     const cleanName = regName.trim();
     const cleanEmail = regEmail.trim().toLowerCase();
-    const startSubjs: SubjectId[] = ['eng', 'maths'];
-    const { accounts: updated } = buildRegisteredAccount(current, {
+    const current = loadAccounts();
+
+    // 1. Instant local duplicate check — block duplicate account & redirect straight to Login
+    const localAttempt = registerAccountStrict(current, {
       username: cleanName,
       email: cleanEmail,
       password: regPass,
       classLevel: 'all',
-      subjs: startSubjs,
+      subjs: defaultSubjs,
       target: initialTarget || 75,
     });
-    saveAccounts(updated);
+    if (!localAttempt.ok && localAttempt.duplicateEmail) {
+      redirectToLoginForExistingEmail(cleanEmail, localAttempt.error);
+      return;
+    }
+
+    // 2. Authoritative cross-device server unique-email check & registration
+    setAuthBusy(true);
+    setRegError('');
+    try {
+      const resp = await fetch('/api/auth/register-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          displayName: cleanName,
+          password: regPass,
+        }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.status === 409 || body?.duplicateEmail) {
+        redirectToLoginForExistingEmail(
+          cleanEmail,
+          typeof body?.error === 'string' ? body.error : undefined
+        );
+        return;
+      }
+      if (!resp.ok && resp.status >= 400 && resp.status < 500) {
+        setRegError(
+          typeof body?.error === 'string'
+            ? body.error
+            : 'Please check your registration details and try again.'
+        );
+        return;
+      }
+    } catch {
+      /* offline PWA fallback: localAttempt already verified uniqueness on this device */
+    } finally {
+      setAuthBusy(false);
+    }
+
+    if (localAttempt.ok) {
+      saveAccounts(localAttempt.accounts);
+    }
     finalizeEntry({
       name: cleanName,
-      subjs: startSubjs,
+      subjs: defaultSubjs,
       classLevel: 'all',
       target: initialTarget || 75,
       isExisting: false,
+    });
+  };
+
+  const handleGoogleSignInOrRecover = async (forPasswordRecovery: boolean) => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    setLoginError('');
+    setRegError('');
+    setRecoveryError('');
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      const googleEmail = (cred.user.email || '').trim().toLowerCase();
+      if (!googleEmail) {
+        setLoginError('Google did not return an email address. Please try another Google account.');
+        return;
+      }
+      const idToken = await cred.user.getIdToken();
+      const displayName = (cred.user.displayName || googleEmail.split('@')[0] || 'Scholar').trim();
+
+      if (forPasswordRecovery) {
+        setMode('login');
+        setLoginId(googleEmail);
+        setGoogleVerifiedRecovery({ email: googleEmail, displayName, idToken });
+        setRecoveryNewPass('');
+        setLoginNotice(
+          `Google verified ${googleEmail}. Set a new Easy Learn password below or sign straight in.`
+        );
+        return;
+      }
+
+      // Direct "Continue with Google" — sync account & enter immediately (no duplicates ever)
+      try {
+        await fetch('/api/auth/google-recover', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({}),
+        });
+      } catch {
+        /* continue offline safely */
+      }
+
+      const current = loadAccounts();
+      const synced = resetAccountPasswordWithGoogle(current, {
+        email: googleEmail,
+        displayName,
+        subjs: defaultSubjs,
+        target: initialTarget || 75,
+      });
+      saveAccounts(synced.accounts);
+      finalizeEntry({
+        name: synced.account.username,
+        subjs: synced.account.subjs,
+        classLevel: synced.account.classLevel,
+        target: synced.account.target,
+        isExisting: true,
+      });
+    } catch (err) {
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      const msg =
+        code === 'auth/popup-blocked'
+          ? 'Your browser blocked the Google sign-in popup. Please allow popups and try again.'
+          : 'Could not complete Google verification right now. Please try again.';
+      if (mode === 'register') setRegError(msg);
+      else setLoginError(msg);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSaveRecoveredPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!googleVerifiedRecovery || authBusy) return;
+    if (recoveryNewPass.length < 4) {
+      setRecoveryError('Create a new password of at least 4 characters.');
+      return;
+    }
+    setAuthBusy(true);
+    setRecoveryError('');
+    try {
+      const resp = await fetch('/api/auth/google-recover', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${googleVerifiedRecovery.idToken}`,
+        },
+        body: JSON.stringify({ newPassword: recoveryNewPass }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        setRecoveryError(
+          typeof body?.error === 'string'
+            ? body.error
+            : 'Could not update your password right now. Please try again.'
+        );
+        return;
+      }
+    } catch {
+      /* offline fallback updates local store */
+    } finally {
+      setAuthBusy(false);
+    }
+
+    const current = loadAccounts();
+    const synced = resetAccountPasswordWithGoogle(current, {
+      email: googleVerifiedRecovery.email,
+      displayName: googleVerifiedRecovery.displayName,
+      newPassword: recoveryNewPass,
+      subjs: defaultSubjs,
+      target: initialTarget || 75,
+    });
+    saveAccounts(synced.accounts);
+    setGoogleVerifiedRecovery(null);
+    finalizeEntry({
+      name: synced.account.username,
+      subjs: synced.account.subjs,
+      classLevel: synced.account.classLevel,
+      target: synced.account.target,
+      isExisting: true,
     });
   };
 
@@ -229,14 +495,34 @@ export function WelcomeScreen({
       {/* Top brand bar */}
       <header className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
+          {onBackToWebsite && (
+            <button
+              type="button"
+              onClick={onBackToWebsite}
+              aria-label="Back to website"
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-[var(--card)] border border-[var(--line)] text-[13px] font-bold text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Icon name="back" size={16} />
+              <span>Website</span>
+            </button>
+          )}
           <CrestSvg size={38} />
           <span className="font-[var(--display)] font-bold text-[22px] tracking-tight text-[var(--ink)] whitespace-nowrap shrink-0">
-            EYAK
+            Easy Learn
           </span>
         </div>
-        <span className="text-[13px] font-semibold text-[var(--dim)] whitespace-nowrap">
-          Full access from ₦1,000/month
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onSkipToDemo}
+            className="text-[13px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+          >
+            Try demo
+          </button>
+          <span className="hidden sm:inline text-[13px] font-semibold text-[var(--dim)] whitespace-nowrap">
+            Full access from ₦1,000/month
+          </span>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 min-[900px]:grid-cols-12 gap-6 items-start">
@@ -248,9 +534,11 @@ export function WelcomeScreen({
                 <StudyBuddy mood={buddyMood} size={54} />
               </div>
               <div className="flex flex-col gap-1.5 min-w-0">
-                <span className="inline-flex self-start px-3 py-1 rounded-[16px] tile-peach text-[12.5px] font-bold">
-                  JAMB and WAEC prep
-                </span>
+                <div className="flex flex-wrap items-center gap-2 text-[12.5px] font-bold text-[#FFE1D1]">
+                  <span>Road to Campus</span>
+                  <span aria-hidden="true" className="text-white/65">·</span>
+                  <span className="text-white/85">JAMB UTME &amp; WASSCE Prep</span>
+                </div>
                 <h1 className="h28 sm:h34 text-white">
                   Pass JAMB with calm, clear daily practice.
                 </h1>
@@ -411,15 +699,39 @@ export function WelcomeScreen({
             }}
           />
 
-          {hasReturningStudent && (
+          {connectedSummary && (
+            <div className="rounded-[18px] border border-[var(--acc-line)] bg-[var(--acc-soft)] p-3.5 flex flex-col gap-1.5 text-[12.5px]">
+              <div className="flex items-center justify-between gap-2 font-bold">
+                <span className="text-[var(--gold)]">Connected Blueprint</span>
+                <span className="text-[var(--ink)]">{connectedSummary.trackLabel}</span>
+              </div>
+              {connectedSummary.campusGoal && (
+                <div className="font-bold text-[var(--ink)]">
+                  Goal: {connectedSummary.campusGoal}
+                </div>
+              )}
+              <div className="text-[var(--dim)] leading-snug">
+                <strong className="text-[var(--ink)]">Subjects ready:</strong>{' '}
+                {connectedSummary.subjectNames}
+              </div>
+              {connectedSummary.selectedPlanLabel && (
+                <div className="font-semibold text-[var(--green)]">
+                  Selected pass: {connectedSummary.selectedPlanLabel}
+                </div>
+              )}
+              {connectedSummary.destinationNote && (
+                <div className="text-[var(--dim)]">{connectedSummary.destinationNote}</div>
+              )}
+            </div>
+          )}
+
+          {mode === 'login' && hasReturningStudent && (
             <button
               type="button"
               onClick={handleResumeSavedStudent}
               className="w-full min-h-[44px] px-4 py-2.5 rounded-[16px] bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] text-[13.5px] font-bold flex items-center justify-between gap-2 cursor-pointer"
             >
-              <span className="truncate">
-                Continue as {initialName.trim() || accounts[0]?.username}
-              </span>
+              <span className="truncate">Resume saved session on this device</span>
               <Icon name="go" size={16} className="shrink-0" />
             </button>
           )}
@@ -429,7 +741,7 @@ export function WelcomeScreen({
               <div>
                 <h2 className="h22 text-[var(--ink)]">Create your account</h2>
                 <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
-                  Includes a 3-day starter trial for basic notes &amp; practice, or subscribe from ₦1,000/month for 100% full access.
+                  Free open launch access across all 49 JAMB &amp; WAEC subjects, interactive labs, and novels.
                 </p>
               </div>
 
@@ -503,81 +815,212 @@ export function WelcomeScreen({
                 </p>
               )}
 
-              <button type="submit" className="btn-tactile indigo w-full">
-                <span>Create account</span>
+              <button type="submit" disabled={authBusy} className="btn-tactile indigo w-full">
+                <span>{authBusy ? 'Checking email...' : 'Create account'}</span>
                 <Icon name="go" size={18} className="ul-arrow" />
+              </button>
+
+              <div className="flex items-center gap-3 text-[12px] font-semibold text-[var(--dim)]">
+                <span className="h-px flex-1 bg-[var(--line)]" />
+                <span>or</span>
+                <span className="h-px flex-1 bg-[var(--line)]" />
+              </div>
+
+              <button
+                type="button"
+                disabled={authBusy}
+                onClick={() => void handleGoogleSignInOrRecover(false)}
+                className="w-full min-h-[46px] px-4 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] hover:border-[var(--gold)] text-[14px] font-bold text-[var(--ink)] flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
+              >
+                <Icon name="user" size={17} className="text-[var(--gold)]" />
+                <span>Continue with Google</span>
               </button>
             </form>
           ) : (
-            <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4" noValidate>
-              <div>
-                <h2 className="h22 text-[var(--ink)]">Welcome back</h2>
-                <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
-                  Sign in to pick up your lessons, mock scores and saved notes.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="eyak-login-id" className="text-[13px] font-bold text-[var(--ink)]">
-                  Email or first name
-                </label>
-                <input
-                  id="eyak-login-id"
-                  type="text"
-                  autoComplete="username"
-                  placeholder="you@example.com"
-                  value={loginId}
-                  onChange={(e) => {
-                    setLoginId(e.target.value);
-                    if (loginError) setLoginError('');
-                  }}
-                  className="min-h-[46px] px-3.5 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="eyak-login-pass" className="text-[13px] font-bold text-[var(--ink)]">
-                  Password
-                </label>
-                <div className="relative flex items-center">
-                  <input
-                    id="eyak-login-pass"
-                    type={showLoginPass ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    placeholder="Your password"
-                    value={loginPass}
-                    onChange={(e) => {
-                      setLoginPass(e.target.value);
-                      if (loginError) setLoginError('');
-                    }}
-                    className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPass((v) => !v)}
-                    aria-label={showLoginPass ? 'Hide password' : 'Show password'}
-                    className="absolute right-3 text-[var(--dim)] hover:text-[var(--ink)] cursor-pointer"
-                  >
-                    <Icon name={showLoginPass ? 'eyeOff' : 'eye'} size={18} />
-                  </button>
+            <div className="flex flex-col gap-4">
+              {loginNotice && (
+                <div
+                  role="status"
+                  className="rounded-[16px] bg-[var(--acc-soft)] border border-[var(--acc-line)] px-4 py-3 text-[13px] font-semibold text-[var(--ink)] leading-snug"
+                >
+                  {loginNotice}
                 </div>
-              </div>
-
-              {loginError && (
-                <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
-                  {loginError}
-                </p>
               )}
 
-              <button type="submit" className="btn-tactile indigo w-full">
-                <span>Sign in</span>
-                <Icon name="go" size={18} className="ul-arrow" />
-              </button>
-            </form>
+              {googleVerifiedRecovery ? (
+                <form
+                  onSubmit={handleSaveRecoveredPassword}
+                  className="rounded-[18px] bg-[var(--bg)] border-2 border-[var(--gold)] p-4 flex flex-col gap-3"
+                  noValidate
+                >
+                  <div>
+                    <div className="text-[12px] font-bold uppercase tracking-wider text-[var(--green)]">
+                      Google Verified · {googleVerifiedRecovery.email}
+                    </div>
+                    <h3 className="h18 text-[var(--ink)] mt-0.5">Set a new Easy Learn password</h3>
+                    <p className="text-[12.5px] text-[var(--dim)] mt-0.5">
+                      Save a new password for future email sign-ins, or sign straight into your
+                      account now.
+                    </p>
+                  </div>
+
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Enter new password (4+ characters)"
+                    value={recoveryNewPass}
+                    onChange={(e) => {
+                      setRecoveryNewPass(e.target.value);
+                      if (recoveryError) setRecoveryError('');
+                    }}
+                    className="w-full min-h-[44px] px-3.5 rounded-[14px] bg-[var(--card)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[14.5px] font-semibold text-[var(--ink)] outline-none"
+                  />
+
+                  {recoveryError && (
+                    <p role="alert" className="text-[12.5px] font-semibold text-[var(--coral-ink)]">
+                      {recoveryError}
+                    </p>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="submit"
+                      disabled={authBusy}
+                      className="btn-tactile indigo flex-1"
+                    >
+                      <span>{authBusy ? 'Saving...' : 'Save password & Sign in'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={authBusy}
+                      onClick={() => {
+                        const synced = resetAccountPasswordWithGoogle(loadAccounts(), {
+                          email: googleVerifiedRecovery.email,
+                          displayName: googleVerifiedRecovery.displayName,
+                          subjs: defaultSubjs,
+                          target: initialTarget || 75,
+                        });
+                        saveAccounts(synced.accounts);
+                        setGoogleVerifiedRecovery(null);
+                        finalizeEntry({
+                          name: synced.account.username,
+                          subjs: synced.account.subjs,
+                          classLevel: synced.account.classLevel,
+                          target: synced.account.target,
+                          isExisting: true,
+                        });
+                      }}
+                      className="min-h-[44px] px-4 rounded-[14px] bg-[var(--card)] border border-[var(--line)] text-[13px] font-bold text-[var(--ink)] cursor-pointer whitespace-nowrap"
+                    >
+                      Skip &amp; Enter Now
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4" noValidate>
+                  <div>
+                    <h2 className="h22 text-[var(--ink)]">Welcome back</h2>
+                    <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
+                      Sign in with your registered email and password, or recover with Google.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label
+                      htmlFor="eyak-login-id"
+                      className="text-[13px] font-bold text-[var(--ink)]"
+                    >
+                      Email address
+                    </label>
+                    <input
+                      id="eyak-login-id"
+                      type="email"
+                      autoComplete="username"
+                      placeholder="you@example.com"
+                      value={loginId}
+                      onChange={(e) => {
+                        setLoginId(e.target.value);
+                        if (loginError) setLoginError('');
+                      }}
+                      className="min-h-[46px] px-3.5 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        htmlFor="eyak-login-pass"
+                        className="text-[13px] font-bold text-[var(--ink)]"
+                      >
+                        Password
+                      </label>
+                      <button
+                        type="button"
+                        disabled={authBusy}
+                        onClick={() => void handleGoogleSignInOrRecover(true)}
+                        className="text-[12.5px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+                      >
+                        Forgot password? Recover with Google
+                      </button>
+                    </div>
+                    <div className="relative flex items-center">
+                      <input
+                        id="eyak-login-pass"
+                        type={showLoginPass ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        placeholder="Your password"
+                        value={loginPass}
+                        onChange={(e) => {
+                          setLoginPass(e.target.value);
+                          if (loginError) setLoginError('');
+                        }}
+                        className="w-full min-h-[46px] pl-3.5 pr-11 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] focus:border-[var(--gold)] text-[15px] font-semibold text-[var(--ink)] outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPass((v) => !v)}
+                        aria-label={showLoginPass ? 'Hide password' : 'Show password'}
+                        className="absolute right-3 text-[var(--dim)] hover:text-[var(--ink)] cursor-pointer"
+                      >
+                        <Icon name={showLoginPass ? 'eyeOff' : 'eye'} size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {loginError && (
+                    <p role="alert" className="text-[13px] font-semibold text-[var(--coral-ink)]">
+                      {loginError}
+                    </p>
+                  )}
+
+                  <button type="submit" disabled={authBusy} className="btn-tactile indigo w-full">
+                    <span>{authBusy ? 'Signing in...' : 'Sign in'}</span>
+                    <Icon name="go" size={18} className="ul-arrow" />
+                  </button>
+
+                  <div className="flex items-center gap-3 text-[12px] font-semibold text-[var(--dim)]">
+                    <span className="h-px flex-1 bg-[var(--line)]" />
+                    <span>or</span>
+                    <span className="h-px flex-1 bg-[var(--line)]" />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={authBusy}
+                    onClick={() => void handleGoogleSignInOrRecover(false)}
+                    className="w-full min-h-[46px] px-4 rounded-[16px] bg-[var(--bg)] border-2 border-[var(--line)] hover:border-[var(--gold)] text-[14px] font-bold text-[var(--ink)] flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Icon name="user" size={17} className="text-[var(--gold)]" />
+                    <span>Continue with Google</span>
+                  </button>
+                </form>
+              )}
+            </div>
           )}
 
           <div className="pt-3 border-t border-[var(--line)] text-[12.5px] text-[var(--dim)] leading-snug">
-            Sign in or create an account to activate your 3-day starter trial or choose a Monthly (₦1,000), 6-Month (₦4,500), Yearly (₦9,000) or Lifetime (₦27,800) pass.
+            One account per email address. Forgot your password? Verify with Google anytime to
+            reset your password or sign straight back in.
           </div>
         </section>
       </div>

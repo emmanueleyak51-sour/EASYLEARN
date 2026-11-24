@@ -513,7 +513,7 @@ function compilePdfDocument(pages: PdfPageCommands[], docTitle: string): Uint8Ar
   objects[3] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>`;
   objects[4] = `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>`;
   objects[5] = `<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>`;
-  objects[6] = `<< /Title ${pdfLiteral(docTitle)} /Creator (EYAK Road to Campus) /Producer (EYAK Vector PDF Engine) >>`;
+  objects[6] = `<< /Title ${pdfLiteral(docTitle)} /Creator (Easy Learn Road to Campus) /Producer (Easy Learn Vector PDF Engine) >>`;
 
   pages.forEach((page, idx) => {
     const pageObjId = 7 + idx * 2;
@@ -596,7 +596,7 @@ export function buildStudentReportCardPdf(data: ReportCardPdfInput): Uint8Array 
   // Header Banner
   page.fillRect(MARGIN_X, 32, CONTENT_W, 66, COL_BRAND_DEEP);
   page.fillRect(MARGIN_X, 32, 6, 66, COL_GOLD_BADGE);
-  page.text('EYAK · ROAD TO CAMPUS PROGRESS REPORT', MARGIN_X + 18, 50, {
+  page.text('EASY LEARN · YOUR ROAD TO CAMPUS PROGRESS REPORT', MARGIN_X + 18, 50, {
     font: 'F2',
     size: 8.5,
     color: COL_GOLD_BADGE,
@@ -729,7 +729,7 @@ export function buildStudentReportCardPdf(data: ReportCardPdfInput): Uint8Array 
       page = new PdfPageCommands();
       pages.push(page);
       page.text(
-        `EYAK Student Report Card — ${data.studentName || 'Student'} (continued)`,
+        `Easy Learn Student Report Card — ${data.studentName || 'Student'} (continued)`,
         MARGIN_X,
         36,
         { font: 'F2', size: 10.5, color: COL_BRAND_DEEP }
@@ -791,12 +791,12 @@ export function buildStudentReportCardPdf(data: ReportCardPdfInput): Uint8Array 
     cursorY += rowH;
   });
 
-  const footerNote = `Prepared on EYAK (Road to Campus) · ${data.studentName || 'Student'} · ${data.issuedDate}`;
+  const footerNote = `Prepared on Easy Learn (Your Road to Campus) · ${data.studentName || 'Student'} · ${data.issuedDate}`;
   pages.forEach((p, idx) => drawPageFooter(p, footerNote, idx + 1, pages.length));
 
   return compilePdfDocument(
     pages,
-    `EYAK Report Card - ${data.studentName || 'Student'}`
+    `Easy Learn Report Card - ${data.studentName || 'Student'}`
   );
 }
 
@@ -822,7 +822,7 @@ export function buildFormulaSheetPdf(data: FormulaSheetPdfInput): Uint8Array {
   // Page 1 Header Banner
   page.fillRect(MARGIN_X, 30, CONTENT_W, 54, COL_BRAND_DEEP);
   page.fillRect(MARGIN_X, 30, 6, 54, COL_GOLD_BADGE);
-  page.text('EYAK · JAMB UTME & WAEC QUICK REVISION SHEET', MARGIN_X + 16, 47, {
+  page.text('EASY LEARN · JAMB UTME & WAEC QUICK REVISION SHEET', MARGIN_X + 16, 47, {
     font: 'F2',
     size: 8.2,
     color: COL_GOLD_BADGE,
@@ -874,7 +874,7 @@ export function buildFormulaSheetPdf(data: FormulaSheetPdfInput): Uint8Array {
       page = new PdfPageCommands();
       pages.push(page);
       page.text(
-        `EYAK · ${data.subjectLabel} — ${noun} (continued)`,
+        `Easy Learn · ${data.subjectLabel} — ${noun} (continued)`,
         MARGIN_X,
         36,
         { font: 'F2', size: 10, color: COL_BRAND_DEEP }
@@ -931,10 +931,10 @@ export function buildFormulaSheetPdf(data: FormulaSheetPdfInput): Uint8Array {
     cursorY += rowH + 8;
   }
 
-  const footerNote = `EYAK (Road to Campus) · ${data.subjectLabel} Revision Sheet · ${dateStr}`;
+  const footerNote = `Easy Learn (Your Road to Campus) · ${data.subjectLabel} Revision Sheet · ${dateStr}`;
   pages.forEach((p, idx) => drawPageFooter(p, footerNote, idx + 1, pages.length));
 
-  return compilePdfDocument(pages, `EYAK ${data.subjectLabel} Revision Sheet`);
+  return compilePdfDocument(pages, `Easy Learn ${data.subjectLabel} Revision Sheet`);
 }
 
 export function sanitizePdfFilename(raw: string): string {

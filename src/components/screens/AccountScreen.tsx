@@ -25,14 +25,25 @@ import { SUBJECT_TUTOR_REGISTRY } from '../../utils/tutorRegistry';
 import { ElementalRankShowcase } from '../ElementalRankVisuals';
 import { Icon, MiniRing } from '../Icons';
 import { MasteryThemeGallery } from '../MasteryThemePicker';
-import { AdminVoucherStudio } from '../PaywallModal';
-import { formatPremiumRemaining } from '../../utils/paywallLogic';
+import {
+  AdminPaystackOverview,
+  OneDayTrialLinkCard,
+  PassPinRedeemBox,
+  RecurringAutoRenewCard,
+} from '../PaywallModal';
+import {
+  formatPremiumRemaining,
+  type SubscriptionAutoRenewInfo,
+  type TrialLinkInfo,
+} from '../../utils/paywallLogic';
 import { LiquidCapsuleBar, SmoothProgressBar, SmoothViewSwitch } from '../ULessonMotion';
 import { normalizeJambQuartet, resolveExamTrack } from '../../utils/examTrackLogic';
 import { ActivityBars } from './HomeScreen';
 import { useCloudSync } from '../../context/CloudSyncContext';
 import { useEntitlement } from '../../context/EntitlementContext';
-import { PWAInstallButton } from '../PWAInstallBanner';
+import { PUBLIC_FREE_LAUNCH_ACTIVE } from '../../utils/freeLaunchAndPwaLogic';
+import { InstallAppHubCard, PWAInstallButton } from '../PWAInstallBanner';
+import { usePWAInstall } from '../../utils/usePWAInstall';
 import { useQuestionBankCounts } from '../../utils/questionBankDb';
 import { BANK_TARGET_PER_SUBJECT } from '../../utils/questionBankLogic';
 import type { QuestionBankTab } from '../QuestionBankManagerModal';
@@ -43,17 +54,23 @@ export function AccountScreen({
   appearanceMode = 'light',
   isPremium = false,
   isAdmin = false,
+  trialLink = null,
+  subscriptionAutoRenew = null,
   clockFormat = '12h',
   onSelectTheme,
   onChangeAppearanceMode,
   onChangeClockFormat,
   onOpenPaywall,
+  onProActivated,
+  onTrialLinkChanged,
+  onSubscriptionAutoRenewChanged,
   onToggleMuted,
   onOpenSubjects,
   onOpenExamSetup,
   onOpenTranscript,
   onOpenLeaderboard,
   onOpenQuestionBank,
+  onOpenWebsite,
   onRetakeDiagnostic,
   onSignOut,
   onPreviewBadgeCelebration,
@@ -63,6 +80,8 @@ export function AccountScreen({
   appearanceMode?: ThemeAppearanceMode;
   isPremium?: boolean;
   isAdmin?: boolean;
+  trialLink?: TrialLinkInfo | null;
+  subscriptionAutoRenew?: SubscriptionAutoRenewInfo | null;
   themeLockMode?: ThemeLockMode;
   themeAutoProgress?: boolean;
   clockFormat?: ClockFormat;
@@ -73,18 +92,27 @@ export function AccountScreen({
   onToggleThemeAutoProgress?: (enabled: boolean) => void;
   onChangeClockFormat?: (fmt: ClockFormat) => void;
   onOpenPaywall?: (reason?: string) => void;
+  onProActivated?: (pro: NonNullable<UserProgress['pro']>, summary: string) => void;
+  onTrialLinkChanged?: (
+    trialLink: TrialLinkInfo | null,
+    trial?: NonNullable<UserProgress['trial']> | null
+  ) => void;
+  onSubscriptionAutoRenewChanged?: (info: SubscriptionAutoRenewInfo | null) => void;
   onToggleMuted: () => void;
   onOpenSubjects: () => void;
   onOpenExamSetup?: () => void;
   onOpenTranscript?: () => void;
   onOpenLeaderboard?: () => void;
   onOpenQuestionBank?: (subj?: SubjectId, tab?: QuestionBankTab) => void;
+  onOpenWebsite?: () => void;
   onRetakeDiagnostic: () => void;
   onSignOut?: () => void;
   onPreviewBadgeCelebration?: (badge: BadgeDef, isPreview?: boolean) => void;
 }) {
+  const [showPinRedeem, setShowPinRedeem] = useState(false);
   const { user, syncStatus, lastSyncedLabel, syncError, signInWithGoogle, signOutCloud, syncNow } = useCloudSync();
-  const { trialDaysRemaining } = useEntitlement();
+  const { isInstalled } = usePWAInstall();
+  const { trialCountdownLabel, isTrialExpired } = useEntitlement();
   const { totalCount: bankTotalCount } = useQuestionBankCounts();
 
   const allTopicsBySubj = getAllTopicsBySubj();
@@ -137,49 +165,100 @@ export function AccountScreen({
         </div>
       </section>
 
-      {/* Plan & EYAK Full Access Pass */}
-      <section className="rtc-card rounded-2xl p-4 sm:p-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
-        <div className="flex flex-col gap-1 min-w-0">
-          <span className="eyebrow text-[var(--gold)]">Study plan and access</span>
-          <h2 className="h20 text-[var(--ink)]">
-            {isPremium
-              ? `${progress.pro?.planName || 'EYAK Premium'} · ${
-                  progress.pro
-                    ? formatPremiumRemaining(progress.pro.until, undefined, progress.pro.pid)
-                    : 'Owner access'
-                }`
-              : `3-day starter trial · ${trialDaysRemaining} ${
-                  trialDaysRemaining === 1 ? 'day' : 'days'
-                } left`}
-          </h2>
-          <p className="text-[13.5px] text-[var(--dim)] leading-relaxed max-w-[60ch]">
-            {isPremium
-              ? 'All 49 JAMB and WAEC/NECO subjects, Live Tutor, Voice Tutor, CBT Mock Exams, Virtual Labs and all 10 colour themes are unlocked.'
-              : 'Starter trial includes basic topic notes and practice for 3 days max. Subscribe from ₦1,000/month (₦4,500 / 6 months · ₦9,000 / year · ₦27,800 / lifetime) for 100% full access.'}
-          </p>
+      {/* Owner-Only Pass PIN Studio (immediately visible at the top for the verified owner only) */}
+      {isAdmin && <AdminPaystackOverview />}
+
+      {/* Plan & Easy Learn Full Access Pass */}
+      <section className="rtc-card rounded-2xl p-4 sm:p-4.5 flex flex-col gap-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+          <div className="flex flex-col gap-1 min-w-0">
+            <span className="eyebrow text-[var(--gold)]">Study plan and access</span>
+            <h2 className="h20 text-[var(--ink)] tabular-nums">
+              {PUBLIC_FREE_LAUNCH_ACTIVE && !progress.pro
+                ? 'Free Launch Edition · 100% Full Access Active (₦0)'
+                : isPremium
+                  ? `${progress.pro?.planName || 'Easy Learn Premium'} · ${
+                      progress.pro
+                        ? formatPremiumRemaining(progress.pro.until, undefined, progress.pro.pid)
+                        : 'Owner access'
+                    }`
+                  : isTrialExpired
+                    ? '1-day free trial expired · App Locked'
+                    : `1-day free trial · ${trialCountdownLabel || '24:00:00'} left`}
+            </h2>
+            <p className="text-[13.5px] text-[var(--dim)] leading-relaxed max-w-[64ch]">
+              {PUBLIC_FREE_LAUNCH_ACTIVE && !progress.pro
+                ? 'Easy Learn is currently published free for all scholars — all 49 JAMB & WAEC subjects, 8 prescribed novels, Live Voice Tutors, CBT Mock Exams, Virtual Science Labs, and all 10 colour themes are unlocked.'
+                : isPremium
+                  ? 'All 49 JAMB and WAEC/NECO subjects, Live Tutor, Voice Tutor, CBT Mock Exams, Virtual Labs and all 10 colour themes are unlocked.'
+                  : '1-day (24-hour) free trial with linked Google Pay or payment account — cancel anytime. Once your countdown expires, everything in the app locks until you subscribe (Monthly ₦1,000, 6-Month ₦4,500, Yearly ₦9,000 auto-renew; Lifetime ₦27,800 one-time).'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {onProActivated && (
+              <button
+                type="button"
+                aria-expanded={showPinRedeem}
+                onClick={() => setShowPinRedeem((v) => !v)}
+                className="btn-tactile paper min-h-[40px] px-4 text-[13px] whitespace-nowrap"
+              >
+                <Icon name="unlock" size={15} />
+                <span>{showPinRedeem ? 'Hide Pass PIN box' : 'Activate Pass PIN'}</span>
+              </button>
+            )}
+            {onOpenPaywall && !PUBLIC_FREE_LAUNCH_ACTIVE && (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenPaywall(
+                    isPremium
+                      ? 'Manage or switch your Easy Learn subscription plan'
+                      : 'Subscribe from ₦1,000/month on Paystack (auto-renews unless cancelled; Lifetime is one-time)'
+                  )
+                }
+                className="btn-tactile indigo min-h-[40px] px-4 text-[13.5px] whitespace-nowrap"
+              >
+                <Icon name={isPremium ? 'crown' : 'unlock'} size={16} />
+                <span>{isPremium ? 'Manage subscription' : 'Subscribe now'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {onOpenPaywall && (
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={() =>
-                onOpenPaywall(
-                  isPremium
-                    ? 'Extend your EYAK study pass with another Pass PIN or online checkout'
-                    : 'Subscribe from ₦1,000/month for 100% full access to Tutors, CBT Mocks, Virtual Labs and Colour Themes'
-                )
-              }
-              className="btn-tactile indigo min-h-[40px] px-4 text-[13.5px] whitespace-nowrap"
-            >
-              <Icon name={isPremium ? 'crown' : 'unlock'} size={16} />
-              <span>{isPremium ? 'Manage or extend pass' : 'Unlock full access'}</span>
-            </button>
+        {!isPremium && (
+          <OneDayTrialLinkCard
+            devToken={progress.devToken}
+            defaultEmail={user?.email || ''}
+            trialLink={trialLink}
+            trialCountdownLabel={trialCountdownLabel}
+            isTrialExpired={isTrialExpired}
+            onChanged={onTrialLinkChanged}
+          />
+        )}
+
+        {isPremium && progress.pro && (
+          <RecurringAutoRenewCard
+            devToken={progress.devToken}
+            pro={progress.pro}
+            subscriptionAutoRenew={subscriptionAutoRenew}
+            onChanged={onSubscriptionAutoRenewChanged}
+          />
+        )}
+
+        {showPinRedeem && onProActivated && (
+          <div className="pt-3 border-t border-[var(--line)]">
+            <PassPinRedeemBox
+              devToken={progress.devToken}
+              onActivated={(pro, summary) => {
+                onProActivated(pro, summary);
+              }}
+            />
           </div>
         )}
       </section>
 
-      {isAdmin && <AdminVoucherStudio />}
+      <InstallAppHubCard />
 
       {/* Account Backup & Offline App */}
       <section className="grid grid-cols-1 min-[820px]:grid-cols-12 gap-3.5 items-stretch">
@@ -243,7 +322,9 @@ export function AccountScreen({
             <span className="eyebrow text-[var(--gold)]">Offline study and reports</span>
             <h2 className="h20 text-[var(--ink)]">App and report card</h2>
             <p className="text-[13.5px] text-[var(--dim)] leading-relaxed">
-              Add EYAK to your home screen to study without mobile data, or print your report card.
+              {isInstalled
+                ? 'Access your offline question bank, leaderboard standing, and printable report card anytime.'
+                : 'Add Easy Learn to your home screen to study without mobile data, or print your report card.'}
             </p>
           </div>
 
@@ -290,7 +371,7 @@ export function AccountScreen({
             <span className="eyebrow text-[var(--gold)]">Appearance and themes</span>
             <h2 className="h20 text-[var(--ink)]">Display mode and colour themes</h2>
             <p className="text-[13px] text-[var(--dim)]">
-              Switch between Light and Dark mode anytime. Extra colour themes unlock with any EYAK pass from ₦1,000/month.
+              Switch between Light and Dark mode anytime. Extra colour themes unlock with any Easy Learn pass from ₦1,000/month.
             </p>
           </div>
           <MasteryThemeGallery
@@ -356,6 +437,16 @@ export function AccountScreen({
             </span>
             <Icon name="go" size={17} className="shrink-0" />
           </button>
+
+          {onOpenWebsite && (
+            <button type="button" onClick={onOpenWebsite} className="btn-tactile paper justify-between whitespace-nowrap">
+              <span className="flex items-center gap-2.5 min-w-0">
+                <Icon name="globe" size={18} className="text-[var(--gold)] shrink-0" />
+                <span className="truncate">Visit Easy Learn public website</span>
+              </span>
+              <Icon name="go" size={17} className="shrink-0" />
+            </button>
+          )}
 
           {onSignOut && (
             <button type="button" onClick={onSignOut} className="btn-tactile paper justify-between whitespace-nowrap">

@@ -19,6 +19,7 @@ import {
   BOSS_TIME,
   PRACTICE_LEN,
   STORAGE_KEY,
+  SUBJECT_INFO,
   bossList,
   dueList,
   dxList,
@@ -54,9 +55,13 @@ import { getMasteryThemeById } from './data/masteryThemes';
 import {
   hasPremiumThemeAccess,
   isThemeUnlocked,
-  resolveEffectiveThemeId,
   resolveEffectiveThemeMode,
 } from './utils/masteryThemeLogic';
+import {
+  PUBLIC_FREE_LAUNCH_ACTIVE,
+  resolveRuntimeThemeId,
+} from './utils/freeLaunchAndPwaLogic';
+import { isStandaloneAppMode } from './utils/usePWAInstall';
 import {
   computeScreenTransition,
   type ScreenTransitionSpec,
@@ -72,6 +77,7 @@ import {
 } from './context/LiveCoachContext';
 import { SUBJECT_TUTOR_REGISTRY } from './utils/tutorRegistry';
 import { DxIntroScreen, WelcomeScreen } from './components/screens/OnboardingScreen';
+import { LandingWebsiteScreen } from './components/screens/LandingWebsiteScreen';
 import { HomeScreen } from './components/screens/HomeScreen';
 import { TopicsMapScreen } from './components/screens/TopicsMapScreen';
 import { TopicHubScreen } from './components/screens/TopicHubScreen';
@@ -81,8 +87,19 @@ import { QuizScreen, SummaryScreen } from './components/screens/QuizScreen';
 import { TopicTestScreen } from './components/screens/TopicTestScreen';
 import { LabListScreen, LabPlayerScreen } from './components/screens/LabScreens';
 import { SubjectStudioScreen } from './components/screens/SubjectStudioScreen';
+import { NovelsStudioScreen } from './components/screens/NovelsStudioScreen';
 import { ChemFormulasScreen } from './components/screens/ChemFormulasScreen';
 import { hasFormulaSheet, hasSubjectStudio } from './utils/subjectStudioMeta';
+import {
+  getDefaultNovelIdForSubject,
+  getNovelById,
+  recordNovelChapterQuiz,
+  recordNovelFinalExamAndRankPoints,
+  recordNovelQuizScore,
+  toggleNovelChapterRead,
+  updateNovelPersonalNotes,
+  type NovelFinalExamEvaluation,
+} from './utils/novelsLogic';
 import { ReviewScreen } from './components/screens/ReviewScreen';
 import { AccountScreen, SubjectsScreen } from './components/screens/AccountScreen';
 import { CbtExamScreen } from './components/screens/CbtExamScreen';
@@ -110,17 +127,41 @@ import {
 import { ExamSetupScreen, type ExamSetupResult } from './components/screens/ExamSetupScreen';
 import { QuestionBankManagerModal, type QuestionBankTab } from './components/QuestionBankManagerModal';
 import { PaywallModal } from './components/PaywallModal';
+import {
+  DemoCountdownBar,
+  DemoExpiredModal,
+  TrialCountdownBar,
+} from './components/DemoSessionBanner';
+import {
+  computeDemoSessionStatus,
+  loadDemoSession,
+  pauseDemoSessionKeepClock,
+  saveDemoSession,
+  startOrResumeDemoSession,
+  type DemoSessionRecord,
+} from './utils/demoSessionLogic';
 import { EntitlementProvider } from './context/EntitlementContext';
 import {
   FREE_TRIAL_DAYS,
+  FREE_TRIAL_DURATION_MS,
+  computeTrialCountdownStatus,
   computeTrialStatus,
   generateDeviceSecretToken,
+  getPremiumPlanById,
   hasActivePremium,
   isValidDeviceSecretToken,
   isValidPaystackReference,
   verifySignedProReceiptAsync,
   verifySignedTrialReceiptAsync,
+  type PremiumPlanId,
+  type SubscriptionAutoRenewInfo,
+  type TrialLinkInfo,
 } from './utils/paywallLogic';
+import {
+  EXAM_TRACK_SHOWCASES,
+  type WebsiteInstantAction,
+  type WebsiteOnboardingPreset,
+} from './utils/websiteContentLogic';
 
 const ENTITLEMENT_PUBKEY_STORAGE_KEY = 'rtc_pub_jwk_v1';
 
@@ -151,6 +192,7 @@ function saveCachedEntitlementPubKey(jwk: JsonWebKey | null | undefined): void {
 function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenName; initialDuelCode: string | null } {
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const autostart = params?.get('autostart') === '1';
+  const forceWebsite = params?.get('site') === '1' || params?.get('screen') === 'landing';
   const screenParam = params?.get('screen');
   const duelParam = params?.get('duel') || null;
   const parsedDuel = duelParam ? parseDuelCode(duelParam) : null;
@@ -195,6 +237,14 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
           startedDay: Math.min(curDay, Math.floor(Number(parsed.trial.startedDay))),
           untilDay:
             Math.min(curDay, Math.floor(Number(parsed.trial.startedDay))) + FREE_TRIAL_DAYS - 1,
+          startedAtMs:
+            typeof parsed.trial.startedAtMs === 'number' && Number.isFinite(parsed.trial.startedAtMs)
+              ? parsed.trial.startedAtMs
+              : undefined,
+          endsAtMs:
+            typeof parsed.trial.endsAtMs === 'number' && Number.isFinite(parsed.trial.endsAtMs)
+              ? parsed.trial.endsAtMs
+              : undefined,
           sig: typeof parsed.trial.sig === 'string' ? parsed.trial.sig : undefined,
         }
       : null;
@@ -250,7 +300,7 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
   }
 
   if (typeof document !== 'undefined') {
-    const initTheme = resolveEffectiveThemeId(merged);
+    const initTheme = resolveRuntimeThemeId(merged);
     const initMode = resolveEffectiveThemeMode(merged);
     document.documentElement.dataset.theme = initTheme;
     document.documentElement.dataset.mode = initMode;
@@ -268,6 +318,14 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
     return { progress: merged, startScreen: 'duel', initialDuelCode: parsedDuel.code };
   }
 
+  if (forceWebsite) {
+    return { progress: merged, startScreen: 'landing', initialDuelCode: null };
+  }
+
+  if (screenParam === 'welcome') {
+    return { progress: merged, startScreen: 'welcome', initialDuelCode: null };
+  }
+
   if (screenParam === 'examsetup') {
     setSessionUnlocked();
     if (!merged.name) {
@@ -275,6 +333,15 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
       merged.ob = 1;
     }
     return { progress: merged, startScreen: 'examsetup', initialDuelCode: null };
+  }
+
+  if (screenParam === 'novels') {
+    setSessionUnlocked();
+    if (!merged.name) {
+      merged.name = 'Ada';
+      merged.ob = 1;
+    }
+    return { progress: merged, startScreen: 'novels', initialDuelCode: null };
   }
 
   if (!autostart && merged.name && isSessionUnlocked() && !merged.flags?.examSetupDone) {
@@ -285,7 +352,13 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
     return { progress: merged, startScreen: 'home', initialDuelCode: null };
   }
 
-  return { progress: merged, startScreen: 'welcome', initialDuelCode: null };
+  // When launched from the installed app icon on Android, iPhone, or Laptop,
+  // enter straight into the native app sign-in/get-started flow like a Play Store app.
+  if (isStandaloneAppMode()) {
+    return { progress: merged, startScreen: 'welcome', initialDuelCode: null };
+  }
+
+  return { progress: merged, startScreen: 'landing', initialDuelCode: null };
 }
 
 export default function App() {
@@ -306,10 +379,21 @@ export default function App() {
   const [activeTopicId, setActiveTopicId] = useState<string>('quad');
   const [activeLabId, setActiveLabId] = useState<string>('bisect-line');
   const [labReturnScreen, setLabReturnScreen] = useState<ScreenName>('topics');
+  const [lessonReturnScreen, setLessonReturnScreen] = useState<ScreenName>('topic');
+  const [quizReturnScreen, setQuizReturnScreen] = useState<ScreenName | null>(null);
+  const [companionReturnScreen, setCompanionReturnScreen] = useState<ScreenName>('home');
   const [studioReturnScreen, setStudioReturnScreen] = useState<ScreenName>('topics');
+  const [activeNovelId, setActiveNovelId] = useState<string>('lekki-headmaster');
+  const [novelsReturnScreen, setNovelsReturnScreen] = useState<ScreenName>('home');
   const [formulaTopicFilterId, setFormulaTopicFilterId] = useState<string | null>(null);
   const [formulaReturnScreen, setFormulaReturnScreen] = useState<ScreenName>('home');
   const [examSetupReturnScreen, setExamSetupReturnScreen] = useState<ScreenName>('home');
+  const [welcomeAuthMode, setWelcomeAuthMode] = useState<'login' | 'register'>('register');
+  const [fromWebsiteBlueprint, setFromWebsiteBlueprint] = useState<boolean>(false);
+  const [pendingWebsiteIntent, setPendingWebsiteIntent] = useState<{
+    destination: 'default' | 'cbt' | 'paywall';
+    planId?: PremiumPlanId;
+  } | null>(null);
   const [quizSession, setQuizSession] = useState<QuizSession | null>(null);
   const [bossSession, setBossSession] = useState<TopicTestSession | null>(null);
   const [badgeToast, setBadgeToast] = useState<BadgeDef | null>(null);
@@ -327,11 +411,21 @@ export default function App() {
     open: boolean;
     reason?: string;
     initialRef?: string | null;
+    initialPlanId?: PremiumPlanId | null;
   }>({ open: false });
   const [billingMeta, setBillingMeta] = useState<{
     paystackEnabled: boolean;
     isAdmin: boolean;
-  }>({ paystackEnabled: false, isAdmin: false });
+    trialLink: TrialLinkInfo | null;
+    subscriptionAutoRenew: SubscriptionAutoRenewInfo | null;
+  }>({
+    paystackEnabled: false,
+    isAdmin: false,
+    trialLink: null,
+    subscriptionAutoRenew: null,
+  });
+  const [demoSession, setDemoSession] = useState<DemoSessionRecord | null>(() => loadDemoSession());
+  const [clockNowMs, setClockNowMs] = useState<number>(() => Date.now());
   const [isExamHallActive, setIsExamHallActive] = useState<boolean>(false);
 
   // Hold milestone pop-ups while inside an active lesson, quiz, topic test, or mock exam
@@ -348,8 +442,8 @@ export default function App() {
     setQbankModal({ open: true, subject: subj || null, tab });
   }, []);
 
-  const handleOpenPaywall = useCallback((reason?: string) => {
-    setPaywallModal({ open: true, reason, initialRef: null });
+  const handleOpenPaywall = useCallback((reason?: string, initialPlanId?: PremiumPlanId | null) => {
+    setPaywallModal({ open: true, reason, initialRef: null, initialPlanId: initialPlanId || null });
   }, []);
 
   const [entitlementPubKey, setEntitlementPubKey] = useState<JsonWebKey | null>(() =>
@@ -381,6 +475,8 @@ export default function App() {
           entitlementPublicKey?: JsonWebKey;
           pro?: NonNullable<UserProgress['pro']> | null;
           trial?: NonNullable<UserProgress['trial']> | null;
+          trialLink?: TrialLinkInfo | null;
+          subscriptionAutoRenew?: SubscriptionAutoRenewInfo | null;
         };
         if (cancelled) return;
         if (data.entitlementPublicKey && data.entitlementPublicKey.kty === 'EC') {
@@ -390,6 +486,8 @@ export default function App() {
         setBillingMeta({
           paystackEnabled: Boolean(data.paystackEnabled),
           isAdmin: Boolean(data.isAdmin),
+          trialLink: data.trialLink || null,
+          subscriptionAutoRenew: data.subscriptionAutoRenew || null,
         });
         setProgress((prev) => {
           const nextOwner = data.isAdmin ? 1 : 0;
@@ -400,7 +498,8 @@ export default function App() {
             prev.pro?.sig === nextPro?.sig && prev.pro?.until === nextPro?.until;
           const sameTrial =
             prev.trial?.sig === nextTrial?.sig &&
-            prev.trial?.startedDay === nextTrial?.startedDay;
+            prev.trial?.startedDay === nextTrial?.startedDay &&
+            prev.trial?.endsAtMs === nextTrial?.endsAtMs;
           if (prev.owner === nextOwner && samePro && sameTrial) return prev;
           return {
             ...prev,
@@ -415,6 +514,10 @@ export default function App() {
     };
 
     const unsub = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        saveDemoSession(null);
+        setDemoSession(null);
+      }
       void checkStatus(u);
     });
     return () => {
@@ -519,7 +622,7 @@ export default function App() {
           setProgress((prev) => ({ ...prev, pro: data.pro! }));
           setPaywallModal({
             open: true,
-            reason: 'Payment verified! Your EYAK Premium pass is now active.',
+            reason: 'Payment verified! Your Easy Learn Premium pass is now active.',
             initialRef: null,
           });
         } else {
@@ -551,24 +654,61 @@ export default function App() {
     [progress, effectiveOwner]
   );
   const isPremiumStudent = React.useMemo(
-    () => hasPremiumThemeAccess(entitledProgress),
+    () => PUBLIC_FREE_LAUNCH_ACTIVE || hasPremiumThemeAccess(entitledProgress),
     [entitledProgress]
+  );
+  const demoStatus = React.useMemo(
+    () => computeDemoSessionStatus(demoSession, clockNowMs),
+    [demoSession, clockNowMs]
   );
   const trialStatus = React.useMemo(
     () => computeTrialStatus(entitledProgress),
     [entitledProgress]
   );
+  const trialCountdown = React.useMemo(
+    () =>
+      computeTrialCountdownStatus({
+        trial: entitledProgress.trial,
+        trialLink: billingMeta.trialLink,
+        nowMs: clockNowMs,
+      }),
+    [entitledProgress.trial, billingMeta.trialLink, clockNowMs]
+  );
+  const isWorkspaceScreen =
+    screen !== 'landing' && screen !== 'welcome' && screen !== 'examsetup';
+  const isInsideAppSession = screen !== 'landing' && screen !== 'welcome';
+  const isDemoLockedOut =
+    isInsideAppSession && !isPremiumStudent && demoStatus.isDemoActive && demoStatus.isExpired;
   const isTrialLockedOut =
-    screen !== 'welcome' &&
-    screen !== 'examsetup' &&
+    !PUBLIC_FREE_LAUNCH_ACTIVE &&
+    isWorkspaceScreen &&
+    !demoStatus.isDemoActive &&
     !isPremiumStudent &&
-    trialStatus.isTrialExpired;
+    (trialStatus.isTrialExpired || trialCountdown.isExpired);
+
+  // Live 1-second ticker for active 5-minute demo countdown and active 1-day free trial countdown
+  const shouldTickCountdown =
+    (demoStatus.isDemoActive && !demoStatus.isExpired) ||
+    (!PUBLIC_FREE_LAUNCH_ACTIVE &&
+      isWorkspaceScreen &&
+      !demoStatus.isDemoActive &&
+      !isPremiumStudent &&
+      !trialCountdown.isExpired);
+
+  useEffect(() => {
+    if (!shouldTickCountdown) return;
+    setClockNowMs(Date.now());
+    const id = window.setInterval(() => {
+      setClockNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [shouldTickCountdown]);
   const effectiveThemeMode = React.useMemo(
     () => resolveEffectiveThemeMode(entitledProgress),
     [entitledProgress]
   );
   const effectiveThemeId = React.useMemo(
-    () => resolveEffectiveThemeId(entitledProgress),
+    () => resolveRuntimeThemeId(entitledProgress),
     [entitledProgress]
   );
 
@@ -927,9 +1067,36 @@ export default function App() {
           },
         };
       });
+      if (pendingWebsiteIntent?.destination === 'paywall') {
+        const plan = pendingWebsiteIntent.planId
+          ? getPremiumPlanById(pendingWebsiteIntent.planId)
+          : null;
+        setPendingWebsiteIntent(null);
+        setScreen('home');
+        handleOpenPaywall(
+          plan
+            ? `Activate your ${plan.name} (${plan.shortLabel}) pass for full 49-subject access.`
+            : undefined,
+          pendingWebsiteIntent.planId || null
+        );
+        return;
+      }
+      if (pendingWebsiteIntent?.destination === 'cbt') {
+        setPendingWebsiteIntent(null);
+        setScreen('home');
+        const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
+        if (hasActivePremium(progress) || satOpen) {
+          setScreen('cbt');
+        } else {
+          handleOpenPaywall(
+            'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+          );
+        }
+        return;
+      }
       setScreen(examSetupReturnScreen);
     },
-    [examSetupReturnScreen]
+    [examSetupReturnScreen, handleOpenPaywall, pendingWebsiteIntent, progress]
   );
 
   const handleCompleteOnboarding = (cfg: {
@@ -939,17 +1106,25 @@ export default function App() {
     target: number;
   }) => {
     setSessionUnlocked();
+    saveDemoSession(null);
+    setDemoSession(null);
     const orderedSubjs = SUBJECT_IDS.filter((id) => cfg.subjs.includes(id));
     const finalSubjs = orderedSubjs.length > 0 ? orderedSubjs : cfg.subjs;
     const primarySubj = finalSubjs[0] || 'maths';
     const d = today();
+    const nowMs = Date.now();
     const nextScreenAfterSetup: ScreenName = cfg.classLevel !== 'all' ? 'topics' : 'dxintro';
     setProgress((prev) => ({
       ...prev,
       name: cfg.name,
       subjs: finalSubjs,
       subj: primarySubj,
-      trial: prev.trial || { startedDay: d, untilDay: d + FREE_TRIAL_DAYS - 1 },
+      trial: prev.trial || {
+        startedDay: d,
+        untilDay: d + FREE_TRIAL_DAYS - 1,
+        startedAtMs: nowMs,
+        endsAtMs: nowMs + FREE_TRIAL_DURATION_MS,
+      },
       chemClass: cfg.classLevel,
       mathClass: cfg.classLevel,
       fmathClass: cfg.classLevel,
@@ -977,17 +1152,40 @@ export default function App() {
     isExisting: boolean;
   }) => {
     setSessionUnlocked();
+    saveDemoSession(null);
+    setDemoSession(null);
     if (cfg.isExisting) {
       const d = today();
+      const nowMs = Date.now();
       setProgress((prev) => ({
         ...prev,
         name: cfg.name || prev.name || 'Scholar',
-        trial: prev.trial || { startedDay: d, untilDay: d + FREE_TRIAL_DAYS - 1 },
+        trial: prev.trial || {
+          startedDay: d,
+          untilDay: d + FREE_TRIAL_DAYS - 1,
+          startedAtMs: nowMs,
+          endsAtMs: nowMs + FREE_TRIAL_DURATION_MS,
+        },
         ob: 1,
       }));
       if (!progress.flags?.examSetupDone) {
         setExamSetupReturnScreen('home');
         setScreen('examsetup');
+      } else if (pendingWebsiteIntent?.destination === 'paywall') {
+        const plan = pendingWebsiteIntent.planId
+          ? getPremiumPlanById(pendingWebsiteIntent.planId)
+          : null;
+        setPendingWebsiteIntent(null);
+        setScreen('home');
+        handleOpenPaywall(
+          plan
+            ? `Activate your ${plan.name} (${plan.shortLabel}) pass for full 49-subject access.`
+            : undefined,
+          pendingWebsiteIntent.planId || null
+        );
+      } else if (pendingWebsiteIntent?.destination === 'cbt') {
+        setPendingWebsiteIntent(null);
+        openCbtGated();
       } else {
         setScreen('home');
       }
@@ -1001,12 +1199,31 @@ export default function App() {
     }
   };
 
+  const startDemoMode = useCallback(() => {
+    const nowMs = Date.now();
+    const next = startOrResumeDemoSession(loadDemoSession(), nowMs);
+    saveDemoSession(next);
+    setDemoSession(next);
+    setClockNowMs(nowMs);
+  }, []);
+
+  const exitDemoToScreen = useCallback((dest: 'landing' | 'welcome', authMode?: 'login' | 'register') => {
+    const paused = pauseDemoSessionKeepClock(loadDemoSession());
+    saveDemoSession(paused);
+    setDemoSession(paused);
+    if (authMode) setWelcomeAuthMode(authMode);
+    setScreen(dest);
+  }, []);
+
   const handleSkipToDemo = () => {
     setSessionUnlocked();
+    startDemoMode();
     setProgress((prev) => ({
       ...prev,
       name: prev.name.trim() || 'Ada',
       ob: 1,
+      examTrack: prev.examTrack || 'jamb',
+      flags: { ...(prev.flags || {}), examSetupDone: 1 },
       dx: prev.dx || today(),
       sx: {
         maths: { dx: today() },
@@ -1029,8 +1246,11 @@ export default function App() {
 
   const handleSignOut = () => {
     clearSessionUnlock();
+    const paused = pauseDemoSessionKeepClock(loadDemoSession());
+    saveDemoSession(paused);
+    setDemoSession(paused);
     setPaywallModal({ open: false, initialRef: null });
-    setScreen('welcome');
+    setScreen('landing');
   };
 
   const startDiagnostic = (subjOverride?: SubjectId) => {
@@ -1095,6 +1315,7 @@ export default function App() {
     const firstQ = pickPractice(progress, topic, startLvl, []);
     if (!firstQ) return;
     setActiveTopicId(tid);
+    setQuizReturnScreen(null);
     setQuizSession({
       kind: 'practice',
       tid,
@@ -1118,6 +1339,7 @@ export default function App() {
     const list = dueList(progress, (id) => findQuestion(progress, progress.subj, id), early);
     if (!list.length) return;
     const topics = getTopics(progress.subj);
+    setQuizReturnScreen(null);
     setQuizSession({
       kind: 'review',
       list,
@@ -1418,17 +1640,142 @@ export default function App() {
   const openLabDirectoryGated = () => {
     if (!isPremiumStudent) {
       handleOpenPaywall(
-        'Virtual Practical Labs are locked during your 3-day starter trial. Subscribe from ₦1,000/month to unlock every practical lab.'
+        'Virtual Practical Labs are locked during your 1-day free trial. Subscribe from ₦1,000/month to unlock every practical lab.'
       );
       return;
     }
     setScreen('lab');
   };
 
+  const openNovelsStudio = (returnTo: ScreenName, novelId?: string) => {
+    setActiveNovelId(novelId || getDefaultNovelIdForSubject(progress.subj));
+    setNovelsReturnScreen(returnTo);
+    setScreen('novels');
+  };
+
+  const handleToggleNovelChapter = useCallback((novelId: string, chapterNumber: number) => {
+    setProgress((prev) => ({
+      ...prev,
+      novelProgress: toggleNovelChapterRead(
+        prev.novelProgress,
+        novelId,
+        chapterNumber,
+        prev.novelNotebook
+      ),
+    }));
+  }, []);
+
+  const handleRecordNovelChapterQuiz = useCallback(
+    (novelId: string, chapterNumber: number, score: number, total: number) => {
+      setProgress((prev) => {
+        const res = recordNovelChapterQuiz(
+          prev.novelProgress,
+          novelId,
+          chapterNumber,
+          score,
+          total,
+          prev.novelNotebook
+        );
+        return {
+          ...prev,
+          xp: prev.xp + (res.passed ? 15 : 0),
+          novelProgress: res.novelProgress,
+        };
+      });
+    },
+    []
+  );
+
+  const handleRecordNovelQuiz = useCallback((novelId: string, score: number, total: number) => {
+    setProgress((prev) => ({
+      ...prev,
+      novelProgress: recordNovelQuizScore(
+        prev.novelProgress,
+        novelId,
+        score,
+        total,
+        prev.novelNotebook
+      ),
+    }));
+  }, []);
+
+  const handleCompleteNovelFinalExam = useCallback(
+    (novelId: string, evaluation: NovelFinalExamEvaluation) => {
+      const novel = getNovelById(novelId);
+      let awarded = { newlyAwardedRp: 0, newlyAwardedXp: 0 };
+      setProgress((prev) => {
+        const res = recordNovelFinalExamAndRankPoints(
+          prev.novelProgress,
+          novel,
+          evaluation,
+          prev.novelNotebook
+        );
+        awarded = {
+          newlyAwardedRp: res.newlyAwardedRp,
+          newlyAwardedXp: res.newlyAwardedXp,
+        };
+        return {
+          ...prev,
+          xp: prev.xp + res.newlyAwardedXp,
+          novelProgress: res.novelProgress,
+        };
+      });
+      return awarded;
+    },
+    []
+  );
+
+  const handleUpdateNovelNotes = useCallback((novelId: string, notes: string) => {
+    setProgress((prev) => ({
+      ...prev,
+      novelProgress: updateNovelPersonalNotes(
+        prev.novelProgress,
+        novelId,
+        notes,
+        prev.novelNotebook
+      ),
+    }));
+  }, []);
+
+  const handleOpenNovelCurriculumTopic = (targetSubj: SubjectId, topicId: string) => {
+    const subjTopics = getTopics(targetSubj);
+    if (!PUBLIC_FREE_LAUNCH_ACTIVE && isTopicLocked(progress, topicId, subjTopics)) {
+      const lockedTopic = getTopic(targetSubj, topicId);
+      handleOpenPaywall(
+        lockedTopic
+          ? `Unlock “${lockedTopic.name}” and all 600+ topics across 49 subjects`
+          : 'Unlock all 600+ topics across 49 subjects'
+      );
+      return;
+    }
+    setProgress((prev) => {
+      const hasSubj = prev.subjs.includes(targetSubj);
+      const nextSubjs = hasSubj
+        ? prev.subjs
+        : SUBJECT_IDS.filter((id) => id === targetSubj || prev.subjs.includes(id));
+      return {
+        ...prev,
+        subj: targetSubj,
+        subjs: nextSubjs,
+      };
+    });
+    setActiveTopicId(topicId);
+    setScreen('topic');
+  };
+
   const openStudioGated = (returnTo: ScreenName) => {
+    if (progress.subj === 'eng') {
+      openNovelsStudio(returnTo, 'lekki-headmaster');
+      return;
+    }
+    if (progress.subj === 'lit') {
+      setStudioReturnScreen(returnTo);
+      setScreen('studio');
+      return;
+    }
     if (!isPremiumStudent) {
       handleOpenPaywall(
-        'Subject Studios & Practical Companions are locked during your 3-day starter trial. Subscribe from ₦1,000/month for 100% full access.'
+        'Subject Studios & Practical Companions are locked during your 1-day free trial. Subscribe from ₦1,000/month for 100% full access.'
       );
       return;
     }
@@ -1439,16 +1786,17 @@ export default function App() {
   const openSandboxesGated = () => {
     if (!isPremiumStudent) {
       handleOpenPaywall(
-        'Interactive Try-it Labs are locked during your 3-day starter trial. Subscribe from ₦1,000/month for 100% full access.'
+        'Interactive Try-it Labs are locked during your 1-day free trial. Subscribe from ₦1,000/month for 100% full access.'
       );
       return;
     }
+    setCompanionReturnScreen('home');
     setScreen('sandboxes');
   };
 
   const openTopic = (tid: string) => {
     const topics = getTopics(progress.subj);
-    if (isTopicLocked(progress, tid, topics)) {
+    if (!PUBLIC_FREE_LAUNCH_ACTIVE && isTopicLocked(progress, tid, topics)) {
       const lockedTopic = getTopic(progress.subj, tid);
       handleOpenPaywall(
         lockedTopic
@@ -1463,7 +1811,7 @@ export default function App() {
 
   const openLesson = (tid: string) => {
     const topics = getTopics(progress.subj);
-    if (isTopicLocked(progress, tid, topics)) {
+    if (!PUBLIC_FREE_LAUNCH_ACTIVE && isTopicLocked(progress, tid, topics)) {
       const lockedTopic = getTopic(progress.subj, tid);
       handleOpenPaywall(
         lockedTopic
@@ -1472,6 +1820,7 @@ export default function App() {
       );
       return;
     }
+    setLessonReturnScreen('topic');
     setActiveTopicId(tid);
     setScreen('lesson');
   };
@@ -1479,13 +1828,272 @@ export default function App() {
   const openLabPlayer = (labId: string, returnTo: ScreenName) => {
     if (!isPremiumStudent) {
       handleOpenPaywall(
-        'Virtual Practical Labs are locked during your 3-day starter trial. Subscribe from ₦1,000/month to unlock every practical lab.'
+        'Virtual Practical Labs are locked during your 1-day free trial. Subscribe from ₦1,000/month to unlock every practical lab.'
       );
       return;
     }
     setActiveLabId(labId);
     setLabReturnScreen(returnTo);
     setScreen('labrun');
+  };
+
+  const applyWebsiteBlueprintToState = (
+    chosenTrack: UserProgress['examTrack'],
+    preferredSubject?: SubjectId,
+    preset?: WebsiteOnboardingPreset,
+    previewThemeId?: MasteryThemeId,
+    seedDemoScholar = false
+  ) => {
+    const d = today();
+    setProgress((prev) => {
+      const mergedIds = preset?.enrolledSubjs?.length
+        ? SUBJECT_IDS.filter(
+            (id) =>
+              preset.enrolledSubjs!.includes(id) ||
+              (preferredSubject && id === preferredSubject)
+          )
+        : preferredSubject && !prev.subjs.includes(preferredSubject)
+          ? SUBJECT_IDS.filter((id) => id === preferredSubject || prev.subjs.includes(id))
+          : prev.subjs;
+
+      const finalSubjs = mergedIds.length > 0 ? mergedIds : prev.subjs;
+      const nextSubj = preferredSubject || preset?.jambQuartet?.[0] || prev.subj;
+      const nextThemeId =
+        previewThemeId &&
+        isThemeUnlocked(getMasteryThemeById(previewThemeId), {
+          ...prev,
+          owner: prev.owner || (billingMeta.isAdmin ? 1 : 0),
+        })
+          ? previewThemeId
+          : prev.themeId;
+      const basePlan = prev.studyPlan || getDefaultStudyPlan(finalSubjs);
+
+      return {
+        ...prev,
+        name: seedDemoScholar ? prev.name.trim() || 'Ada' : prev.name,
+        ob: seedDemoScholar ? 1 : prev.ob,
+        dx: seedDemoScholar ? prev.dx || d : prev.dx,
+        trial:
+          seedDemoScholar && !prev.trial
+            ? { startedDay: d, untilDay: d + FREE_TRIAL_DAYS - 1 }
+            : prev.trial,
+        examTrack: chosenTrack || prev.examTrack,
+        flags: seedDemoScholar
+          ? { ...(prev.flags || {}), examSetupDone: 1 }
+          : prev.flags,
+        jambSubjects: preset?.jambQuartet?.length ? [...preset.jambQuartet] : prev.jambSubjects,
+        subj: nextSubj,
+        subjs: finalSubjs,
+        target: preset?.targetPct ?? prev.target,
+        leaderboardCampusGoal: preset?.campusGoal || prev.leaderboardCampusGoal,
+        themeId: nextThemeId,
+        studyPlan: {
+          ...basePlan,
+          examType: chosenTrack || basePlan.examType,
+          focusSubjects: finalSubjs.slice(0, 6),
+        },
+        sx: seedDemoScholar
+          ? {
+              maths: { dx: d },
+              fmaths: { dx: d },
+              chem: { dx: d },
+              phys: { dx: d },
+              bio: { dx: d },
+              agric: { dx: d },
+              geog: { dx: d },
+              econ: { dx: d },
+              eng: { dx: d },
+              civic: { dx: d },
+              digitech: { dx: d },
+              dataproc: { dx: d },
+              ...prev.sx,
+            }
+          : prev.sx,
+      };
+    });
+  };
+
+  const handleWebsiteInstantAction = (action: WebsiteInstantAction) => {
+    if (action.type === 'choose-pass') {
+      const plan = getPremiumPlanById(action.planId);
+      applyWebsiteBlueprintToState(
+        action.examTrack,
+        action.preset?.jambQuartet?.[0],
+        action.preset,
+        action.previewThemeId,
+        false
+      );
+      if (PUBLIC_FREE_LAUNCH_ACTIVE) {
+        if (progress.name.trim() && isSessionUnlocked()) {
+          setScreen('home');
+        } else {
+          setFromWebsiteBlueprint(true);
+          setPendingWebsiteIntent(null);
+          setWelcomeAuthMode('register');
+          setScreen('welcome');
+        }
+        return;
+      }
+      if (progress.name.trim() && isSessionUnlocked()) {
+        setScreen('home');
+        handleOpenPaywall(
+          plan
+            ? `Activate your ${plan.name} (${plan.shortLabel}) pass for full 49-subject access.`
+            : undefined,
+          action.planId
+        );
+      } else {
+        setFromWebsiteBlueprint(true);
+        setPendingWebsiteIntent({ destination: 'paywall', planId: action.planId });
+        setWelcomeAuthMode('register');
+        setScreen('welcome');
+      }
+      return;
+    }
+
+    if (action.type === 'live-cbt') {
+      applyWebsiteBlueprintToState(
+        action.examTrack,
+        action.preset?.jambQuartet?.[0] || 'eng',
+        action.preset,
+        action.previewThemeId,
+        false
+      );
+      const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
+      if (progress.name.trim() && isSessionUnlocked()) {
+        if (isPremiumStudent || satOpen) {
+          setScreen('cbt');
+        } else {
+          setScreen('home');
+          handleOpenPaywall(
+            'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+          );
+        }
+      } else {
+        setFromWebsiteBlueprint(true);
+        setPendingWebsiteIntent({ destination: 'cbt' });
+        setWelcomeAuthMode('register');
+        setScreen('welcome');
+      }
+      return;
+    }
+
+    const isFullDemoDashboard =
+      action.type === 'demo-dashboard' || action.type === 'open-novel';
+    const isRealAuthenticatedUser = Boolean(
+      auth.currentUser || (progress.name.trim() && isSessionUnlocked() && !demoSession?.active)
+    );
+    if (!isRealAuthenticatedUser) {
+      startDemoMode();
+    }
+    if (isFullDemoDashboard) {
+      setSessionUnlocked();
+    }
+    const targetSubj: SubjectId =
+      ('subj' in action && action.subj) ||
+      action.preset?.jambQuartet?.[0] ||
+      progress.subj ||
+      'eng';
+
+    applyWebsiteBlueprintToState(
+      action.examTrack,
+      targetSubj,
+      action.preset,
+      action.previewThemeId,
+      isFullDemoDashboard
+    );
+
+    if (action.type === 'demo-dashboard') {
+      setScreen('home');
+      return;
+    }
+
+    if (action.type === 'open-novel') {
+      setActiveNovelId(action.novelId);
+      setNovelsReturnScreen('landing');
+      setScreen('novels');
+      return;
+    }
+
+    if (action.type === 'live-lab') {
+      setActiveLabId(action.labId);
+      setLabReturnScreen('landing');
+      setScreen('labrun');
+      return;
+    }
+
+    if (action.type === 'live-theory') {
+      setCompanionReturnScreen('landing');
+      setScreen('theory');
+      return;
+    }
+
+    if (action.type === 'live-duel') {
+      setCompanionReturnScreen('landing');
+      setActiveDuelCode(null);
+      setScreen('duel');
+      return;
+    }
+
+    if (action.type === 'live-sandboxes') {
+      setCompanionReturnScreen('landing');
+      setScreen('sandboxes');
+      return;
+    }
+
+    const subjTopics = getTopics(targetSubj);
+    const chosenTopic =
+      (action.topicId ? subjTopics.find((t) => t.id === action.topicId) : undefined) ||
+      subjTopics[0];
+    if (!chosenTopic) {
+      setScreen('home');
+      return;
+    }
+
+    if (action.type === 'live-lesson') {
+      setActiveTopicId(chosenTopic.id);
+      setLessonReturnScreen('landing');
+      setScreen('lesson');
+      return;
+    }
+
+    if (action.type === 'live-practice') {
+      const drillCfg = getToughJambDrillConfig(
+        action.examTrack,
+        targetSubj,
+        action.preset?.jambQuartet || progress.jambSubjects
+      );
+      const startLvl = Math.max(drillCfg.minStartLevel, 2);
+      const tempProgress: UserProgress = {
+        ...progress,
+        subj: targetSubj,
+        examTrack: action.examTrack,
+      };
+      const firstQ = pickPractice(tempProgress, chosenTopic, startLvl, []);
+      if (!firstQ) {
+        setScreen('home');
+        return;
+      }
+      setActiveTopicId(chosenTopic.id);
+      setQuizReturnScreen('landing');
+      setQuizSession({
+        kind: 'practice',
+        tid: chosenTopic.id,
+        i: 0,
+        n: PRACTICE_LEN,
+        cur: firstQ.id,
+        lvl: startLvl,
+        run: 0,
+        right: 0,
+        picked: null,
+        done: false,
+        seen: [firstQ.id],
+        res: [],
+        m0: mastery(tempProgress, chosenTopic.id),
+        pred0: predicted(tempProgress, subjTopics),
+      });
+      setScreen('quiz');
+    }
   };
 
   const handleHydrateFromCloud = useCallback(
@@ -1695,7 +2303,11 @@ export default function App() {
   );
 
   const dueIds = dueList(progress, (id) => findQuestion(progress, progress.subj, id));
-  const showNav = screen !== 'welcome' && screen !== 'dxintro' && screen !== 'examsetup';
+  const showNav =
+    screen !== 'landing' &&
+    screen !== 'welcome' &&
+    screen !== 'dxintro' &&
+    screen !== 'examsetup';
   const currentTopic = getTopic(progress.subj, activeTopicId) || getTopics(progress.subj)[0];
   const currentLesson = currentTopic ? getInteractiveLesson(progress.subj, currentTopic.id) : undefined;
   const currentLab = getLabById(activeLabId) || getLabById('bisect-line')!;
@@ -1714,16 +2326,16 @@ export default function App() {
   const fallbackLiveEntry: ActiveLiveContextEntry = React.useMemo(() => {
     const mode = subjectToLiveCoachMode(progress.subj);
     const subjTitle = SUBJECT_TUTOR_REGISTRY[progress.subj]?.name || 'English Language';
-    if (screen === 'welcome') {
+    if (screen === 'landing' || screen === 'welcome') {
       return {
-        stepKey: `scr:welcome:${mode}`,
+        stepKey: `scr:${screen}:${mode}`,
         mode,
         context: {
-          topicName: 'Welcome & Class Setup',
+          topicName: screen === 'landing' ? 'Easy Learn Public Website' : 'Welcome & Class Setup',
           partTitle: subjTitle,
-          stepLabel: 'Onboarding',
+          stepLabel: screen === 'landing' ? 'Website' : 'Onboarding',
           stepText:
-            'Signing in or registering a scholar profile across all 49 JAMB UTME and WAEC/NECO subjects.',
+            'Exploring Easy Learn JAMB UTME and WAEC/NECO exam tracks, 49 live voice teachers, and Saturday CBT Arena.',
         },
       };
     }
@@ -1997,10 +2609,34 @@ export default function App() {
           value={{
             isPremium: isPremiumStudent,
             trialDaysRemaining: trialStatus.daysRemaining,
-            isTrialExpired: trialStatus.isTrialExpired,
+            trialCountdownLabel: trialCountdown.formattedCountdown,
+            trialIsWarning: trialCountdown.isWarning,
+            isTrialExpired: trialStatus.isTrialExpired || trialCountdown.isExpired,
             openPaywall: handleOpenPaywall,
           }}
         >
+        {isInsideAppSession && !isPremiumStudent && demoStatus.isDemoActive && !demoStatus.isExpired && (
+          <DemoCountdownBar
+            status={demoStatus}
+            onCreateAccount={() => exitDemoToScreen('welcome', 'register')}
+          />
+        )}
+        {!PUBLIC_FREE_LAUNCH_ACTIVE &&
+          isWorkspaceScreen &&
+          !isPremiumStudent &&
+          !demoStatus.isDemoActive &&
+          !trialCountdown.isExpired &&
+          !(screen === 'cbt' && isExamHallActive) && (
+            <TrialCountdownBar
+              countdown={trialCountdown}
+              trialLink={billingMeta.trialLink}
+              onManageOrSubscribe={() =>
+                handleOpenPaywall(
+                  'Your 1-day free trial counts down live — subscribe from ₦1,000/month (auto-renews unless cancelled; Lifetime is one-time) or manage your linked payment account below.'
+                )
+              }
+            />
+          )}
         <AppShell
         screen={screen}
         progress={progress}
@@ -2021,12 +2657,92 @@ export default function App() {
             : undefined
         }
         onOpenLab={openLabDirectoryGated}
+        onOpenWebsite={() => setScreen('landing')}
         onSignOut={handleSignOut}
       >
+      {screen === 'landing' && (
+        <LandingWebsiteScreen
+          studentName={progress.name}
+          hasActiveSession={Boolean(progress.name.trim() && isSessionUnlocked())}
+          initialExamTrack={resolveExamTrack(progress)}
+          appearanceMode={effectiveThemeMode}
+          muted={progress.muted}
+          onStartWithTrack={(authMode, chosenTrack, preferredSubject, preset) => {
+            applyWebsiteBlueprintToState(
+              chosenTrack,
+              preferredSubject,
+              preset,
+              preset?.previewThemeId,
+              false
+            );
+            setFromWebsiteBlueprint(Boolean(preset || preferredSubject));
+            if (preset?.postSetupDestination === 'paywall' && preset.selectedPlanId) {
+              setPendingWebsiteIntent({
+                destination: 'paywall',
+                planId: preset.selectedPlanId,
+              });
+            } else if (preset?.postSetupDestination === 'cbt') {
+              setPendingWebsiteIntent({ destination: 'cbt' });
+            } else {
+              setPendingWebsiteIntent(null);
+            }
+            setWelcomeAuthMode(authMode);
+            setScreen('welcome');
+          }}
+          onContinueSession={() => {
+            if (progress.name.trim() && isSessionUnlocked()) {
+              setScreen(progress.flags?.examSetupDone ? 'home' : 'examsetup');
+            } else {
+              setWelcomeAuthMode('login');
+              setScreen('welcome');
+            }
+          }}
+          onTryDemo={(chosenTrack) => {
+            setProgress((prev) => ({
+              ...prev,
+              examTrack: chosenTrack,
+            }));
+            handleSkipToDemo();
+          }}
+          onLaunchInstantAction={handleWebsiteInstantAction}
+          onToggleAppearance={() =>
+            handleChangeThemeMode(effectiveThemeMode === 'dark' ? 'light' : 'dark')
+          }
+        />
+      )}
+
       {screen === 'welcome' && (
         <WelcomeScreen
+          key={welcomeAuthMode}
           initialName={progress.name}
           initialSubjs={progress.subjs}
+          initialAuthMode={welcomeAuthMode}
+          connectedSummary={
+            fromWebsiteBlueprint || progress.leaderboardCampusGoal || pendingWebsiteIntent
+              ? {
+                  trackLabel: EXAM_TRACK_SHOWCASES[resolveExamTrack(progress)].tabLabel,
+                  campusGoal: progress.leaderboardCampusGoal || undefined,
+                  subjectNames: progress.subjs
+                    .slice(0, 6)
+                    .map((sid) => SUBJECT_INFO[sid].short)
+                    .join(' · '),
+                  selectedPlanLabel: pendingWebsiteIntent?.planId
+                    ? (() => {
+                        const pl = getPremiumPlanById(pendingWebsiteIntent.planId);
+                        return pl
+                          ? `${pl.name} (₦${pl.priceNgn.toLocaleString('en-NG')})`
+                          : undefined;
+                      })()
+                    : undefined,
+                  destinationNote:
+                    pendingWebsiteIntent?.destination === 'cbt'
+                      ? 'Next step after setup: Saturday National CBT Arena'
+                      : pendingWebsiteIntent?.destination === 'paywall'
+                        ? 'Next step after setup: Paystack Naira pass checkout'
+                        : undefined,
+                }
+              : null
+          }
           initialClassLevel={
             progress.subj === 'fmaths'
               ? progress.fmathClass
@@ -2056,6 +2772,7 @@ export default function App() {
           onComplete={handleCompleteOnboarding}
           onAuthenticated={handleAuthenticated}
           onSkipToDemo={handleSkipToDemo}
+          onBackToWebsite={() => setScreen('landing')}
         />
       )}
 
@@ -2101,6 +2818,7 @@ export default function App() {
               ? () => openStudioGated('home')
               : undefined
           }
+          onOpenNovels={(novelId) => openNovelsStudio('home', novelId)}
           onOpenFormulas={
             hasFormulaSheet(progress.subj)
               ? () => openFormulasStudio('home', null)
@@ -2111,9 +2829,13 @@ export default function App() {
           onOpenMistakes={() => setScreen('mistakes')}
           onOpenPlanner={() => setScreen('planner')}
           onOpenSandboxes={openSandboxesGated}
-          onOpenTheory={() => setScreen('theory')}
+          onOpenTheory={() => {
+            setCompanionReturnScreen('home');
+            setScreen('theory');
+          }}
           onOpenTranscript={() => setScreen('transcript')}
           onOpenDuel={() => {
+            setCompanionReturnScreen('home');
             setActiveDuelCode(null);
             setScreen('duel');
           }}
@@ -2187,7 +2909,7 @@ export default function App() {
           topic={currentTopic}
           lesson={currentLesson}
           progress={progress}
-          onBack={() => setScreen('topic')}
+          onBack={() => setScreen(lessonReturnScreen)}
           onCompleteLesson={() => {
             commitProgressWithBadges((prev) => {
               const ts = tstate(prev, currentTopic.id);
@@ -2218,6 +2940,12 @@ export default function App() {
           onPickAnswer={handleQuizAnswer}
           onNextQuestion={handleQuizNext}
           onExit={() => {
+            if (quizReturnScreen) {
+              const dest = quizReturnScreen;
+              setQuizReturnScreen(null);
+              setScreen(dest);
+              return;
+            }
             setScreen(quizSession.kind === 'practice' && quizSession.tid ? 'topic' : 'home');
           }}
         />
@@ -2229,12 +2957,19 @@ export default function App() {
           progress={progress}
           topic={quizSession.tid ? getTopic(progress.subj, quizSession.tid) : undefined}
           onTakeTopicTest={() => {
+            setQuizReturnScreen(null);
             if (quizSession.tid) startTopicTest(quizSession.tid);
           }}
           onPracticeAgain={() => {
             if (quizSession.tid) startPractice(quizSession.tid);
           }}
           onDone={() => {
+            if (quizReturnScreen) {
+              const dest = quizReturnScreen;
+              setQuizReturnScreen(null);
+              setScreen(dest);
+              return;
+            }
             setScreen(quizSession.kind === 'practice' && quizSession.tid ? 'topic' : 'home');
           }}
         />
@@ -2294,7 +3029,28 @@ export default function App() {
       {screen === 'studio' && (
         <SubjectStudioScreen
           subj={progress.subj}
+          progress={progress}
+          onToggleNovelChapterRead={handleToggleNovelChapter}
+          onRecordNovelChapterQuiz={handleRecordNovelChapterQuiz}
+          onRecordNovelQuizScore={handleRecordNovelQuiz}
+          onCompleteNovelFinalExam={handleCompleteNovelFinalExam}
+          onUpdateNovelNotes={handleUpdateNovelNotes}
+          onOpenCurriculumTopic={handleOpenNovelCurriculumTopic}
           onBack={() => setScreen(studioReturnScreen)}
+        />
+      )}
+
+      {screen === 'novels' && (
+        <NovelsStudioScreen
+          progress={progress}
+          initialNovelId={activeNovelId}
+          onBack={() => setScreen(novelsReturnScreen)}
+          onToggleChapterRead={handleToggleNovelChapter}
+          onRecordChapterQuiz={handleRecordNovelChapterQuiz}
+          onRecordQuizScore={handleRecordNovelQuiz}
+          onCompleteFinalExam={handleCompleteNovelFinalExam}
+          onUpdateNotes={handleUpdateNovelNotes}
+          onOpenCurriculumTopic={handleOpenNovelCurriculumTopic}
         />
       )}
 
@@ -2329,11 +3085,26 @@ export default function App() {
           appearanceMode={effectiveThemeMode}
           isPremium={isPremiumStudent}
           isAdmin={billingMeta.isAdmin}
+          trialLink={billingMeta.trialLink}
+          subscriptionAutoRenew={billingMeta.subscriptionAutoRenew}
           clockFormat={progress.clockFormat || '12h'}
           onSelectTheme={handleSelectTheme}
           onChangeAppearanceMode={handleChangeThemeMode}
           onChangeClockFormat={handleChangeClockFormat}
           onOpenPaywall={handleOpenPaywall}
+          onProActivated={(pro) => {
+            playSound('win');
+            setProgress((prev) => ({ ...prev, pro }));
+          }}
+          onTrialLinkChanged={(nextLink, nextTrial) => {
+            setBillingMeta((prev) => ({ ...prev, trialLink: nextLink }));
+            if (nextTrial) {
+              setProgress((prev) => ({ ...prev, trial: nextTrial }));
+            }
+          }}
+          onSubscriptionAutoRenewChanged={(nextSub) => {
+            setBillingMeta((prev) => ({ ...prev, subscriptionAutoRenew: nextSub }));
+          }}
           onToggleMuted={() =>
             setProgress((prev) => ({ ...prev, muted: !prev.muted }))
           }
@@ -2342,6 +3113,7 @@ export default function App() {
           onOpenTranscript={() => setScreen('transcript')}
           onOpenLeaderboard={() => setScreen('leaderboard')}
           onOpenQuestionBank={handleOpenQuestionBank}
+          onOpenWebsite={() => setScreen('landing')}
           onRetakeDiagnostic={() => startDiagnostic()}
           onSignOut={handleSignOut}
           onPreviewBadgeCelebration={(badge, isPreview) => {
@@ -2384,7 +3156,7 @@ export default function App() {
       {screen === 'sandboxes' && (
         <InteractiveSandboxesScreen
           initialSubject={progress.subj}
-          onBack={() => setScreen('home')}
+          onBack={() => setScreen(companionReturnScreen)}
         />
       )}
 
@@ -2392,7 +3164,7 @@ export default function App() {
         <TheoryCoachScreen
           progress={progress}
           onSaveTheoryScore={handleSaveTheoryScore}
-          onBack={() => setScreen('home')}
+          onBack={() => setScreen(companionReturnScreen)}
         />
       )}
 
@@ -2408,7 +3180,7 @@ export default function App() {
           progress={progress}
           initialDuelCode={activeDuelCode}
           onCompleteDuel={handleCompleteDuel}
-          onBack={() => setScreen('home')}
+          onBack={() => setScreen(companionReturnScreen)}
         />
       )}
 
@@ -2419,6 +3191,7 @@ export default function App() {
           onUpdateLeaderboardPrefs={handleUpdateLeaderboardPrefs}
           onOpenCbt={openCbtGated}
           onOpenDuel={() => {
+            setCompanionReturnScreen('home');
             setActiveDuelCode(null);
             setScreen('duel');
           }}
@@ -2493,22 +3266,46 @@ export default function App() {
         initialTab={qbankModal.tab}
         onClose={() => setQbankModal((prev) => ({ ...prev, open: false }))}
       />
+      <DemoExpiredModal
+        open={isDemoLockedOut}
+        onCreateAccount={() => exitDemoToScreen('welcome', 'register')}
+        onSignIn={() => exitDemoToScreen('welcome', 'login')}
+        onBackToWebsite={() => exitDemoToScreen('landing')}
+      />
       <PaywallModal
         open={paywallModal.open || isTrialLockedOut}
         blocking={isTrialLockedOut}
         trialDaysRemaining={trialStatus.daysRemaining}
+        trialCountdownLabel={trialCountdown.formattedCountdown}
+        trialLink={billingMeta.trialLink}
+        subscriptionAutoRenew={billingMeta.subscriptionAutoRenew}
+        onTrialLinkChanged={(nextLink, nextTrial) => {
+          setBillingMeta((prev) => ({ ...prev, trialLink: nextLink }));
+          if (nextTrial) {
+            setProgress((prev) => ({ ...prev, trial: nextTrial }));
+          }
+        }}
+        onSubscriptionAutoRenewChanged={(nextSub) => {
+          setBillingMeta((prev) => ({ ...prev, subscriptionAutoRenew: nextSub }));
+        }}
         onSignOut={handleSignOut}
         reason={paywallModal.reason}
         progress={progress}
         paystackEnabled={billingMeta.paystackEnabled}
         initialReference={paywallModal.initialRef}
+        initialPlanId={paywallModal.initialPlanId}
         onActivated={(pro) => {
           playSound('win');
           setProgress((prev) => ({ ...prev, pro }));
         }}
         onClose={() => {
           if (isTrialLockedOut) return;
-          setPaywallModal((prev) => ({ ...prev, open: false, initialRef: null }));
+          setPaywallModal((prev) => ({
+            ...prev,
+            open: false,
+            initialRef: null,
+            initialPlanId: null,
+          }));
         }}
       />
       <BadgeUnlockCelebration

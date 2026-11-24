@@ -5,21 +5,28 @@ import { getTopics, SUBJECT_IDS } from '../data/curriculum';
 import { isTopicLocked, makeBlankProgress, nextMission } from './engine';
 import {
   FREE_TRIAL_DAYS,
+  FREE_TRIAL_DURATION_MS,
   PREMIUM_PLANS,
   buildCanonicalProPayloadV2,
   buildCanonicalTrialPayloadV1,
+  buildPassPinWhatsAppUrl,
+  computeTrialCountdownStatus,
   computeTrialStatus,
+  formatPassPinClipboardBatch,
   formatPremiumRemaining,
+  formatTrialCountdown,
   generateDeviceSecretToken,
   getPremiumPlanById,
   hasActivePremium,
   isCbtPresetPaywalled,
+  isRecurringPlanId,
   isTopicPaywalled,
   isValidDeviceId,
   isValidDeviceSecretToken,
   isValidEmailAddress,
   isValidPaystackReference,
   isValidVoucherCodeFormat,
+  looksLikeRawCardNumber,
   normalizeVoucherCode,
   verifySignedProReceiptAsync,
   verifySignedTrialReceiptAsync,
@@ -27,30 +34,38 @@ import {
 
 const VALID_SIG = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
-test('PREMIUM_PLANS defines Monthly (₦1k), 6-Month (₦4.5k), Yearly (₦9k), and Lifetime (₦27.8k) passes accurately', () => {
+test('PREMIUM_PLANS defines recurring Monthly/6-Month/Yearly plans and one-time Lifetime (excluded from auto-debit)', () => {
   assert.equal(PREMIUM_PLANS.length, 4);
-  assert.equal(FREE_TRIAL_DAYS, 3);
+  assert.equal(FREE_TRIAL_DAYS, 1);
 
   const monthly = getPremiumPlanById('monthly');
   assert.equal(monthly?.priceNgn, 1000);
   assert.equal(monthly?.priceKobo, 100_000);
   assert.equal(monthly?.days, 30);
+  assert.equal(monthly?.isRecurring, true);
+  assert.equal(isRecurringPlanId('monthly'), true);
 
   const biannual = getPremiumPlanById('biannual');
   assert.equal(biannual?.priceNgn, 4500);
   assert.equal(biannual?.priceKobo, 450_000);
   assert.equal(biannual?.days, 180);
+  assert.equal(biannual?.isRecurring, true);
+  assert.equal(isRecurringPlanId('biannual'), true);
 
   const annual = getPremiumPlanById('annual');
   assert.equal(annual?.priceNgn, 9000);
   assert.equal(annual?.priceKobo, 900_000);
   assert.equal(annual?.days, 365);
   assert.equal(annual?.popular, true);
+  assert.equal(annual?.isRecurring, true);
+  assert.equal(isRecurringPlanId('annual'), true);
 
   const lifetime = getPremiumPlanById('lifetime');
   assert.equal(lifetime?.priceNgn, 27800);
   assert.equal(lifetime?.priceKobo, 2_780_000);
   assert.equal(lifetime?.days, 36500);
+  assert.equal(lifetime?.isRecurring, false);
+  assert.equal(isRecurringPlanId('lifetime'), false);
 
   // Legacy aliases map cleanly
   assert.equal(getPremiumPlanById('weekly')?.id, 'monthly');
@@ -58,44 +73,75 @@ test('PREMIUM_PLANS defines Monthly (₦1k), 6-Month (₦4.5k), Yearly (₦9k), 
   assert.equal(getPremiumPlanById('unknown'), null);
 });
 
-test('computeTrialStatus enforces exact 3-day starter trial window and Day-4 expiry', () => {
+test('computeTrialStatus & computeTrialCountdownStatus enforce exact 1-day (24h) free trial and hard expiry lock', () => {
   const startDay = 20500;
-  const student = { trial: { startedDay: startDay, untilDay: startDay + 2, sig: VALID_SIG } };
+  const startMs = 1_770_000_000_000;
+  const student = {
+    trial: {
+      startedDay: startDay,
+      untilDay: startDay,
+      startedAtMs: startMs,
+      endsAtMs: startMs + FREE_TRIAL_DURATION_MS,
+      sig: VALID_SIG,
+    },
+  };
 
-  // Day 1
+  // Day 1 active
   const d1 = computeTrialStatus(student, startDay);
-  assert.equal(d1.daysRemaining, 3);
+  assert.equal(d1.daysRemaining, 1);
   assert.equal(d1.isTrialActive, true);
   assert.equal(d1.isTrialExpired, false);
 
-  // Day 2
+  // Day 2+ -> expired immediately
   const d2 = computeTrialStatus(student, startDay + 1);
-  assert.equal(d2.daysRemaining, 2);
-  assert.equal(d2.isTrialActive, true);
-  assert.equal(d2.isTrialExpired, false);
+  assert.equal(d2.daysRemaining, 0);
+  assert.equal(d2.isTrialActive, false);
+  assert.equal(d2.isTrialExpired, true);
 
-  // Day 3 (last day of starter trial)
-  const d3 = computeTrialStatus(student, startDay + 2);
-  assert.equal(d3.daysRemaining, 1);
-  assert.equal(d3.isTrialActive, true);
-  assert.equal(d3.isTrialExpired, false);
+  // Live 24h countdown formatting & warning window (< 2 hours)
+  assert.equal(formatTrialCountdown(FREE_TRIAL_DURATION_MS), '24:00:00');
+  const cdFresh = computeTrialCountdownStatus({
+    trial: student.trial,
+    nowMs: startMs + 60_000,
+    currentDay: startDay,
+  });
+  assert.equal(cdFresh.isExpired, false);
+  assert.equal(cdFresh.isWarning, false);
+  assert.equal(cdFresh.formattedCountdown, '23:59:00');
 
-  // Day 4+ -> expired
-  const d4 = computeTrialStatus(student, startDay + 3);
-  assert.equal(d4.daysRemaining, 0);
-  assert.equal(d4.isTrialActive, false);
-  assert.equal(d4.isTrialExpired, true);
+  const cdWarn = computeTrialCountdownStatus({
+    trial: student.trial,
+    nowMs: startMs + FREE_TRIAL_DURATION_MS - 3_600_000,
+    currentDay: startDay,
+  });
+  assert.equal(cdWarn.isExpired, false);
+  assert.equal(cdWarn.isWarning, true);
+  assert.equal(cdWarn.formattedCountdown, '01:00:00');
+
+  const cdExpired = computeTrialCountdownStatus({
+    trial: student.trial,
+    nowMs: startMs + FREE_TRIAL_DURATION_MS + 1000,
+    currentDay: startDay,
+  });
+  assert.equal(cdExpired.isExpired, true);
+  assert.equal(cdExpired.remainingMs, 0);
+  assert.equal(cdExpired.formattedCountdown, '00:00:00');
+
+  // Raw card PAN guard rejects raw card numbers in display labels
+  assert.equal(looksLikeRawCardNumber('Personal Google Pay'), false);
+  assert.equal(looksLikeRawCardNumber('GTBank Account'), false);
+  assert.equal(looksLikeRawCardNumber('4242 4242 4242 4242'), true);
 });
 
-test('topics stay open for basic notes & practice during Days 1-3, lock on Day 4+, and unlock on any paid plan including ₦1k monthly', () => {
+test('topics stay open during Day 1 free trial, lock on Day 2+, and unlock on any paid plan including ₦1k monthly', () => {
   const startDay = 20500;
   const trialStudent = {
     ...makeBlankProgress(),
-    trial: { startedDay: startDay, untilDay: startDay + 2, sig: VALID_SIG },
+    trial: { startedDay: startDay, untilDay: startDay, sig: VALID_SIG },
   };
   const monthlyStudent = {
     ...trialStudent,
-    pro: { pid: 'monthly', on: startDay + 4, until: startDay + 34, code: 'EYAK-1000-PASS', sig: VALID_SIG },
+    pro: { pid: 'monthly', on: startDay + 2, until: startDay + 32, code: 'ELRN-1000-PASS', sig: VALID_SIG },
   };
 
   for (const sid of SUBJECT_IDS) {
@@ -103,23 +149,23 @@ test('topics stay open for basic notes & practice during Days 1-3, lock on Day 4
     assert.ok(topics.length >= 3, `${sid} should have at least 3 topics`);
     const sampleTid = topics[2].id;
 
-    // Day 1-3: basic topic notes & practice open
+    // Day 1: basic topic notes & practice open
     assert.equal(isTopicPaywalled(trialStudent, sampleTid, topics, startDay), false);
-    assert.equal(isTopicLocked(trialStudent, sampleTid, topics, startDay + 2), false);
+    assert.equal(isTopicLocked(trialStudent, sampleTid, topics, startDay), false);
 
-    // Day 4+: locked until subscribed
-    assert.equal(isTopicPaywalled(trialStudent, sampleTid, topics, startDay + 3), true);
-    assert.equal(isTopicLocked(trialStudent, sampleTid, topics, startDay + 3), true);
+    // Day 2+: locked until subscribed
+    assert.equal(isTopicPaywalled(trialStudent, sampleTid, topics, startDay + 1), true);
+    assert.equal(isTopicLocked(trialStudent, sampleTid, topics, startDay + 1), true);
 
     // ₦1,000/month plan grants 100% full access even after trial window
     assert.equal(isTopicPaywalled(monthlyStudent, sampleTid, topics, startDay + 5), false);
     assert.equal(isTopicLocked(monthlyStudent, sampleTid, topics, startDay + 5), false);
   }
 
-  // nextMission returns a topic during active 3-day trial, and null once expired without subscription
+  // nextMission returns a topic during active 1-day trial, and null once expired without subscription
   const mathsTopics = getTopics('maths');
-  assert.ok(nextMission(trialStudent, mathsTopics, mathsTopics, startDay + 1));
-  assert.equal(nextMission(trialStudent, mathsTopics, mathsTopics, startDay + 3), null);
+  assert.ok(nextMission(trialStudent, mathsTopics, mathsTopics, startDay));
+  assert.equal(nextMission(trialStudent, mathsTopics, mathsTopics, startDay + 1), null);
   assert.ok(nextMission(monthlyStudent, mathsTopics, mathsTopics, startDay + 5));
 });
 
@@ -144,9 +190,34 @@ test('CBT mock exam is completely locked across all presets during unsubscribed 
 });
 
 test('voucher code, device ID, email, Paystack reference, and lifetime remaining-days helpers validate strictly', () => {
+  assert.equal(normalizeVoucherCode(' elrn 7k4m 9p2q '), 'ELRN-7K4M-9P2Q');
+  assert.equal(isValidVoucherCodeFormat('elrn-7k4m-9p2q'), true);
   assert.equal(normalizeVoucherCode(' eyak abcd 2345 '), 'EYAK-ABCD-2345');
   assert.equal(isValidVoucherCodeFormat('eyak-abcd-2345'), true);
   assert.equal(isValidVoucherCodeFormat('SHORT'), false);
+
+  const waUrl = buildPassPinWhatsAppUrl({
+    code: 'ELRN-7K4M-9P2Q',
+    planName: 'Yearly pass',
+    days: 365,
+    note: 'Chinedu SS3',
+  });
+  assert.ok(waUrl.startsWith('https://wa.me/?text='));
+  assert.ok(decodeURIComponent(waUrl).includes('ELRN-7K4M-9P2Q'));
+  assert.ok(decodeURIComponent(waUrl).includes('Chinedu SS3'));
+
+  assert.equal(
+    formatPassPinClipboardBatch([
+      { code: 'ELRN-7K4M-9P2Q', planName: 'Monthly pass', days: 30 },
+    ]),
+    'ELRN-7K4M-9P2Q'
+  );
+  const multi = formatPassPinClipboardBatch([
+    { code: 'ELRN-7K4M-9P2Q', planName: 'Monthly pass', days: 30, note: 'Batch A' },
+    { code: 'ELRN-8M2P-4Q9W', planName: 'Monthly pass', days: 30, note: 'Batch A' },
+  ]);
+  assert.ok(multi.includes('1. ELRN-7K4M-9P2Q'));
+  assert.ok(multi.includes('2. ELRN-8M2P-4Q9W'));
 
   assert.equal(isValidDeviceId('ABCD-1234-EF'), true);
   assert.equal(isValidDeviceId('12'), false);
@@ -222,3 +293,46 @@ test('verifySignedProReceiptAsync & verifySignedTrialReceiptAsync verify genuine
     false
   );
 });
+
+test('parseScholarEmailList and calculatePaystackSeatQuote compute exact Paystack Naira & kobo totals', async () => {
+  const {
+    parseScholarEmailList,
+    calculatePaystackSeatQuote,
+    isConfiguredPaystackSecretKey,
+  } = await import('./paywallLogic');
+
+  assert.equal(isConfiguredPaystackSecretKey(''), false);
+  assert.equal(isConfiguredPaystackSecretKey('pk_live_0123456789abcdef0123456789abcdef'), false);
+  assert.equal(isConfiguredPaystackSecretKey('sk_test_your_secret_key_here'), false);
+  assert.equal(isConfiguredPaystackSecretKey('YOUR_PAYSTACK_SECRET_KEY'), false);
+  assert.equal(
+    isConfiguredPaystackSecretKey('sk_live_9f8e7d6c5b4a39281726354433221100aabbccdd'),
+    true
+  );
+
+  const parsed = parseScholarEmailList(
+    'Chinedu@Gmail.com, ada@school.edu.ng\nchinedu@gmail.com; bad-email'
+  );
+  assert.deepEqual(parsed.emails, ['chinedu@gmail.com', 'ada@school.edu.ng']);
+  assert.deepEqual(parsed.invalidEntries, ['bad-email']);
+
+  const singleMonthly = calculatePaystackSeatQuote(1, 'monthly');
+  assert.equal(singleMonthly.seats, 1);
+  assert.equal(singleMonthly.discountPct, 0);
+  assert.equal(singleMonthly.totalNgn, 1000);
+  assert.equal(singleMonthly.totalKobo, 100_000);
+
+  const classCohort = calculatePaystackSeatQuote(20, 'annual');
+  assert.equal(classCohort.discountPct, 15);
+  assert.equal(classCohort.subtotalNgn, 180_000);
+  assert.equal(classCohort.savingsNgn, 27_000);
+  assert.equal(classCohort.totalNgn, 153_000);
+  assert.equal(classCohort.totalKobo, 15_300_000);
+
+  const schoolCohort = calculatePaystackSeatQuote(50, 'biannual');
+  assert.equal(schoolCohort.discountPct, 25);
+  assert.equal(schoolCohort.subtotalNgn, 225_000);
+  assert.equal(schoolCohort.totalNgn, 168_750);
+  assert.equal(schoolCohort.totalKobo, 16_875_000);
+});
+

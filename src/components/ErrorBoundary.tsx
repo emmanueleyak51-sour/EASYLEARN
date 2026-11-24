@@ -22,7 +22,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error) {
-    console.error('EYAK ErrorBoundary caught:', error);
+    console.error('Easy Learn ErrorBoundary caught:', error);
   }
 
   render() {
@@ -46,7 +46,7 @@ export class ErrorBoundary extends React.Component<
               }}
               className="btn-tactile indigo w-full"
             >
-              Reload EYAK
+              Reload Easy Learn
             </button>
           </div>
         </div>

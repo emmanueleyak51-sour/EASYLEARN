@@ -145,3 +145,39 @@ test('rankDailyCbtParticipants ranks same-day students accurately and returns en
   const waecGuide = getWaecMistakeGuidance('chem', 'Always state 2 decimal places on burette readings.');
   assert.equal(waecGuide.mistakesToAvoid.length >= 3, true);
 });
+
+test('every teacher has a distinct personality tag, opening greeting, and non-templated voice intro', async () => {
+  const { ALL_SUBJECT_IDS } = await import('./examSubjects');
+  const { TUTOR_PERSONALITY_PROFILES, buildPersonalityIntroScript } = await import('./tutorIntroPersonalities');
+
+  const tags = new Set<string>();
+  const jambScripts = new Set<string>();
+  const waecScripts = new Set<string>();
+  const openings = new Set<string>();
+
+  for (const sid of ALL_SUBJECT_IDS) {
+    const profile = TUTOR_PERSONALITY_PROFILES[sid];
+    assert.ok(profile, `Missing personality profile for ${sid}`);
+    assert.equal(tags.has(profile.personalityTag), false, `Duplicate personalityTag for ${sid}`);
+    tags.add(profile.personalityTag);
+
+    const jambBuilt = buildPersonalityIntroScript(sid, 'jamb', true);
+    const waecBuilt = buildPersonalityIntroScript(sid, 'waec', false);
+
+    assert.equal(jambScripts.has(jambBuilt.script), false, `Duplicate JAMB script for ${sid}`);
+    assert.equal(waecScripts.has(waecBuilt.script), false, `Duplicate WAEC script for ${sid}`);
+    jambScripts.add(jambBuilt.script);
+    waecScripts.add(waecBuilt.script);
+
+    // Ensure zero robotic copy-pasted template phrasing
+    assert.equal(jambBuilt.script.includes('This is my only introduction'), false);
+    assert.equal(waecBuilt.script.includes('I am introducing myself just once now'), false);
+
+    const openingClause = jambBuilt.script.split(/[—!?.]/)[0].trim().toLowerCase();
+    assert.equal(openings.has(openingClause), false, `Duplicate opening "${openingClause}" for ${sid}`);
+    openings.add(openingClause);
+  }
+
+  assert.equal(tags.size, 49);
+});
+

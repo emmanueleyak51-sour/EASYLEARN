@@ -32,7 +32,7 @@ const DEFAULT_ENTRY: ActiveLiveContextEntry = {
   stepKey: 'global-home',
   mode: 'eng',
   context: {
-    topicName: 'EYAK Studio',
+    topicName: 'Easy Learn Studio',
     partTitle: 'Nigerian JAMB and WAEC Learning',
     stepLabel: 'Overview',
     stepText: 'Ask any question across all 49 JAMB UTME and WAEC/NECO subjects aloud.',

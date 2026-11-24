@@ -106,6 +106,26 @@ const ENG_TEACH_TABLES: Record<string, { title: string; headers: string[]; rows:
       ['Nostalgic', 'Warm memories of bygone days', 'Wistful longing for the past'],
     ],
   },
+  'e-jamb-lekki': {
+    title: 'The Lekki Headmaster (Kabir Alabi Garba) — Quick UTME Matrix',
+    headers: ['Element', 'Key Textual Fact', 'Exam Trap to Avoid'],
+    rows: [
+      ['Protagonist & School', 'Mr. Adebepo (“Bepo”) Adewale · Stardom Schools, Lekki', 'Principal of a secondary/high school, NOT a local primary headmaster'],
+      ['Family in UK', 'Wife Seri (nurse) + daughters Nike & Kike', 'Do NOT confuse MD Mrs. Ibidun Gloss with Bepo’s wife'],
+      ['Chapter 1 vs 11–12', 'Ch. 1 “Dusk” (assembly tears) → Ch. 11 Airport reversal → Ch. 12 “Dawn”', 'Bepo walks away voluntarily; his UK visa was NOT revoked'],
+      ['Heritage Foreshadowing', 'Badagry Slave Route (“Point of No Return”), Ikogosi & Erin-Ijesha', 'Badagry chains trigger Bepo’s “New Slavery” epiphany at Ikeja airport'],
+    ],
+  },
+  'e-jamb-lifechanger': {
+    title: 'The Life Changer (Khadija Abubakar Jalli) — Quick UTME Matrix',
+    headers: ['Character / Episode', 'Key Textual Fact', 'Exam Trap to Avoid'],
+    rows: [
+      ['Ahmed Family (Lafiya)', 'Ummi (narrator), Omar (230 UTME, Law at ABU), Teemah, Jamila, Bint (5 yrs)', 'Mallam Salihu taught Social Studies, NOT French!'],
+      ['Talle (“The Quiet One”)', 'Orphan LG driver who hid a kidnap victim with Zaki for ₦250,000', 'Exposed because a bachelor suddenly bought bulk market food'],
+      ['Salma Mohammed', 'Caught cheating in final-year Moral Philosophy; duped by lab tech Kabir', '“Dr. Kabir” was a gambling lab technologist, NOT the Senate Chairman'],
+      ['Salim & Smartphone', 'Lured at night by online bait “Natasha” into an armed ambush', 'Keep SALIM (smartphone ambush) distinct from SALMA (exam expulsion)'],
+    ],
+  },
   'e-informal-let': {
     title: 'Informal vs Semi-Formal Letter Comparison',
     headers: ['Slot', 'Informal (Peer / Sibling)', 'Semi-Formal (Adult Family Friend)'],

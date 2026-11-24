@@ -211,7 +211,7 @@ export function LeaderboardScreen({
 
   const handleCopyInvite = () => {
     const url = typeof window !== 'undefined' ? window.location.origin : '';
-    const msg = `Climb EYAK Elemental Ranks with me! Current rank: ${selfElemental.currentLabel}${
+    const msg = `Climb Easy Learn Elemental Ranks with me! Current rank: ${selfElemental.currentLabel}${
       selfElemental.nextLabel ? ` → Heading to ${selfElemental.nextLabel}` : ''
     } (${selfStanding.masteryIndex} RP). Join here: ${url}`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {

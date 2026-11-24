@@ -18,6 +18,8 @@ import {
   SmoothProgressBar,
 } from './ULessonMotion';
 import { useEntitlement } from '../context/EntitlementContext';
+import { PWAInstallButton } from './PWAInstallBanner';
+import { usePWAInstall } from '../utils/usePWAInstall';
 
 interface StageCustomPayload {
   spec: ScreenTransitionSpec;
@@ -80,7 +82,7 @@ const SCREEN_STAGE_VARIANTS: Variants = {
 export type MainTab = 'home' | 'subjects' | 'topics' | 'cbt' | 'more';
 
 export function activeTabForScreen(scr: ScreenName): MainTab {
-  if (scr === 'subjs' || scr === 'studio' || scr === 'lab' || scr === 'labrun') return 'subjects';
+  if (scr === 'subjs' || scr === 'studio' || scr === 'novels' || scr === 'lab' || scr === 'labrun') return 'subjects';
   if (scr === 'cbt') return 'cbt';
   if (
     scr === 'topics' ||
@@ -157,6 +159,7 @@ export function AppShell({
   onNavigateTab,
   onOpenStudio,
   onOpenLab,
+  onOpenWebsite,
   onSignOut,
   children,
 }: {
@@ -175,13 +178,14 @@ export function AppShell({
   onManageSubjects?: () => void;
   onOpenStudio?: () => void;
   onOpenLab?: () => void;
+  onOpenWebsite?: () => void;
   onSignOut?: () => void;
   children: React.ReactNode;
 }) {
   const prefersReduced = Boolean(useReducedMotion());
   const capsuleTransition = prefersReduced ? { duration: 0 } : LIQUID_CAPSULE_SPRING;
   const activeTab = activeTabForScreen(screen);
-  const { isPremium, trialDaysRemaining, isTrialExpired, openPaywall } = useEntitlement();
+  useEntitlement();
 
   const lastScrollYRef = useRef<number>(typeof window !== 'undefined' ? window.scrollY : 0);
   const scrollFreezeRef = useRef<{ screen: ScreenName; exitScrollY: number }>({
@@ -216,6 +220,7 @@ export function AppShell({
   };
   const topics = getTopicsForProgress(progress);
   const subjectPct = computeTopicsProgressPct(progress, topics);
+  const { isInstalled } = usePWAInstall();
 
   const navItems: { id: MainTab; label: string; icon: string; badge?: number }[] = [
     { id: 'home', label: 'Home', icon: 'home' },
@@ -260,10 +265,10 @@ export function AppShell({
               <CrestSvg size={42} />
               <div className="flex flex-col min-w-0">
                 <span className="font-[var(--display)] font-extrabold text-[21px] leading-tight text-[var(--ink)] whitespace-nowrap">
-                  Eyak
+                  Easy Learn
                 </span>
                 <span className="text-[12px] font-semibold text-[var(--dim)] whitespace-nowrap">
-                  Road to campus
+                  Your road to campus
                 </span>
               </div>
             </div>
@@ -366,6 +371,22 @@ export function AppShell({
                 trackClass="bg-[var(--bg-out)]"
               />
             </div>
+
+            <PWAInstallButton compact label="Install offline app" />
+
+            {onOpenWebsite && !isInstalled && (
+              <button
+                type="button"
+                onClick={onOpenWebsite}
+                className="min-h-[36px] px-3 py-1.5 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--dim)] hover:text-[var(--ink)] flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Icon name="globe" size={14} className="text-[var(--gold)]" />
+                  <span>Public website</span>
+                </span>
+                <Icon name="go" size={14} />
+              </button>
+            )}
           </div>
         </aside>
       )}
@@ -400,7 +421,7 @@ export function AppShell({
 
         <main
           className={`flex-1 w-full mx-auto ${
-            isExamHall
+            isExamHall || screen === 'landing'
               ? 'max-w-none p-0'
               : isStudyWorkbench
                 ? 'max-w-[1120px] px-4 sm:px-6 min-[1200px]:px-8 pt-4 pb-24'
@@ -414,10 +435,26 @@ export function AppShell({
               <div className="flex items-center gap-2 min-w-0">
                 <CrestSvg size={34} />
                 <span className="font-[var(--display)] font-extrabold text-[19.5px] tracking-tight text-[var(--ink)] whitespace-nowrap">
-                  Eyak
+                  Easy Learn
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-[12px] font-extrabold shrink-0">
+                <PWAInstallButton
+                  compact
+                  label="Install"
+                  className="!w-auto !min-h-[28px] !px-2.5 !py-0.5 !rounded-full !text-[12px]"
+                />
+                {onOpenWebsite && !isInstalled && (
+                  <button
+                    type="button"
+                    onClick={onOpenWebsite}
+                    aria-label="Open public website"
+                    className="min-h-[28px] px-2.5 py-0.5 rounded-full bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  >
+                    <Icon name="globe" size={12} className="text-[var(--gold)]" />
+                    <span>Website</span>
+                  </button>
+                )}
                 <span className="inline-flex items-center gap-1 text-[var(--peach-ink)] bg-[var(--peach-bg)] border border-[var(--peach-line)] px-2.5 py-0.5 rounded-full tabular-nums">
                   <Icon name="flame" size={13} className="text-[#EA580C]" />
                   {progress.streak.n}d
@@ -426,32 +463,6 @@ export function AppShell({
                   {subjectPct}%
                 </span>
               </div>
-            </div>
-          )}
-
-          {effectiveShowNav && !isStudyWorkbench && !isPremium && !isTrialExpired && (
-            <div className="mb-3.5 rounded-2xl ul-liquid-bar border border-[var(--acc-line)] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[12px] font-semibold text-[var(--ink)] leading-snug">
-                <strong className="text-[var(--gold)] tabular-nums">
-                  3-day starter trial · {trialDaysRemaining}{' '}
-                  {trialDaysRemaining === 1 ? 'day' : 'days'} left
-                </strong>
-                <span className="text-[var(--dim)]">
-                  {' '}
-                  · Unlock Colour Themes, Tutors, CBT &amp; Labs from ₦1,000/mo
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  openPaywall(
-                    'Subscribe from ₦1,000/month for 100% full access to Live Tutor, Voice Tutor, CBT Mocks, Virtual Labs and all 10 Colour Themes.'
-                  )
-                }
-                className="min-h-[30px] px-2.5 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] text-[11.5px] font-bold whitespace-nowrap cursor-pointer hover:opacity-95 transition-opacity shrink-0"
-              >
-                Unlock full access
-              </button>
             </div>
           )}
 

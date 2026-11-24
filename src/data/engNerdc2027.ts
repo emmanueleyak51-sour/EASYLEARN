@@ -35,18 +35,18 @@ export const ENG_CLASSES: EngClassMeta[] = [
     label: 'SS 3',
     shortLabel: 'SS 3',
     fullTitle: 'SS 3 English Language',
-    kicker: 'NERDC Year 3 · Emphatic Stress, Rhetoric & Language Mastery',
+    kicker: 'NERDC Year 3 · Emphatic Stress, Rhetoric & JAMB Novels',
     description:
-      'Emphatic stress & intonation tunes, rhymes & syllable clusters, cloze cohesion, dangling modifiers & parallelism, figures of speech, critical inference comprehension, argumentative essays, articles/speeches & Nigerian usage traps.',
+      'Emphatic stress & intonation tunes, rhymes & syllable clusters, cloze cohesion, dangling modifiers & parallelism, figures of speech, critical inference, argumentative essays, Nigerian usage traps, and JAMB prescribed novels (The Lekki Headmaster & The Life Changer).',
   },
   {
     id: 'all',
     label: 'All Classes',
     shortLabel: 'All',
     fullTitle: 'Complete English Language (SS1–SS3)',
-    kicker: 'National Curriculum · 32 Topics',
+    kicker: 'National Curriculum · 34 Topics + JAMB Novels',
     description:
-      'Complete Nigerian NERDC SS1–SS3 English Language curriculum covering oral English, grammar, lexis, comprehension, summary, and composition.',
+      'Complete Nigerian NERDC SS1–SS3 English Language curriculum covering oral English, grammar, lexis, comprehension, summary, composition, and official JAMB UTME prescribed novels.',
   },
 ];
 
@@ -362,6 +362,24 @@ export const ENG_NERDC_MAP: Record<string, EngNerdcTopicPlacement> = {
     order: 10,
     domain: 'lexis',
     keywords: ['sentence interpretation', 'most appropriate interpretation', 'advanced lexis', 'contextual idiom', 'figurative meaning'],
+  },
+  'e-jamb-lekki': {
+    classId: 'ss3',
+    term: 3,
+    termLabel: 'Third Term',
+    nerdcTheme: 'Reading Comprehension & Summary',
+    order: 11,
+    domain: 'comp',
+    keywords: ['the lekki headmaster', 'kabir alabi garba', 'bepo adewale', 'stardom schools', 'seri', 'ibidun gloss', 'japa', 'jamb novel', 'dusk', 'dawn'],
+  },
+  'e-jamb-lifechanger': {
+    classId: 'ss3',
+    term: 3,
+    termLabel: 'Third Term',
+    nerdcTheme: 'Reading Comprehension & Summary',
+    order: 12,
+    domain: 'comp',
+    keywords: ['the life changer', 'khadija abubakar jalli', 'ummi', 'omar', 'bint', 'salma', 'talle', 'salim', 'jamb novel'],
   },
 };
 

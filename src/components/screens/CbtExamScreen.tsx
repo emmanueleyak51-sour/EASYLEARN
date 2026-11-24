@@ -14,6 +14,7 @@ import {
 } from '../../utils/cbtEngine';
 import { auth } from '../../firebase';
 import { isCbtPresetPaywalled } from '../../utils/paywallLogic';
+import { PUBLIC_FREE_LAUNCH_ACTIVE } from '../../utils/freeLaunchAndPwaLogic';
 import {
   getSaturdayCbtCampaign,
   getToughJambDrillConfig,
@@ -183,7 +184,7 @@ export function CbtExamScreen({
   };
 
   const handleStartExam = () => {
-    if (isCbtPresetPaywalled(progress, preset)) {
+    if (!PUBLIC_FREE_LAUNCH_ACTIVE && isCbtPresetPaywalled(progress, preset)) {
       onOpenPaywall?.(
         'Unlock Half paper (90 questions) and Full 180-question UTME mock exams'
       );
@@ -446,7 +447,7 @@ export function CbtExamScreen({
                   satCampaign.isSaturday ? 'text-white/90' : 'text-[var(--dim)]'
                 }`}
               >
-                At the end of your CBT, you are ranked live against every EYAK student who also wrote CBT today.
+                At the end of your CBT, you are ranked live against every Easy Learn student who also wrote CBT today.
               </p>
             </div>
           </div>
@@ -515,7 +516,7 @@ export function CbtExamScreen({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {(['sprint', 'half', 'full'] as const).map((pid) => {
                   const cfg = CBT_PRESETS[pid];
-                  const locked = isCbtPresetPaywalled(progress, pid);
+                  const locked = !PUBLIC_FREE_LAUNCH_ACTIVE && isCbtPresetPaywalled(progress, pid);
                   const active = preset === pid && !locked;
                   return (
                     <button
@@ -530,7 +531,7 @@ export function CbtExamScreen({
                                   ? '180-question UTME'
                                   : '90-question half paper'
                                 : `${cfg.waecCount}-question WAEC paper`
-                            }) with EYAK Premium`
+                            }) with Easy Learn Premium`
                           );
                           return;
                         }
@@ -770,7 +771,7 @@ export function CbtExamScreen({
     const paceComparison =
       report.mode === 'jamb'
         ? secPerQuestion <= toughPace
-          ? `Beats EYAK ${toughPace} s Tough JAMB target`
+          ? `Beats Easy Learn ${toughPace} s Tough JAMB target`
           : secPerQuestion <= 40
             ? 'Within 40 s UTME pace (aim ≤ 33 s)'
             : 'Slower than 40 s UTME pace'

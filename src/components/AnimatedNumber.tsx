@@ -18,8 +18,9 @@ export function AnimatedNumber({
   suffix?: string;
   className?: string;
 }) {
-  const [display, setDisplay] = useState<number>(0);
-  const prevRef = useRef<number>(0);
+  const initialTarget = Number.isFinite(value) ? Math.round(value) : 0;
+  const [display, setDisplay] = useState<number>(initialTarget);
+  const prevRef = useRef<number>(initialTarget);
 
   useEffect(() => {
     const target = Number.isFinite(value) ? Math.round(value) : 0;

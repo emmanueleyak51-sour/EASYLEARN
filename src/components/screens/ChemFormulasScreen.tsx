@@ -622,7 +622,7 @@ export function ChemFormulasScreen({
     });
     downloadPdfBytes(
       pdfBytes,
-      `EYAK-${subjName}-${isEng ? 'Rules' : 'Formulas'}-Sheet.pdf`
+      `Easy-Learn-${subjName}-${isEng ? 'Rules' : 'Formulas'}-Sheet.pdf`
     );
     setPdfSavedFlash(true);
     window.setTimeout(() => setPdfSavedFlash(false), 2600);
@@ -1748,7 +1748,7 @@ export function ChemFormulasScreen({
       {/* Printable 1-Page Formula / Rules Cheat Sheet */}
       <section className="hidden print:block print-sheet">
         <h2 className="font-bold text-[18px] mb-2">
-          EYAK — {subjName} Complete {isEng ? 'Rules' : 'Formulas'} Sheet ({allFormulas.length})
+          Easy Learn — {subjName} Complete {isEng ? 'Rules' : 'Formulas'} Sheet ({allFormulas.length})
         </h2>
         <div className="grid grid-cols-2 gap-2">
           {allFormulas.map((f, idx) => (

@@ -2,7 +2,7 @@ import type { ChemClassId, SubjectId } from '../types';
 import { h53 } from './engine';
 
 export const ACCOUNTS_STORAGE_KEY = 'rtc_accounts_v1';
-export const SESSION_UNLOCK_KEY = 'rtc_session_unlocked';
+export const SESSION_UNLOCK_KEY = 'rtc_session_unlocked_v2';
 
 export interface StoredScholarAccount {
   id: string;
@@ -239,6 +239,105 @@ export function authenticateAccount(
   return {
     ok: false,
     error: 'We could not find that username or email. Check spelling or click Sign Up.',
+  };
+}
+
+export function findAccountByEmail(
+  accounts: StoredScholarAccount[],
+  email: string
+): StoredScholarAccount | undefined {
+  const norm = normalizeIdentifier(email);
+  if (!norm) return undefined;
+  return accounts.find((acc) => normalizeIdentifier(acc.email) === norm);
+}
+
+export function registerAccountStrict(
+  existing: StoredScholarAccount[],
+  input: {
+    username: string;
+    email: string;
+    password: string;
+    classLevel: ChemClassId;
+    subjs: SubjectId[];
+    target: number;
+    nowMs?: number;
+  }
+):
+  | {
+      ok: false;
+      duplicateEmail: true;
+      existingAccount: StoredScholarAccount;
+      error: string;
+    }
+  | {
+      ok: true;
+      duplicateEmail: false;
+      accounts: StoredScholarAccount[];
+      account: StoredScholarAccount;
+    } {
+  const cleanEmail = input.email.trim().toLowerCase();
+  const duplicate = findAccountByEmail(existing, cleanEmail);
+  if (duplicate) {
+    return {
+      ok: false,
+      duplicateEmail: true,
+      existingAccount: duplicate,
+      error: `An Easy Learn account already exists for ${cleanEmail}. Please sign in below, or use Google to recover your password.`,
+    };
+  }
+  const built = buildRegisteredAccount(existing, input);
+  return {
+    ok: true,
+    duplicateEmail: false,
+    accounts: built.accounts,
+    account: built.account,
+  };
+}
+
+export function resetAccountPasswordWithGoogle(
+  existing: StoredScholarAccount[],
+  input: {
+    email: string;
+    newPassword?: string;
+    displayName?: string;
+    classLevel?: ChemClassId;
+    subjs?: SubjectId[];
+    target?: number;
+    nowMs?: number;
+  }
+): { accounts: StoredScholarAccount[]; account: StoredScholarAccount } {
+  const cleanEmail = input.email.trim().toLowerCase();
+  const existingMatch = findAccountByEmail(existing, cleanEmail);
+  const now = input.nowMs || Date.now();
+  const resolvedName =
+    existingMatch?.username ||
+    (input.displayName || '').trim() ||
+    cleanEmail.split('@')[0] ||
+    'Scholar';
+  const nextPasswordHash =
+    typeof input.newPassword === 'string' && input.newPassword.length >= 4
+      ? hashPasscode(input.newPassword)
+      : existingMatch?.passwordHash ?? hashPasscode(`google-oauth-${cleanEmail}-${now}`);
+
+  const updatedAccount: StoredScholarAccount = {
+    id: existingMatch?.id || `sch_${Math.abs(h53(cleanEmail, now))}`,
+    username: resolvedName,
+    email: cleanEmail,
+    passwordHash: nextPasswordHash,
+    classLevel: existingMatch?.classLevel || input.classLevel || 'all',
+    subjs: existingMatch?.subjs?.length
+      ? existingMatch.subjs
+      : input.subjs?.length
+        ? input.subjs
+        : ['eng', 'maths'],
+    target: existingMatch?.target || input.target || 75,
+    createdAt: existingMatch?.createdAt || now,
+  };
+
+  const rest = existing.filter((a) => normalizeIdentifier(a.email) !== cleanEmail);
+  return {
+    accounts: [updatedAccount, ...rest].slice(0, 20),
+    account: updatedAccount,
   };
 }
 

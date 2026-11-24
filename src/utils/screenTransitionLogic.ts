@@ -27,6 +27,7 @@ export const PRIMARY_TAB_ORDER: Partial<Record<ScreenName, number>> = {
  * slide sideways in nav order rather than misfiring push/pop animations.
  */
 export const SCREEN_HIERARCHY_DEPTH: Record<ScreenName, number> = {
+  landing: 0,
   welcome: 0,
   home: 0,
   subjs: 0,
@@ -47,6 +48,7 @@ export const SCREEN_HIERARCHY_DEPTH: Record<ScreenName, number> = {
   transcript: 1,
   duel: 1,
   leaderboard: 1,
+  novels: 1,
   notes: 2,
   lesson: 2,
   quiz: 2,
@@ -64,6 +66,10 @@ export function computeScreenTransition(
 ): ScreenTransitionSpec {
   if (prev === next) {
     return { kind: 'fade', direction: 0 };
+  }
+
+  if (prev === 'landing' || next === 'landing') {
+    return { kind: 'fade', direction: next === 'landing' ? -1 : 1 };
   }
 
   if (prev === 'welcome' || next === 'welcome') {

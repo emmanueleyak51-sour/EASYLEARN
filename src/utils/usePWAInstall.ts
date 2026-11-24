@@ -1,60 +1,173 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  buildWhatsAppShareHref,
+  detectInstallPlatform,
+  detectInstalledAppMode,
+  resolvePersonalInstallUrl,
+  resolvePublicShareUrl,
+  type InstallPlatformGuide,
+} from './freeLaunchAndPwaLogic';
 
-interface BeforeInstallPromptEvent extends Event {
+const PWA_SESSION_FLAG_KEY = 'eyak_pwa_launched_v1';
+
+export interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+let sharedDeferredPrompt: BeforeInstallPromptEvent | null = null;
+let sharedIsInstalled = false;
+let earlyCaptureAttached = false;
+const listeners = new Set<() => void>();
+
+function notifyListeners() {
+  for (const fn of listeners) {
+    fn();
+  }
+}
+
+export function isStandaloneAppMode(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  let sessionLaunchedAsPwa = false;
+  try {
+    sessionLaunchedAsPwa = window.sessionStorage.getItem(PWA_SESSION_FLAG_KEY) === '1';
+  } catch {
+    sessionLaunchedAsPwa = false;
+  }
+
+  const detected = detectInstalledAppMode({
+    displayModeStandalone: window.matchMedia?.('(display-mode: standalone)')?.matches === true,
+    displayModeFullscreen: window.matchMedia?.('(display-mode: fullscreen)')?.matches === true,
+    displayModeMinimalUi: window.matchMedia?.('(display-mode: minimal-ui)')?.matches === true,
+    displayModeWindowControlsOverlay:
+      window.matchMedia?.('(display-mode: window-controls-overlay)')?.matches === true,
+    navigatorStandalone:
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true,
+    referrer: typeof document !== 'undefined' ? document.referrer : '',
+    search: window.location?.search || '',
+    sessionLaunchedAsPwa,
+  });
+
+  if (detected) {
+    try {
+      window.sessionStorage.setItem(PWA_SESSION_FLAG_KEY, '1');
+    } catch {
+      /* ignore restricted storage */
+    }
+  }
+
+  return detected;
+}
+
+/**
+ * Attaches window-level `beforeinstallprompt`, `appinstalled`, and display-mode
+ * listeners immediately before React finishes mounting so early events are never missed.
+ */
+export function initEarlyPWAInstallCapture(): void {
+  if (typeof window === 'undefined' || earlyCaptureAttached) return;
+  earlyCaptureAttached = true;
+  sharedIsInstalled = isStandaloneAppMode();
+
+  window.addEventListener('beforeinstallprompt', (e: Event) => {
+    e.preventDefault();
+    sharedDeferredPrompt = e as BeforeInstallPromptEvent;
+    notifyListeners();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    sharedIsInstalled = true;
+    sharedDeferredPrompt = null;
+    try {
+      window.sessionStorage.setItem(PWA_SESSION_FLAG_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+    notifyListeners();
+  });
+
+  try {
+    const mq = window.matchMedia('(display-mode: standalone)');
+    const onDisplayModeChange = () => {
+      if (isStandaloneAppMode()) {
+        sharedIsInstalled = true;
+        sharedDeferredPrompt = null;
+        notifyListeners();
+      }
+    };
+    mq.addEventListener?.('change', onDisplayModeChange);
+  } catch {
+    /* ignore older browsers */
+  }
+}
+
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [, setTick] = useState(0);
   const [isIOS, setIsIOS] = useState(false);
+  const [isEmbeddedIframe, setIsEmbeddedIframe] = useState(false);
+  const [userAgent, setUserAgent] = useState('');
+  const [origin, setOrigin] = useState('');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    setIsInstalled(isStandalone);
+    initEarlyPWAInstallCapture();
 
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+    sharedIsInstalled = sharedIsInstalled || isStandaloneAppMode();
+    const ua = window.navigator.userAgent || '';
+    setUserAgent(ua);
+    setIsIOS(/iphone|ipad|ipod/i.test(ua));
+    setOrigin(window.location.origin);
 
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
+    let inFrame = false;
+    try {
+      inFrame = window.self !== window.top;
+    } catch {
+      inFrame = true;
+    }
+    setIsEmbeddedIframe(inFrame);
 
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
+    const onUpdate = () => setTick((t) => t + 1);
+    listeners.add(onUpdate);
+    onUpdate();
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      listeners.delete(onUpdate);
     };
   }, []);
 
-  const install = async () => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
+  const install = async (): Promise<boolean> => {
+    if (!sharedDeferredPrompt) return false;
+    await sharedDeferredPrompt.prompt();
+    const { outcome } = await sharedDeferredPrompt.userChoice;
     if (outcome === 'accepted') {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
+      sharedIsInstalled = true;
+      sharedDeferredPrompt = null;
+      notifyListeners();
       return true;
     }
     return false;
   };
 
+  const personalInstallUrl = useMemo(() => resolvePersonalInstallUrl(origin), [origin]);
+  const publicShareUrl = useMemo(() => resolvePublicShareUrl(origin), [origin]);
+  const whatsAppShareHref = useMemo(
+    () => buildWhatsAppShareHref(publicShareUrl),
+    [publicShareUrl]
+  );
+  const installGuide: InstallPlatformGuide = useMemo(
+    () => detectInstallPlatform(userAgent, isEmbeddedIframe),
+    [userAgent, isEmbeddedIframe]
+  );
+
   return {
-    isInstallable: !!deferredPrompt,
-    isInstalled,
+    isInstallable: Boolean(sharedDeferredPrompt),
+    isInstalled: sharedIsInstalled,
     isIOS,
+    isEmbeddedIframe,
+    personalInstallUrl,
+    publicShareUrl,
+    whatsAppShareHref,
+    installGuide,
     install,
   };
 }
