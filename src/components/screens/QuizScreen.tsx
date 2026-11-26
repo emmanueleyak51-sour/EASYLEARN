@@ -11,6 +11,7 @@ import { AnimatedNumber } from '../AnimatedNumber';
 import { SplitWorkbench, SubscreenTopBar } from '../AppShell';
 import { SmoothProgressBar } from '../ULessonMotion';
 import { StudyToolsDrawer } from '../StudyToolsDrawer';
+import { buildGuidedQuestionClue, stripHtmlToPlain } from '../../utils/platformUpgradesLogic';
 
 export function QuizScreen({
   session,
@@ -30,9 +31,11 @@ export function QuizScreen({
   const q = findQuestion(progress, progress.subj, session.cur);
   const [eliminated, setEliminated] = useState<Record<number, boolean>>({});
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [clueOpen, setClueOpen] = useState(false);
 
   useEffect(() => {
     setEliminated({});
+    setClueOpen(false);
   }, [session.cur]);
 
   const upcomingScripts = useMemo(() => {
@@ -108,6 +111,31 @@ export function QuizScreen({
         : topic?.name || 'Practice';
   const progressPct = Math.round(((session.i + (answered ? 1 : 0)) / Math.max(1, session.n)) * 100);
 
+  const guidedClue = buildGuidedQuestionClue({
+    questionHtml: q.q,
+    explanationHtml: q.e,
+    optionsHtml: q.o,
+    correctIndex: q.a,
+    topicTrap: topic?.trap,
+  });
+
+  const handleAskLiveTeacherWhy = () => {
+    const pickedPlain =
+      session.picked !== null && q.o[session.picked]
+        ? stripHtmlToPlain(q.o[session.picked])
+        : '';
+    const rightPlain = q.o[q.a] ? stripHtmlToPlain(q.o[q.a]) : '';
+    const qPlain = stripHtmlToPlain(q.q);
+    const prompt = isCorrect
+      ? `I got this ${SUBJECT_INFO[progress.subj].name} question right ("${qPlain}" -> "${rightPlain}"). Give me one quick exam shortcut so I solve similar questions even faster.`
+      : `Help me understand why "${pickedPlain}" is wrong and why "${rightPlain}" is right for: "${qPlain}".`;
+    window.dispatchEvent(
+      new CustomEvent('rtc:open-live-coach', {
+        detail: { mode: voiceMode, prompt },
+      })
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4 anim-rise">
       <SubscreenTopBar
@@ -116,6 +144,12 @@ export function QuizScreen({
         onBack={onExit}
         right={
           <div className="flex items-center gap-2 text-[12.5px] font-bold text-[var(--dim)] tabular-nums">
+            {session.run >= 2 && (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[var(--gold)] whitespace-nowrap">
+                <Icon name="flame" size={13} />
+                <span>{session.run} in a row</span>
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setToolsOpen(true)}
@@ -129,14 +163,28 @@ export function QuizScreen({
         }
       />
 
-      <SmoothProgressBar
-        value={progressPct}
-        max={100}
-        tone="indigo"
-        heightClass="h-3"
-        trackClass="bg-[var(--deep)]"
-        ariaLabel="Practice progress"
-      />
+      {/* Segmented Question Pips Rail */}
+      <div
+        role="group"
+        aria-label={`Question ${session.i + 1} of ${session.n}, ${progressPct}% complete`}
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${Math.max(1, session.n)}, minmax(0, 1fr))` }}
+      >
+        {Array.from({ length: Math.max(1, session.n) }).map((_, idx) => {
+          const pastEntry = idx < session.res.length ? session.res[idx] : undefined;
+          const pastVerdict = pastEntry ? pastEntry[1] : undefined;
+          const isCurrent = idx === session.i;
+          let barClass = 'bg-[var(--deep)]';
+          if (pastVerdict === 1 || (isCurrent && answered && isCorrect)) {
+            barClass = 'bg-[var(--green)]';
+          } else if (pastVerdict === 0 || (isCurrent && answered && !isCorrect)) {
+            barClass = 'bg-[var(--coral-ink)]';
+          } else if (isCurrent) {
+            barClass = 'bg-[var(--gold)]';
+          }
+          return <div key={idx} className={`h-2.5 rounded-full transition-colors ${barClass}`} />;
+        })}
+      </div>
 
       <ChemMadScientistBar
         mode={voiceMode}
@@ -173,12 +221,39 @@ export function QuizScreen({
                   <span className="text-[var(--ink)] truncate">{kindLabel}</span>
                 </div>
                 {!answered && (
-                  <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--dim)] shrink-0">
-                    <kbd className="eyak-kbd">A</kbd>–<kbd className="eyak-kbd">D</kbd>
-                    <span>answer</span>
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      aria-expanded={clueOpen}
+                      onClick={() => setClueOpen((v) => !v)}
+                      className={`min-h-[30px] px-2.5 rounded-lg border text-[11.5px] font-bold inline-flex items-center gap-1 cursor-pointer transition whitespace-nowrap ${
+                        clueOpen
+                          ? 'bg-[var(--acc-soft)] border-[var(--acc-line)] text-[var(--gold)]'
+                          : 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)]'
+                      }`}
+                    >
+                      <Icon name="key" size={12} className="text-[var(--gold)]" />
+                      <span>{clueOpen ? 'Hide Clue' : 'Examiner Clue'}</span>
+                    </button>
+                    <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--dim)]">
+                      <kbd className="eyak-kbd">A</kbd>–<kbd className="eyak-kbd">D</kbd>
+                    </span>
+                  </div>
                 )}
               </div>
+              {clueOpen && !answered && (
+                <div className="rounded-xl bg-[var(--bg)] border border-[var(--acc-line)] px-3.5 py-3 text-[13px] flex flex-col gap-1">
+                  <span className="font-bold text-[var(--gold)] text-[11.5px]">
+                    First-Principles Clue
+                  </span>
+                  <p className="text-[var(--ink)] leading-snug">{guidedClue.principle}</p>
+                  {guidedClue.trapNote && (
+                    <p className="text-[12px] text-[var(--dim)] leading-snug">
+                      Watch trap: {guidedClue.trapNote}
+                    </p>
+                  )}
+                </div>
+              )}
               <div
                 className="qt text-[var(--ink)]"
                 dangerouslySetInnerHTML={{ __html: typesetMathHtml(q.q, progress.subj) }}
@@ -274,15 +349,25 @@ export function QuizScreen({
                     : 'bg-[var(--bad-soft)] border-[var(--bad-line)]'
                 }`}
               >
-                <div className="flex items-center gap-2">
-                  <Icon
-                    name={isCorrect ? 'check' : 'x'}
-                    size={18}
-                    className={isCorrect ? 'text-[var(--green)]' : 'text-[var(--coral-ink)]'}
-                  />
-                  <span className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
-                    {isCorrect ? 'Spot on!' : 'Not quite — see why:'}
-                  </span>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Icon
+                      name={isCorrect ? 'check' : 'x'}
+                      size={18}
+                      className={isCorrect ? 'text-[var(--green)]' : 'text-[var(--coral-ink)]'}
+                    />
+                    <span className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
+                      {isCorrect ? 'Spot on!' : 'Not quite — see why:'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAskLiveTeacherWhy}
+                    className="min-h-[32px] px-3 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  >
+                    <Icon name="phoneCall" size={13} className="text-[var(--gold)]" />
+                    <span>{isCorrect ? 'Ask for Shortcut' : 'Ask Live Teacher Why'}</span>
+                  </button>
                 </div>
                 {!isCorrect && q.w && q.w[session.picked!] && (
                   <div

@@ -566,6 +566,16 @@ export function playLabFoleySchedule(cues: LabFoleyCue[], muted = false): () => 
   };
 }
 
+export function playWelcomeChord(muted = false) {
+  const c = ac(muted);
+  if (!c || !masterOut) return;
+  // Warm ascending major-9th crystal bell welcome chord (C5 -> E5 -> G5 -> D6)
+  bell(c, 523.25, 0.0, 0.48, 0.065, masterOut);
+  bell(c, 659.25, 0.065, 0.46, 0.06, masterOut);
+  bell(c, 783.99, 0.13, 0.5, 0.065, masterOut);
+  bell(c, 1174.66, 0.2, 0.62, 0.055, masterOut);
+}
+
 export function buzz(pattern: number | number[], muted = false) {
   if (muted) return;
   try {

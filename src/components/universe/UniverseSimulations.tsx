@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import type { AvatarCustomization } from '../../utils/learningUniverseLogic';
 import type { UniverseSimulationKind } from '../../data/learningUniverseWorlds';
 import { triggerLightHaptic } from '../../utils/readingComfortLogic';
+import {
+  CONCORD_FORGE_CHALLENGES,
+  computeMarketEquilibriumState,
+  evaluateConcordSelection,
+} from '../../utils/platformUpgradesLogic';
 import { Icon } from '../Icons';
 
 const OUTFIT_PALETTES: Record<
@@ -226,7 +231,16 @@ export function UniverseStageSimulation({
   const [rootA, setRootA] = useState<number>(1);
   const [rootB, setRootB] = useState<number>(5);
 
-  // 7. Generic Concept Pathway State
+  // 7. English Concord Forge State
+  const [concordIdx, setConcordIdx] = useState<number>(0);
+  const [concordPicked, setConcordPicked] = useState<string | null>(null);
+  const [concordSolvedMap, setConcordSolvedMap] = useState<Record<string, boolean>>({});
+
+  // 8. Economics Supply & Demand Equilibrium State
+  const [marketPrice, setMarketPrice] = useState<number>(300);
+  const [testedDisequilibrium, setTestedDisequilibrium] = useState<boolean>(true);
+
+  // 9. Generic Concept Pathway State
   const [pathIdx, setPathIdx] = useState<number>(0);
 
   if (kind === 'heart_circulation') {
@@ -873,64 +887,469 @@ export function UniverseStageSimulation({
     );
   }
 
-  // Fallback / Universal Concept Pathway Simulator
+  if (kind === 'eng_concord') {
+    const ch = CONCORD_FORGE_CHALLENGES[concordIdx] || CONCORD_FORGE_CHALLENGES[0];
+    const verdict = concordPicked ? evaluateConcordSelection(concordIdx, concordPicked) : null;
+    const solvedCount = Object.keys(concordSolvedMap).length;
+
+    const handlePickVerb = (choice: string) => {
+      triggerLightHaptic(8);
+      setConcordPicked(choice);
+      const res = evaluateConcordSelection(concordIdx, choice);
+      if (res.correct) {
+        const nextMap = { ...concordSolvedMap, [ch.id]: true };
+        setConcordSolvedMap(nextMap);
+        if (Object.keys(nextMap).length >= CONCORD_FORGE_CHALLENGES.length && !completed) {
+          onComplete();
+        }
+      }
+    };
+
+    return (
+      <div className="grid grid-cols-1 min-[840px]:grid-cols-12 gap-4 items-stretch">
+        {/* Left: Visual Sentence Structure & Subject-Verb Arc */}
+        <div className="min-[840px]:col-span-7 rounded-2xl bg-[#191130] border border-purple-400/30 p-4 flex flex-col justify-between gap-3">
+          <div className="flex items-center justify-between gap-2 text-[12px] font-bold text-purple-200">
+            <span>{ch.ruleTag}</span>
+            <span className="tabular-nums">
+              {solvedCount}/{CONCORD_FORGE_CHALLENGES.length} Scrolls Verified
+            </span>
+          </div>
+
+          <svg
+            viewBox="0 0 320 140"
+            className="w-full max-h-[160px] select-none"
+            role="img"
+            aria-label="Sentence subject-verb agreement diagram"
+          >
+            {/* Governing Subject Node */}
+            <rect
+              x="14"
+              y="56"
+              width="96"
+              height="44"
+              rx="10"
+              fill="rgba(168,85,247,0.28)"
+              stroke="#C084FC"
+              strokeWidth="1.8"
+            />
+            <text x="62" y="76" textAnchor="middle" fill="#FAF5FF" fontSize="10" fontWeight="700">
+              HEAD SUBJECT
+            </text>
+            <text x="62" y="90" textAnchor="middle" fill="#E9D5FF" fontSize="8.5">
+              Governs Verb
+            </text>
+
+            {/* Bracketed Distractor Zone */}
+            <rect
+              x="118"
+              y="60"
+              width="92"
+              height="36"
+              rx="8"
+              fill="rgba(148,163,184,0.12)"
+              stroke="rgba(148,163,184,0.4)"
+              strokeDasharray="4 3"
+              strokeWidth="1.4"
+            />
+            <text x="164" y="81" textAnchor="middle" fill="#CBD5E1" fontSize="9">
+              [Bracketed Trap]
+            </text>
+
+            {/* Target Verb Slot */}
+            <rect
+              x="218"
+              y="56"
+              width="88"
+              height="44"
+              rx="10"
+              fill={verdict?.correct ? 'rgba(16,185,129,0.3)' : 'rgba(250,204,21,0.2)'}
+              stroke={verdict?.correct ? '#34D399' : '#FACC15'}
+              strokeWidth="2"
+            />
+            <text x="262" y="76" textAnchor="middle" fill="#FFFFFF" fontSize="11" fontWeight="800">
+              {concordPicked ? `"${concordPicked}"` : '[ ? VERB ]'}
+            </text>
+            <text x="262" y="90" textAnchor="middle" fill="#FDE68A" fontSize="8.5">
+              {verdict?.correct ? '● AGREES' : 'Select Verb'}
+            </text>
+
+            {/* Agreement Arc Jumping Over Distractor */}
+            <path
+              d="M 62 56 Q 162 12, 262 56"
+              fill="none"
+              stroke={verdict?.correct ? '#34D399' : '#C084FC'}
+              strokeWidth="2.4"
+            />
+            <text x="162" y="24" textAnchor="middle" fill="#E9D5FF" fontSize="9.5" fontWeight="700">
+              Direct Concord Link
+            </text>
+          </svg>
+
+          <div className="rounded-xl bg-white/8 border border-white/15 p-3 text-[13.5px] text-white leading-relaxed">
+            <span className="font-bold text-amber-300">{ch.stemBefore}</span>{' '}
+            <span className="text-slate-300 italic">{ch.parenthetical}</span>{' '}
+            <span className="inline-block px-2 py-0.5 rounded bg-purple-500/30 border border-purple-300/40 font-mono font-bold text-amber-200">
+              {concordPicked || '___'}
+            </span>{' '}
+            <span>{ch.stemAfter}</span>
+          </div>
+        </div>
+
+        {/* Right: Interactive Concord Controls */}
+        <div className="min-[840px]:col-span-5 rounded-2xl bg-[var(--card)] border border-[var(--line)] p-4 flex flex-col justify-between gap-3">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-1.5">
+              {CONCORD_FORGE_CHALLENGES.map((item, i) => {
+                const done = Boolean(concordSolvedMap[item.id]);
+                const active = i === concordIdx;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setConcordIdx(i);
+                      setConcordPicked(done ? item.correctChoice : null);
+                    }}
+                    className={`flex-1 min-h-[34px] px-2 rounded-lg text-[11.5px] font-bold cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-[var(--gold)] text-[var(--on-acc)]'
+                        : done
+                          ? 'bg-[var(--acc-soft)] text-[var(--ink)] border border-[var(--acc-line)]'
+                          : 'bg-[var(--bg)] text-[var(--dim)] border border-[var(--line)]'
+                    }`}
+                  >
+                    Scroll {i + 1} {done ? '✓' : ''}
+                  </button>
+                );
+              })}
+            </div>
+
+            <span className="text-[12.5px] font-bold text-[var(--ink)]">
+              Choose the grammatically sound verb:
+            </span>
+            <div className="grid grid-cols-2 gap-2.5">
+              {ch.choices.map((choice) => {
+                const picked = concordPicked === choice;
+                const isRight = choice === ch.correctChoice;
+                return (
+                  <button
+                    key={choice}
+                    type="button"
+                    onClick={() => handlePickVerb(choice)}
+                    className={`min-h-[44px] px-3 rounded-xl font-mono font-bold text-[15px] border cursor-pointer transition ${
+                      picked && isRight
+                        ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--green)]'
+                        : picked && !isRight
+                          ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--coral-ink)]'
+                          : 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)]'
+                    }`}
+                  >
+                    {choice}
+                  </button>
+                );
+              })}
+            </div>
+
+            {verdict && (
+              <p className="text-[12.5px] text-[var(--dim)] leading-snug">{verdict.explanation}</p>
+            )}
+          </div>
+
+          {verdict?.correct && concordIdx < CONCORD_FORGE_CHALLENGES.length - 1 ? (
+            <button
+              type="button"
+              onClick={() => {
+                const next = concordIdx + 1;
+                setConcordIdx(next);
+                setConcordPicked(
+                  concordSolvedMap[CONCORD_FORGE_CHALLENGES[next].id]
+                    ? CONCORD_FORGE_CHALLENGES[next].correctChoice
+                    : null
+                );
+              }}
+              className="btn-tactile indigo w-full whitespace-nowrap"
+            >
+              <span>Next Scroll ({concordIdx + 2}/3)</span>
+              <Icon name="go" size={15} />
+            </button>
+          ) : (
+            <div className="text-[12px] font-semibold text-[var(--dim)]">
+              {completed
+                ? 'All 3 Concord Scrolls authenticated!'
+                : 'Authenticate all 3 scrolls above to unlock Stage 3.'}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === 'econ_market') {
+    const mkt = computeMarketEquilibriumState(marketPrice);
+    // Map Q in [200..800] -> x in [48..252]; P in [200..800] -> y in [134..26]
+    const qToX = (q: number) => 48 + ((q - 200) / 600) * 204;
+    const pToY = (p: number) => 134 - ((p - 200) / 600) * 108;
+    const curY = pToY(mkt.priceNaira);
+    const xDemanded = qToX(mkt.quantityDemanded);
+    const xSupplied = qToX(mkt.quantitySupplied);
+
+    const handlePriceChange = (rawVal: number) => {
+      const st = computeMarketEquilibriumState(rawVal);
+      setMarketPrice(st.priceNaira);
+      if (st.status !== 'equilibrium') {
+        setTestedDisequilibrium(true);
+      }
+      if (st.status === 'equilibrium' && testedDisequilibrium && !completed) {
+        onComplete();
+      }
+    };
+
+    return (
+      <div className="grid grid-cols-1 min-[840px]:grid-cols-12 gap-4 items-stretch">
+        {/* Left: Live Supply & Demand Coordinate Plane */}
+        <div className="min-[840px]:col-span-7 rounded-2xl bg-[#0D1B2A] border border-sky-500/30 p-4 flex flex-col justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 text-[12px] font-bold text-sky-100">
+            <span>Supply &amp; Demand Equilibrium Graph</span>
+            <span
+              className={`tabular-nums ${
+                mkt.status === 'equilibrium'
+                  ? 'text-emerald-300'
+                  : mkt.status === 'shortage'
+                    ? 'text-rose-300'
+                    : 'text-amber-300'
+              }`}
+            >
+              {mkt.statusLabel}
+            </span>
+          </div>
+
+          <svg
+            viewBox="0 0 290 160"
+            className="w-full max-h-[185px] select-none"
+            role="img"
+            aria-label="Interactive supply and demand market equilibrium curve"
+          >
+            {/* Axes */}
+            <line x1="44" y1="18" x2="44" y2="138" stroke="#64748B" strokeWidth="1.6" />
+            <line x1="44" y1="138" x2="266" y2="138" stroke="#64748B" strokeWidth="1.6" />
+            <text x="16" y="82" fill="#CBD5E1" fontSize="9.5" fontWeight="700">
+              P (₦)
+            </text>
+            <text x="155" y="154" textAnchor="middle" fill="#CBD5E1" fontSize="9.5" fontWeight="700">
+              Quantity (Qd &amp; Qs)
+            </text>
+
+            {/* Demand Curve D (downward sloping) & Supply Curve S (upward sloping) */}
+            <line x1={qToX(200)} y1={pToY(800)} x2={qToX(800)} y2={pToY(200)} stroke="#38BDF8" strokeWidth="2.8" />
+            <text x={qToX(800) + 8} y={pToY(200) + 3} fill="#38BDF8" fontSize="10" fontWeight="800">
+              D
+            </text>
+
+            <line x1={qToX(200)} y1={pToY(200)} x2={qToX(800)} y2={pToY(800)} stroke="#F59E0B" strokeWidth="2.8" />
+            <text x={qToX(800) + 8} y={pToY(800) + 3} fill="#F59E0B" fontSize="10" fontWeight="800">
+              S
+            </text>
+
+            {/* Horizontal Market Price Line */}
+            <line
+              x1="44"
+              y1={curY}
+              x2="260"
+              y2={curY}
+              stroke={mkt.status === 'equilibrium' ? '#34D399' : '#F8FAFC'}
+              strokeDasharray="4 3"
+              strokeWidth="1.6"
+            />
+
+            {/* Shortage / Surplus Gap Highlight */}
+            {mkt.status !== 'equilibrium' && (
+              <line
+                x1={Math.min(xDemanded, xSupplied)}
+                y1={curY}
+                x2={Math.max(xDemanded, xSupplied)}
+                y2={curY}
+                stroke={mkt.status === 'shortage' ? '#FB7185' : '#FACC15'}
+                strokeWidth="4"
+              />
+            )}
+
+            <circle cx={xDemanded} cy={curY} r="5" fill="#38BDF8" stroke="#FFFFFF" strokeWidth="1.5" />
+            <circle cx={xSupplied} cy={curY} r="5" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1.5" />
+          </svg>
+
+          <div className="flex items-center justify-between text-[12px] text-slate-200 tabular-nums">
+            <span>Price: ₦{mkt.priceNaira}</span>
+            <span>Qd: {mkt.quantityDemanded} units</span>
+            <span>Qs: {mkt.quantitySupplied} units</span>
+          </div>
+        </div>
+
+        {/* Right: Market Price Slider & Presets */}
+        <div className="min-[840px]:col-span-5 rounded-2xl bg-[var(--card)] border border-[var(--line)] p-4 flex flex-col justify-between gap-3">
+          <div className="flex flex-col gap-3">
+            <label
+              htmlFor="econ-price-slider"
+              className="text-[13px] font-bold text-[var(--ink)] flex justify-between tabular-nums"
+            >
+              <span>Market Price (P)</span>
+              <span className="text-[var(--gold)]">₦{mkt.priceNaira}</span>
+            </label>
+            <input
+              id="econ-price-slider"
+              type="range"
+              min={200}
+              max={800}
+              step={50}
+              value={mkt.priceNaira}
+              onChange={(e) => handlePriceChange(Number(e.target.value))}
+              className="w-full accent-[var(--gold)] cursor-pointer"
+            />
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: '₦300 Ceiling', p: 300 },
+                { label: '₦500 P*', p: 500 },
+                { label: '₦700 Floor', p: 700 },
+              ].map((b) => (
+                <button
+                  key={b.p}
+                  type="button"
+                  onClick={() => {
+                    triggerLightHaptic(8);
+                    handlePriceChange(b.p);
+                  }}
+                  className={`min-h-[36px] px-2 rounded-xl text-[11.5px] font-bold cursor-pointer whitespace-nowrap ${
+                    mkt.priceNaira === b.p
+                      ? 'bg-[var(--gold)] text-[var(--on-acc)]'
+                      : 'bg-[var(--bg)] border border-[var(--line)] text-[var(--ink)]'
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[12px] text-[var(--dim)] leading-snug">
+            {completed
+              ? 'Market clearing price P* = ₦500 verified (Qd = Qs = 500)!'
+              : 'Observe shortage below ₦500 or surplus above ₦500, then lock P* = ₦500.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback / Universal Two-Zone Concept Signal-Flow Simulator
   const nodes = pathwayNodes || [
     { id: 'c1', label: '1. Inspect Signal', stateNote: 'Identify given variables' },
     { id: 'c2', label: '2. Match Core Law', stateNote: 'Select governing principle' },
     { id: 'c3', label: '3. Filter Trap', stateNote: 'Check units and exceptions' },
     { id: 'c4', label: '4. Lock Readiness', stateNote: 'Ready for decision stage' },
   ];
+  const activeNode = nodes[pathIdx] || nodes[0];
 
   return (
-    <div className="rounded-2xl bg-[var(--card)] border border-[var(--line)] p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between text-[12px] font-bold text-[var(--gold)] tabular-nums">
-        <span>Interactive Field Checkpoints</span>
-        <span>
-          {pathIdx + 1} / {nodes.length} inspected
-        </span>
+    <div className="grid grid-cols-1 min-[840px]:grid-cols-12 gap-4 items-stretch">
+      {/* Left: Interactive 4-Node Signal Flow Canvas */}
+      <div className="min-[840px]:col-span-7 rounded-2xl bg-[#111827] border border-indigo-400/30 p-4 flex flex-col justify-between gap-3">
+        <div className="flex items-center justify-between text-[12px] font-bold text-indigo-200 tabular-nums">
+          <span>Interactive Reasoning Signal Flow</span>
+          <span>
+            ● STAGE {pathIdx + 1} OF {nodes.length}
+          </span>
+        </div>
+        <svg
+          viewBox="0 0 320 110"
+          className="w-full max-h-[130px] select-none"
+          role="img"
+          aria-label="Four-stage concept verification pipeline"
+        >
+          {nodes.slice(0, 4).map((nd, idx) => {
+            const cx = 44 + idx * 77;
+            const reached = idx <= pathIdx;
+            const current = idx === pathIdx;
+            return (
+              <g key={nd.id}>
+                {idx < Math.min(3, nodes.length - 1) && (
+                  <line
+                    x1={cx + 22}
+                    y1="55"
+                    x2={cx + 55}
+                    y2="55"
+                    stroke={idx < pathIdx ? '#34D399' : '#475569'}
+                    strokeWidth="3"
+                  />
+                )}
+                <circle
+                  cx={cx}
+                  cy="55"
+                  r="22"
+                  fill={current ? '#6366F1' : reached ? '#059669' : '#1E293B'}
+                  stroke={current ? '#FACC15' : reached ? '#34D399' : '#475569'}
+                  strokeWidth="2.5"
+                />
+                <text x={cx} y="59" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="800">
+                  0{idx + 1}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+        <div className="rounded-xl bg-white/8 border border-white/15 p-3 text-[13px] text-slate-100">
+          <div className="font-bold text-amber-300">{activeNode.label}</div>
+          <p className="text-slate-200 mt-0.5 leading-snug">{activeNode.stateNote}</p>
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-        {nodes.map((n, idx) => {
-          const reached = idx <= pathIdx;
-          return (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => {
-                triggerLightHaptic(8);
-                setPathIdx(idx);
-                if (idx >= nodes.length - 1 && !completed) onComplete();
-              }}
-              className={`p-3 rounded-xl text-left border transition cursor-pointer ${
-                reached
-                  ? 'bg-[var(--acc-soft)] border-[var(--acc-line)] text-[var(--ink)]'
-                  : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
-              }`}
-            >
-              <div className="font-[var(--display)] font-bold text-[13.5px] flex items-center justify-between gap-2">
-                <span>{n.label}</span>
-                {reached && <Icon name="check" size={14} className="text-[var(--gold)]" />}
-              </div>
-              <p className="text-[12px] text-[var(--dim)] mt-1 leading-snug">{n.stateNote}</p>
-            </button>
-          );
-        })}
-      </div>
-      {!completed && (
+
+      {/* Right: Step Controller */}
+      <div className="min-[840px]:col-span-5 rounded-2xl bg-[var(--card)] border border-[var(--line)] p-4 flex flex-col justify-between gap-3">
+        <div className="flex flex-col gap-1.5">
+          {nodes.map((n, idx) => {
+            const reached = idx <= pathIdx;
+            const current = idx === pathIdx;
+            return (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => {
+                  triggerLightHaptic(8);
+                  setPathIdx(idx);
+                  if (idx >= nodes.length - 1 && !completed) onComplete();
+                }}
+                className={`min-h-[38px] px-3 py-1.5 rounded-xl text-left text-[12.5px] font-bold flex items-center justify-between gap-2 transition cursor-pointer ${
+                  current
+                    ? 'bg-[var(--gold)] text-[var(--on-acc)]'
+                    : reached
+                      ? 'bg-[var(--acc-soft)] text-[var(--ink)] border border-[var(--acc-line)]'
+                      : 'bg-[var(--bg)] border border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
+                }`}
+              >
+                <span className="truncate">{n.label}</span>
+                {reached && <Icon name="check" size={14} className="shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+
         <button
           type="button"
+          disabled={pathIdx >= nodes.length - 1 && completed}
           onClick={() => {
             triggerLightHaptic(8);
             const next = Math.min(nodes.length - 1, pathIdx + 1);
             setPathIdx(next);
-            if (next >= nodes.length - 1) onComplete();
+            if (next >= nodes.length - 1 && !completed) onComplete();
           }}
-          className="btn-tactile indigo self-start whitespace-nowrap"
+          className="btn-tactile indigo w-full whitespace-nowrap disabled:opacity-55"
         >
-          <span>Inspect Next Checkpoint</span>
-          <Icon name="go" size={15} />
+          <span>
+            {completed
+              ? 'All Checkpoints Verified'
+              : `Inspect Checkpoint (${pathIdx + 1}/${nodes.length})`}
+          </span>
+          <Icon name={completed ? 'check' : 'go'} size={15} />
         </button>
-      )}
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#5B2BD6" />
+    <meta name="theme-color" content="#1D4ED8" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -45,63 +45,339 @@
       }
     </script>
     <style>
+      body {
+        margin: 0;
+        background: #F4F7FD;
+      }
       .rtc-boot-shell {
+        position: relative;
         min-height: 100vh;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 14px;
-        background: #F7F8FC;
-        color: #16192C;
+        padding: 24px;
+        box-sizing: border-box;
+        background-color: #F4F7FD;
+        background-image:
+          radial-gradient(circle at 50% 38%, rgba(29, 78, 216, 0.13) 0%, rgba(124, 58, 237, 0.08) 36%, transparent 68%),
+          linear-gradient(rgba(15, 23, 42, 0.038) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15, 23, 42, 0.038) 1px, transparent 1px);
+        background-size: 100% 100%, 44px 44px, 44px 44px;
+        color: #0F172A;
         font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
       }
-      @media (prefers-color-scheme: dark) {
-        .rtc-boot-shell {
-          background: #0D1021;
-          color: #F8FAFC;
-        }
+      .rtc-boot-stage {
+        position: relative;
+        z-index: 2;
+        max-width: 512px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 24px;
       }
-      .rtc-boot-mark {
-        width: 52px;
-        height: 52px;
-        border-radius: 16px;
-        background: #5B2BD6;
-        color: #FFFFFF;
+      .rtc-boot-emblem {
+        position: relative;
+        width: 218px;
+        height: 218px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .rtc-boot-aura {
+        position: absolute;
+        width: 196px;
+        height: 196px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(29, 78, 216, 0.38) 0%, rgba(124, 58, 237, 0.24) 44%, rgba(245, 158, 11, 0.2) 66%, transparent 78%);
+        filter: blur(14px);
+        animation: rtcAuraPulse 2.6s ease-in-out infinite;
+        will-change: transform, opacity;
+      }
+      .rtc-boot-orbit {
+        position: absolute;
+        inset: 0;
+        width: 218px;
+        height: 218px;
+        animation: rtcOrbitSpin 11s linear infinite;
+        will-change: transform;
+      }
+      .rtc-boot-orbit-inner {
+        position: absolute;
+        inset: 0;
+        width: 218px;
+        height: 218px;
+        opacity: 0.65;
+        animation: rtcOrbitReverse 16s linear infinite;
+        will-change: transform;
+      }
+      .rtc-boot-crest {
+        position: relative;
+        z-index: 2;
+        width: 160px;
+        height: 160px;
+        border-radius: 38px;
+        overflow: hidden;
+        background: #13073B;
+        box-shadow: 0 20px 50px -12px rgba(29, 78, 216, 0.52), 0 0 0 1.5px rgba(251, 191, 36, 0.48);
         display: flex;
         align-items: center;
         justify-content: center;
+        animation: rtcCrestFloat 2.8s ease-in-out infinite;
+        will-change: transform;
+      }
+      .rtc-boot-crest-svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .rtc-tassel-pendulum {
+        transform-origin: 74px 66px;
+        animation: rtcTasselSway 3.4s ease-in-out infinite;
+      }
+      .rtc-star-pulse {
+        transform-origin: 176px 59px;
+        animation: rtcStarBreath 2.5s ease-in-out infinite;
+      }
+      .rtc-bar-1 { transform-origin: 127px 191px; animation: rtcBarRise 2.4s ease-in-out 0.1s infinite; }
+      .rtc-bar-2 { transform-origin: 145px 187px; animation: rtcBarRise 2.4s ease-in-out 0.25s infinite; }
+      .rtc-bar-3 { transform-origin: 163px 179px; animation: rtcBarRise 2.4s ease-in-out 0.4s infinite; }
+      .rtc-boot-sheen {
+        position: absolute;
+        z-index: 3;
+        inset: 0;
+        background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.22) 50%, transparent 68%);
+        transform: translateX(-145%);
+        animation: rtcCrestSheen 3.1s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+        pointer-events: none;
+        will-change: transform;
+      }
+      .rtc-boot-copy {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .rtc-boot-kicker {
+        font-size: 13.5px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #1D4ED8;
+      }
+      .rtc-boot-title {
+        margin: 0;
+        font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', system-ui, sans-serif;
         font-weight: 800;
-        font-size: 22px;
-        box-shadow: 0 8px 24px -6px rgba(91, 43, 214, 0.45);
+        font-size: 32px;
+        line-height: 1.12;
+        letter-spacing: -0.02em;
+      }
+      .rtc-boot-sub {
+        margin: 0;
+        font-size: 14.5px;
+        font-weight: 500;
+        color: #475569;
+      }
+      .rtc-boot-meta {
+        margin: 2px 0 0;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #64748B;
       }
       .rtc-boot-bar {
-        width: 148px;
-        height: 4px;
+        width: 240px;
+        height: 6px;
         border-radius: 999px;
-        background: rgba(91, 43, 214, 0.16);
+        background: #E2E8F0;
         overflow: hidden;
       }
       .rtc-boot-bar > span {
         display: block;
-        width: 45%;
+        width: 100%;
         height: 100%;
         border-radius: 999px;
-        background: #5B2BD6;
-        animation: rtcBootSlide 1.05s ease-in-out infinite alternate;
+        background: linear-gradient(90deg, #1D4ED8 0%, #6366F1 52%, #F59E0B 100%);
+        transform-origin: left center;
+        animation: rtcBootSlide 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+        will-change: transform;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #090F1E;
+        }
+        .rtc-boot-shell {
+          background-color: #090F1E;
+          background-image:
+            radial-gradient(circle at 50% 38%, rgba(37, 99, 235, 0.22) 0%, rgba(109, 40, 217, 0.14) 34%, transparent 68%),
+            linear-gradient(rgba(148, 163, 184, 0.055) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+          color: #F8FAFC;
+        }
+        .rtc-boot-kicker { color: #60A5FA; }
+        .rtc-boot-sub { color: #CBD5E1; }
+        .rtc-boot-meta { color: #94A3B8; }
+        .rtc-boot-bar { background: rgba(30, 41, 59, 0.9); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .rtc-boot-aura,
+        .rtc-boot-orbit,
+        .rtc-boot-orbit-inner,
+        .rtc-boot-crest,
+        .rtc-tassel-pendulum,
+        .rtc-star-pulse,
+        .rtc-bar-1,
+        .rtc-bar-2,
+        .rtc-bar-3,
+        .rtc-boot-sheen,
+        .rtc-boot-bar > span {
+          animation: none !important;
+        }
+        .rtc-boot-sheen { display: none; }
+      }
+      @keyframes rtcOrbitSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes rtcOrbitReverse {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(-360deg); }
+      }
+      @keyframes rtcAuraPulse {
+        0%, 100% { opacity: 0.5; transform: scale(0.92); }
+        50% { opacity: 0.86; transform: scale(1.08); }
+      }
+      @keyframes rtcCrestFloat {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-5px); }
+      }
+      @keyframes rtcTasselSway {
+        0%, 100% { transform: rotate(-9deg); }
+        50% { transform: rotate(7deg); }
+      }
+      @keyframes rtcStarBreath {
+        0%, 100% { transform: scale(1) rotate(-2deg); }
+        50% { transform: scale(1.07) rotate(3deg); }
+      }
+      @keyframes rtcBarRise {
+        0%, 100% { transform: scaleY(1); }
+        50% { transform: scaleY(1.06); }
+      }
+      @keyframes rtcCrestSheen {
+        0% { transform: translateX(-145%); }
+        55%, 100% { transform: translateX(155%); }
       }
       @keyframes rtcBootSlide {
-        from { transform: translateX(0%); }
-        to { transform: translateX(122%); }
+        from { transform: scaleX(0.16); }
+        to { transform: scaleX(1); }
       }
     </style>
   </head>
   <body>
     <div id="root">
-      <div class="rtc-boot-shell" aria-label="Loading Easy Learn">
-        <div class="rtc-boot-mark" aria-hidden="true">EL</div>
-        <div style="font-weight: 700; font-size: 16px; letter-spacing: -0.01em;">Easy Learn</div>
-        <div class="rtc-boot-bar" aria-hidden="true"><span></span></div>
+      <div class="rtc-boot-shell" role="status" aria-label="Welcome to Easy Learn">
+        <div class="rtc-boot-stage">
+          <div class="rtc-boot-emblem" aria-hidden="true">
+            <div class="rtc-boot-aura"></div>
+            <svg class="rtc-boot-orbit" viewBox="0 0 220 220" fill="none">
+              <defs>
+                <linearGradient id="rtc-orbit-grad" x1="0" y1="0" x2="220" y2="220" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.88" />
+                  <stop offset="50%" stop-color="#F59E0B" stop-opacity="0.92" />
+                  <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.2" />
+                </linearGradient>
+              </defs>
+              <circle cx="110" cy="110" r="102" stroke="url(#rtc-orbit-grad)" stroke-width="1.75" stroke-dasharray="175 56" stroke-linecap="round" />
+              <g transform="translate(110, 8)">
+                <circle cx="0" cy="0" r="8" fill="#FEF08A" fill-opacity="0.32" />
+                <polygon points="0,-6.2 1.8,-1.9 6.3,-1.4 2.8,1.6 3.9,6.1 0,3.7 -3.9,6.1 -2.8,1.6 -6.3,-1.4 -1.8,-1.9" fill="#F59E0B" />
+              </g>
+            </svg>
+            <svg class="rtc-boot-orbit-inner" viewBox="0 0 220 220" fill="none">
+              <circle cx="110" cy="110" r="91" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.25" stroke-dasharray="6 9" />
+            </svg>
+            <div class="rtc-boot-crest">
+              <svg class="rtc-boot-crest-svg" viewBox="0 0 240 240" fill="none">
+                <defs>
+                  <radialGradient id="rtc-bg-medallion" cx="52%" cy="38%" r="68%">
+                    <stop offset="0%" stop-color="#2A1470" />
+                    <stop offset="56%" stop-color="#170946" />
+                    <stop offset="100%" stop-color="#0B0426" />
+                  </radialGradient>
+                  <linearGradient id="rtc-gold-arc" x1="58" y1="194" x2="196" y2="112" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="#B45309" />
+                    <stop offset="35%" stop-color="#F59E0B" />
+                    <stop offset="68%" stop-color="#FDE047" />
+                    <stop offset="100%" stop-color="#D97706" />
+                  </linearGradient>
+                  <radialGradient id="rtc-pearl-head" cx="62%" cy="36%" r="58%">
+                    <stop offset="0%" stop-color="#FFFFFF" />
+                    <stop offset="38%" stop-color="#EDE9FE" />
+                    <stop offset="78%" stop-color="#A78BFA" />
+                    <stop offset="100%" stop-color="#6D28D9" />
+                  </radialGradient>
+                </defs>
+                <rect width="240" height="240" fill="url(#rtc-bg-medallion)" />
+                <g transform="translate(122, 214)">
+                  <ellipse cx="0" cy="0" rx="26" ry="5" stroke="#8B5CF6" stroke-opacity="0.52" stroke-width="1.6" />
+                  <ellipse cx="0" cy="0" rx="45" ry="8.5" stroke="#8B5CF6" stroke-opacity="0.34" stroke-width="1.2" />
+                  <ellipse cx="0" cy="0" rx="64" ry="12" stroke="#8B5CF6" stroke-opacity="0.2" stroke-width="1.1" />
+                </g>
+                <path d="M 62 184 C 98 224, 168 216, 194 156 C 202 138, 200 116, 190 100 C 195 124, 188 152, 168 172 C 140 199, 94 204, 62 184 Z" fill="#6D28D9" />
+                <path d="M 65 181 C 102 214, 164 205, 188 150 C 196 132, 195 112, 186 96 C 190 118, 181 146, 161 165 C 135 190, 93 195, 65 181 Z" fill="url(#rtc-gold-arc)" />
+                <g class="rtc-bar-1">
+                  <polygon points="120,166 128,169 128,191 120,188" fill="#7C3AED" />
+                  <polygon points="128,169 133,165 133,187 128,191" fill="#4C1D95" />
+                  <polygon points="120,166 125,162 133,165 128,169" fill="#DDD6FE" />
+                </g>
+                <g class="rtc-bar-2">
+                  <polygon points="138,150 146,153 146,187 138,184" fill="#7C3AED" />
+                  <polygon points="146,153 151,149 151,183 146,187" fill="#4C1D95" />
+                  <polygon points="138,150 143,146 151,149 146,153" fill="#DDD6FE" />
+                </g>
+                <g class="rtc-bar-3">
+                  <polygon points="156,132 164,135 164,179 156,176" fill="#8B5CF6" />
+                  <polygon points="164,135 169,131 169,175 164,179" fill="#4C1D95" />
+                  <polygon points="156,132 161,128 169,131 164,135" fill="#DDD6FE" />
+                </g>
+                <path d="M 104 190 C 88 172, 64 166, 42 170 L 58 118 C 76 118, 92 126, 104 148 Z" fill="#8B5CF6" />
+                <path d="M 108 190 C 95 166, 76 156, 56 156 L 69 110 C 88 112, 102 124, 109 148 Z" fill="#F8FAFC" />
+                <path d="M 106 178 C 95 158, 81 148, 66 147 L 75 120 C 89 122, 99 132, 106 150 Z" fill="#7C3AED" fill-opacity="0.82" />
+                <path d="M 116 158 C 130 132, 152 122, 174 102 C 166 122, 148 134, 124 158 Z" fill="#A78BFA" />
+                <path d="M 108 192 C 102 152, 114 124, 144 108 C 160 100, 172 90, 178 74 C 174 102, 156 118, 134 132 C 118 142, 112 164, 108 192 Z" fill="#FFFFFF" />
+                <circle cx="109" cy="98" r="20.5" fill="url(#rtc-pearl-head)" />
+                <path d="M 88 73 L 88 87 C 96 81, 120 81, 128 87 L 128 73 Z" fill="#6D28D9" />
+                <polygon points="105,49 148,64 108,78 62,67" fill="#7C3AED" />
+                <polyline points="62,67 105,49 148,64" stroke="#C4B5FD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <g class="rtc-tassel-pendulum">
+                  <path d="M 88 64 L 73 67 L 71 89" stroke="#FBBF24" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle cx="71" cy="91" r="3.4" fill="#FDE047" />
+                  <path d="M 68.5 94 L 66 108 L 75.5 108 L 73 94 Z" fill="#F59E0B" />
+                </g>
+                <g transform="rotate(-24 176 62)">
+                  <ellipse cx="176" cy="62" rx="28" ry="9.5" stroke="#FDE047" stroke-width="2.2" stroke-dasharray="128 18" />
+                </g>
+                <g class="rtc-star-pulse">
+                  <polygon points="176,38 181.5,51.2 195.8,52.6 184.9,62.1 188.2,76.1 176,68.6 163.8,76.1 167.1,62.1 156.2,52.6 170.5,51.2" fill="#F59E0B" />
+                  <polygon points="176,59 176,38 170.5,51.2" fill="#FEF9C3" />
+                  <polygon points="176,59 181.5,51.2 195.8,52.6" fill="#FDE047" />
+                  <polygon points="176,59 156.2,52.6 170.5,51.2" fill="#FEF08A" />
+                </g>
+              </svg>
+              <div class="rtc-boot-sheen"></div>
+            </div>
+          </div>
+          <div class="rtc-boot-copy">
+            <span class="rtc-boot-kicker">Welcome, Scholar</span>
+            <h1 class="rtc-boot-title">Welcome to Easy Learn</h1>
+            <p class="rtc-boot-sub">Explore subjects as living worlds, master every topic, and ace your exams.</p>
+            <p class="rtc-boot-meta">49 Subjects · Interactive Worlds · Voice Teachers · Virtual Labs</p>
+          </div>
+          <div class="rtc-boot-bar" aria-hidden="true"><span></span></div>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

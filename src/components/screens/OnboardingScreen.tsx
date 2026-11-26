@@ -13,7 +13,8 @@ import {
   validateRegisterInput,
 } from '../../utils/authAccounts';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
-import { CrestSvg, Icon } from '../Icons';
+import { EasyLearnAnimatedIcon } from '../EasyLearnAnimatedIcon';
+import { Icon } from '../Icons';
 import { StudyBuddy } from '../StudyBuddy';
 import { LiquidCapsuleBar } from '../ULessonMotion';
 
@@ -506,7 +507,7 @@ export function WelcomeScreen({
               <span>Website</span>
             </button>
           )}
-          <CrestSvg size={38} />
+          <EasyLearnAnimatedIcon size={42} />
           <span className="font-[var(--display)] font-bold text-[22px] tracking-tight text-[var(--ink)] whitespace-nowrap shrink-0">
             Easy Learn
           </span>
@@ -1044,9 +1045,7 @@ export function DxIntroScreen({
     <div className="max-w-[600px] mx-auto py-8 flex flex-col gap-5 anim-rise">
       <div className="rtc-eq-plate p-6 sm:p-8 flex flex-col gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="rounded-[18px] bg-[var(--card)] p-1.5 shrink-0">
-            <StudyBuddy mood="happy" size={46} />
-          </div>
+          <EasyLearnAnimatedIcon size={50} />
           <div>
             <span className="eyebrow text-[#FFE1D1]">Placement check</span>
             <h1 className="h28 text-white">Welcome, {name}</h1>

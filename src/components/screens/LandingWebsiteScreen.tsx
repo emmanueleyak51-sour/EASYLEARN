@@ -4,12 +4,9 @@ import { motion, useReducedMotion } from 'motion/react';
 import {
   ArrowRight,
   Download,
-  Laptop,
   LayoutDashboard,
   LogIn,
   Play,
-  Smartphone,
-  Sparkles,
   Zap,
 } from 'lucide-react';
 import type { ExamTrack, MasteryThemeId, SubjectId, ThemeAppearanceMode } from '../../types';
@@ -54,6 +51,7 @@ import {
   parseScholarEmailList,
 } from '../../utils/paywallLogic';
 import { AnimatedNumber } from '../AnimatedNumber';
+import { EasyLearnAnimatedIcon } from '../EasyLearnAnimatedIcon';
 import { CrestSvg, Icon } from '../Icons';
 import {
   LiquidCapsuleBar,
@@ -790,9 +788,9 @@ export function LandingWebsiteScreen({
         <div className="max-w-[1200px] h-full mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-8">
           <a
             href="#eyak-top"
-            className="inline-flex items-center gap-2.5 eyak-display font-extrabold text-[20px] tracking-tight text-[var(--ink)] whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-2.5 eyak-display font-extrabold text-[19px] tracking-tight text-[var(--ink)] whitespace-nowrap shrink-0"
           >
-            <CrestSvg size={32} />
+            <EasyLearnAnimatedIcon size={28} />
             <span>Easy Learn</span>
           </a>
 
@@ -812,52 +810,12 @@ export function LandingWebsiteScreen({
             <a href="#subjects" className={desktopNavLinkCls('subjects')}>
               Subjects
             </a>
-            {!isInstalled && (
-              <a href="#install-app" className={desktopNavLinkCls('install-app')}>
-                Install App
-              </a>
-            )}
+            <a href="#pricing" className={desktopNavLinkCls('pricing')}>
+              Pricing
+            </a>
           </nav>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                if (audioHandleRef.current) stopVoiceSample();
-                setVideoTourOpen(true);
-              }}
-              aria-label="Watch 2-minute tour"
-              title="Watch 2-min tour"
-              className="group relative w-9 h-9 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] hover:bg-[var(--acc-soft)] text-[var(--dim)] hover:text-[var(--gold)] inline-flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0"
-            >
-              <Play size={15} className="fill-current translate-x-[0.5px]" />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-[var(--ink)] text-[var(--bg)] text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 shadow-sm"
-              >
-                2-min Tour
-              </span>
-            </button>
-
-            {!isInstalled && (
-              <button
-                type="button"
-                onClick={() => setInstallModalOpen(true)}
-                aria-label="Install on Phone and Laptop"
-                title="Install on Phone & Laptop"
-                className="group relative h-9 px-2.5 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] inline-flex items-center justify-center gap-1 hover:opacity-90 transition-all duration-150 cursor-pointer shrink-0"
-              >
-                <Smartphone size={14} />
-                <Laptop size={15} />
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-[var(--ink)] text-[var(--bg)] text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 shadow-sm"
-                >
-                  Install App
-                </span>
-              </button>
-            )}
-
+          <div className="flex items-center shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -872,12 +830,15 @@ export function LandingWebsiteScreen({
                   );
                 }
               }}
-              aria-label={hasActiveSession ? 'Open Study Dashboard' : 'Start Studying'}
-              title={hasActiveSession ? 'Study Dashboard' : 'Start Studying'}
-              className="eyak-cta-sheen h-9 px-3.5 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] eyak-display font-bold text-[13px] inline-flex items-center gap-1.5 hover:opacity-95 transition-opacity cursor-pointer whitespace-nowrap shrink-0"
+              className="eyak-cta-sheen h-9 px-4 rounded-lg bg-[var(--gold)] text-[var(--on-acc)] eyak-display font-bold text-[13px] inline-flex items-center gap-1.5 hover:opacity-95 transition-opacity cursor-pointer whitespace-nowrap shrink-0"
             >
-              {hasActiveSession ? <LayoutDashboard size={15} /> : <Sparkles size={15} />}
-              <span>{hasActiveSession ? 'Hub' : 'Start'}</span>
+              <span>
+                {hasActiveSession
+                  ? 'Open Dashboard'
+                  : PUBLIC_FREE_LAUNCH_ACTIVE
+                    ? 'Start Free'
+                    : 'Start Free Trial'}
+              </span>
             </button>
           </div>
         </div>
@@ -930,16 +891,16 @@ export function LandingWebsiteScreen({
                   </span>
                 </div>
 
-                <h1 className="eyak-display font-extrabold text-[clamp(2.35rem,4.1vw,3.75rem)] leading-[1.05] text-[var(--ink)] text-balance">
+                <h1 className="eyak-display font-extrabold text-[clamp(2.15rem,3.45vw,3.25rem)] leading-[1.07] text-[var(--ink)] text-balance">
                   Train tougher than JAMB. Walk into your exam hall already ahead.
                 </h1>
 
-                <p className="text-[16px] sm:text-[16.5px] leading-[1.6] text-[var(--dim)] max-w-[52ch]">
-                  UTME speed and WAEC Paper 2 precision in one focused workspace — voice teachers, 87 virtual labs, twin-option drills, and live Saturday /400 rankings.
+                <p className="text-[15.5px] sm:text-[16px] leading-[1.58] text-[var(--dim)] max-w-[50ch]">
+                  Master UTME speed and WAEC Paper 2 precision with 49 voice teachers, Learning Worlds, 87 virtual labs, and Saturday /400 mocks.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-4 pt-1">
+              <div className="flex flex-col gap-3.5 pt-1">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
@@ -962,111 +923,81 @@ export function LandingWebsiteScreen({
                           ? 'Start Studying Free'
                           : 'Start 1-Day Free Trial'
                     }
-                    className="eyak-cta-sheen min-h-[48px] px-5 py-3 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] eyak-display font-bold text-[15px] inline-flex items-center gap-2.5 hover:opacity-95 active:translate-y-[1px] transition-[opacity,transform] duration-150 cursor-pointer whitespace-nowrap shrink-0 shadow-[0_6px_22px_rgba(124,92,255,0.22)]"
+                    className="eyak-cta-sheen min-h-[46px] px-5 py-2.5 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] eyak-display font-bold text-[14.5px] inline-flex items-center gap-2 hover:opacity-95 active:translate-y-[1px] transition-[opacity,transform] duration-150 cursor-pointer whitespace-nowrap shrink-0 shadow-[0_6px_22px_rgba(29,78,216,0.2)]"
                   >
-                    {hasActiveSession ? <LayoutDashboard size={18} /> : <Sparkles size={18} />}
+                    {hasActiveSession && <LayoutDashboard size={17} />}
                     <span>
                       {hasActiveSession
-                        ? 'Dashboard'
+                        ? 'Open Dashboard'
                         : PUBLIC_FREE_LAUNCH_ACTIVE
-                          ? 'Start Free'
-                          : '1-Day Trial'}
+                          ? 'Start Studying Free'
+                          : 'Start 1-Day Free Trial'}
                     </span>
-                    <ArrowRight size={17} />
+                    <ArrowRight size={16} />
                   </button>
 
-                  {/* Sleek Icon-First Quick Action Dock */}
-                  <div
-                    role="group"
-                    aria-label="Quick platform actions"
-                    className="inline-flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--card)] border border-[var(--line)]"
+                  <button
+                    type="button"
+                    onClick={() =>
+                      launchInstantOrFallback({
+                        type: 'demo-dashboard',
+                        examTrack: selectedTrack,
+                        subj: blueprint.preset.jambQuartet?.[0],
+                        preset: blueprint.preset,
+                        previewThemeId,
+                      })
+                    }
+                    className="min-h-[46px] px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--acc-line)] hover:border-[var(--gold)] text-[var(--ink)] hover:text-[var(--gold)] eyak-display font-bold text-[13.5px] inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    {!isInstalled && (
-                      <button
-                        type="button"
-                        onClick={() => setInstallModalOpen(true)}
-                        aria-label="Install on Phone and Laptop"
-                        title="Install on Phone & Laptop"
-                        className="group relative h-[40px] px-3 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] hover:brightness-110 text-[var(--gold)] inline-flex items-center justify-center gap-1.5 transition-all duration-150 cursor-pointer shrink-0"
-                      >
-                        <Smartphone size={16} />
-                        <Laptop size={17} />
-                        <Download size={13} className="opacity-85" />
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-[var(--ink)] text-[var(--bg)] text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 shadow-md"
-                        >
-                          Install App
-                        </span>
-                      </button>
-                    )}
+                    <Zap size={15} className="text-[var(--gold)]" />
+                    <span>Try 5-Min Demo</span>
+                  </button>
+                </div>
 
+                {/* Clear, Labeled Secondary Actions (Sign In · 2-Min Tour · Install App) */}
+                <div
+                  role="group"
+                  aria-label="Quick platform actions"
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onStartWithTrack(
+                        'login',
+                        selectedTrack,
+                        blueprint.preset.jambQuartet?.[0],
+                        blueprint.preset
+                      )
+                    }
+                    className="min-h-[36px] px-3 rounded-lg bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--ink)] hover:text-[var(--gold)] inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <LogIn size={14} className="text-[var(--gold)]" />
+                    <span>Sign In</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (audioHandleRef.current) stopVoiceSample();
+                      setVideoTourOpen(true);
+                    }}
+                    className="min-h-[36px] px-3 rounded-lg bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--ink)] hover:text-[var(--gold)] inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <Play size={13} className="fill-current text-[var(--gold)]" />
+                    <span>2-Min Tour</span>
+                  </button>
+
+                  {!isInstalled && (
                     <button
                       type="button"
-                      onClick={() => {
-                        if (audioHandleRef.current) stopVoiceSample();
-                        setVideoTourOpen(true);
-                      }}
-                      aria-label="Watch 2-minute video tour"
-                      title="Watch 2-min tour"
-                      className="group relative w-[40px] h-[40px] rounded-xl hover:bg-[var(--acc-soft)] text-[var(--ink)] hover:text-[var(--gold)] inline-flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
+                      onClick={() => setInstallModalOpen(true)}
+                      className="min-h-[36px] px-3 rounded-lg bg-[var(--acc-soft)] border border-[var(--acc-line)] hover:brightness-95 text-[12.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0"
                     >
-                      <Play size={17} className="fill-current translate-x-[0.5px]" />
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-[var(--ink)] text-[var(--bg)] text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 shadow-md"
-                      >
-                        2-min Tour
-                      </span>
+                      <Download size={13} />
+                      <span>Install App</span>
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        launchInstantOrFallback({
-                          type: 'demo-dashboard',
-                          examTrack: selectedTrack,
-                          subj: blueprint.preset.jambQuartet?.[0],
-                          preset: blueprint.preset,
-                          previewThemeId,
-                        })
-                      }
-                      aria-label="Try 5-minute instant demo"
-                      title="Try 5-min instant demo"
-                      className="group relative w-[40px] h-[40px] rounded-xl hover:bg-[var(--acc-soft)] text-[var(--ink)] hover:text-[var(--gold)] inline-flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
-                    >
-                      <Zap size={17} />
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-[var(--ink)] text-[var(--bg)] text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 shadow-md"
-                      >
-                        5-min Demo
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onStartWithTrack(
-                          'login',
-                          selectedTrack,
-                          blueprint.preset.jambQuartet?.[0],
-                          blueprint.preset
-                        )
-                      }
-                      aria-label="Sign in"
-                      title="Sign in"
-                      className="group relative w-[40px] h-[40px] rounded-xl hover:bg-[var(--acc-soft)] text-[var(--ink)] hover:text-[var(--gold)] inline-flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0"
-                    >
-                      <LogIn size={17} />
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-[var(--ink)] text-[var(--bg)] text-[11px] font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 shadow-md"
-                      >
-                        Sign in
-                      </span>
-                    </button>
-                  </div>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 text-[12.5px] font-semibold text-[var(--dim)]">
@@ -1112,6 +1043,15 @@ export function LandingWebsiteScreen({
                     type: 'live-practice',
                     examTrack: selectedTrack,
                     subj: 'eng',
+                    preset: blueprint.preset,
+                    previewThemeId,
+                  })
+                }
+                onOpenUniversePreview={() =>
+                  launchInstantOrFallback({
+                    type: 'demo-dashboard',
+                    examTrack: selectedTrack,
+                    subj: 'bio',
                     preset: blueprint.preset,
                     previewThemeId,
                   })
@@ -1279,30 +1219,8 @@ export function LandingWebsiteScreen({
               </SmoothViewSwitch>
             </div>
 
-            {/* Right Interactive Workbench: Examiner Standard + Playable 5-Subject Trap Arena */}
-            <div className="lg:col-span-7 flex flex-col gap-6">
-              <SmoothViewSwitch viewKey={`example-${selectedTrack}`}>
-                <div className="eyak-spotlight-surface rounded-2xl border border-[var(--line)] bg-[var(--card)] p-6 sm:p-7 flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] font-bold text-[var(--gold)]">
-                    <span>{activeTrackSpec.examExample.kicker}</span>
-                    <span className="eyak-mono text-[11.5px] text-[var(--dim)]">
-                      Marking Scheme Calibration
-                    </span>
-                  </div>
-                  <p className="eyak-display font-bold text-[17.5px] sm:text-[19px] leading-snug text-[var(--ink)]">
-                    {activeTrackSpec.examExample.prompt}
-                  </p>
-                  <div className="pt-3.5 border-t border-[var(--line)] grid grid-cols-1 sm:grid-cols-2 gap-4 text-[13.5px] leading-relaxed">
-                    <p className="text-[var(--coral-ink)]">
-                      <strong>Common candidate slip:</strong> {activeTrackSpec.examExample.trapNote}
-                    </p>
-                    <p className="text-[var(--green)]">
-                      <strong>Easy Learn training standard:</strong> {activeTrackSpec.examExample.winningRule}
-                    </p>
-                  </div>
-                </div>
-              </SmoothViewSwitch>
-
+            {/* Right Interactive Workbench: Playable 5-Subject Trap Arena (no duplicate spoiler card) */}
+            <div className="lg:col-span-7 flex flex-col gap-5">
               <InteractiveTrapArena
                 selectedTrack={selectedTrack}
                 onStartWithSubject={(subj) =>
@@ -1318,6 +1236,25 @@ export function LandingWebsiteScreen({
                   })
                 }
               />
+
+              <SmoothViewSwitch viewKey={`example-${selectedTrack}`}>
+                <div className="rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-[13px] leading-relaxed">
+                  <div>
+                    <span className="block text-[11.5px] font-bold text-[var(--coral-ink)] mb-1">
+                      Common candidate slip ({activeTrackSpec.tabLabel})
+                    </span>
+                    <p className="text-[var(--dim)]">{activeTrackSpec.examExample.trapNote}</p>
+                  </div>
+                  <div>
+                    <span className="block text-[11.5px] font-bold text-[var(--green)] mb-1">
+                      Marking scheme discipline
+                    </span>
+                    <p className="text-[var(--dim)]">
+                      Eliminate twin-option traps first, check units and mole ratios, and keep your pace inside 33 seconds per objective question.
+                    </p>
+                  </div>
+                </div>
+              </SmoothViewSwitch>
             </div>
           </div>
         </div>
@@ -2974,13 +2911,13 @@ export function LandingWebsiteScreen({
               }
               className="eyak-cta-sheen min-h-[48px] px-5 py-3 rounded-xl bg-[var(--gold)] text-[var(--on-acc)] eyak-display font-bold text-[15px] inline-flex items-center gap-2.5 hover:opacity-95 transition-opacity cursor-pointer whitespace-nowrap"
             >
-              {hasActiveSession ? <LayoutDashboard size={18} /> : <Sparkles size={18} />}
+              {hasActiveSession && <LayoutDashboard size={18} />}
               <span>
                 {hasActiveSession
-                  ? 'Dashboard'
+                  ? 'Open Dashboard'
                   : PUBLIC_FREE_LAUNCH_ACTIVE
-                    ? 'Start Free'
-                    : '1-Day Trial'}
+                    ? 'Start Studying Free'
+                    : 'Start 1-Day Free Trial'}
               </span>
               <ArrowRight size={17} />
             </button>

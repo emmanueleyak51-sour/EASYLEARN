@@ -33,6 +33,7 @@ import {
   SmoothViewSwitch,
   SubjectHeroIllustration,
 } from '../ULessonMotion';
+import bioWorldArt from '../../assets/images/world_biology_living_1795581351630.jpg';
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'] as const;
 
@@ -1869,6 +1870,7 @@ export function HeroInteractivePreviewDeck({
   isVoiceLoading,
   onToggleHeroVoice,
   onOpenLiveEnglishDrill,
+  onOpenUniversePreview,
   onJumpToArena,
 }: {
   heroImageSrc: string;
@@ -1882,11 +1884,13 @@ export function HeroInteractivePreviewDeck({
   isVoiceLoading: boolean;
   onToggleHeroVoice: () => void;
   onOpenLiveEnglishDrill: () => void;
+  onOpenUniversePreview?: () => void;
   onJumpToArena: () => void;
 }) {
-  const [heroTab, setHeroTab] = useState<'trap' | 'voice' | 'dial'>('trap');
+  const [heroTab, setHeroTab] = useState<'trap' | 'worlds' | 'voice' | 'dial'>('trap');
   const [pickedOption, setPickedOption] = useState<number | null>(null);
   const [thumbFailed, setThumbFailed] = useState<boolean>(false);
+  const [worldArtFailed, setWorldArtFailed] = useState<boolean>(false);
 
   const quickVerdict =
     pickedOption !== null ? evaluateHeroQuickChallenge(pickedOption) : null;
@@ -1919,7 +1923,8 @@ export function HeroInteractivePreviewDeck({
 
         <LiquidCapsuleBar
           items={[
-            { id: 'trap', label: '15s UTME Trap' },
+            { id: 'trap', label: '15s Trap' },
+            { id: 'worlds', label: '3D Worlds' },
             { id: 'voice', label: 'Voice Tutor' },
             { id: 'dial', label: 'Merit Dial' },
           ]}
@@ -2031,6 +2036,51 @@ export function HeroInteractivePreviewDeck({
                   </button>
                 </div>
               )}
+            </div>
+          ) : heroTab === 'worlds' ? (
+            <div className="flex flex-col gap-3.5">
+              <div
+                className="relative h-36 rounded-xl overflow-hidden border border-[var(--line)] p-4 flex flex-col justify-end"
+                style={{
+                  background: 'linear-gradient(135deg, #2A0810 0%, #681224 55%, #0F2938 100%)',
+                }}
+              >
+                {!worldArtFailed && (
+                  <img
+                    src={bioWorldArt}
+                    alt="The Living World interactive biology expedition"
+                    referrerPolicy="no-referrer"
+                    onError={() => setWorldArtFailed(true)}
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#090D16]/90 via-[#090D16]/45 to-transparent" />
+                <div className="relative z-10 text-white flex items-end justify-between gap-3">
+                  <div>
+                    <div className="text-[11.5px] font-bold text-amber-300">
+                      Biology · 3D Circulatory Expedition · Guide: Dr. Amaka
+                    </div>
+                    <div className="eyak-display font-extrabold text-[18px] leading-snug">
+                      Voyage Through the Living Heart
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px]">
+                <span className="text-[var(--dim)]">
+                  Navigate heart valves, alveolar gas exchange, and 49 subject worlds.
+                </span>
+                {onOpenUniversePreview && (
+                  <button
+                    type="button"
+                    onClick={onOpenUniversePreview}
+                    className="font-bold text-[var(--gold)] hover:underline underline-offset-4 cursor-pointer whitespace-nowrap"
+                  >
+                    Launch instant preview →
+                  </button>
+                )}
+              </div>
             </div>
           ) : heroTab === 'voice' ? (
             <div className="flex flex-col gap-4">

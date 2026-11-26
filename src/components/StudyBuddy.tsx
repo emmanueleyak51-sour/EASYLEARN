@@ -24,7 +24,7 @@ export function StudyBuddy({
       <span
         aria-hidden="true"
         style={{ width: size, height: size, borderRadius: radius }}
-        className={`inline-flex items-center justify-center shrink-0 select-none bg-gradient-to-br from-[#7C3AED] to-[#4C1D95] text-white shadow-md ${className}`}
+        className={`inline-flex items-center justify-center shrink-0 select-none bg-[var(--gold)] text-[var(--on-acc)] shadow-xs ${className}`}
       >
         <Icon name="user" size={Math.round(size * 0.52)} />
       </span>
@@ -35,7 +35,7 @@ export function StudyBuddy({
     <span
       aria-hidden="true"
       style={{ width: size, height: size, borderRadius: radius }}
-      className={`relative inline-flex items-center justify-center overflow-hidden shrink-0 select-none bg-[#DDD0FF] ring-2 ring-white/70 dark:ring-purple-300/30 shadow-[0_6px_16px_-4px_rgba(76,29,149,0.38)] ${className}`}
+      className={`relative inline-flex items-center justify-center overflow-hidden shrink-0 select-none bg-[var(--acc-soft)] border border-[var(--acc-line)] shadow-xs ${className}`}
     >
       <img
         src={eyakMentorUrl}

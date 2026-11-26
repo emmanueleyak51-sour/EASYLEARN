@@ -142,12 +142,19 @@ export function CrestSvg({ size = 40, className = '' }: { size?: number; classNa
       className={`relative inline-flex items-center justify-center overflow-hidden shrink-0 select-none bg-[#0B0326] ring-1 ring-white/20 shadow-[0_4px_12px_-2px_rgba(59,12,163,0.45)] ${className}`}
     >
       <img
-        src={eyakCrestUrl}
+        src="/easylearn-logo.png"
         alt="Easy Learn crest"
         referrerPolicy="no-referrer"
         draggable={false}
-        onError={() => setImgFailed(true)}
-        className="w-full h-full object-cover scale-[1.08] pointer-events-none select-none"
+        onError={(e) => {
+          const target = e.currentTarget;
+          if (!target.src.endsWith(eyakCrestUrl)) {
+            target.src = eyakCrestUrl;
+          } else {
+            setImgFailed(true);
+          }
+        }}
+        className="w-full h-full object-cover scale-[1.06] pointer-events-none select-none"
       />
     </span>
   );

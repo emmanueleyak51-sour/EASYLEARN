@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { Question, Topic, TopicTestSession, UserProgress } from '../../types';
-import { BOSS_HP, BOSS_TIME, mmss, perm, predicted } from '../../utils/engine';
+import { BOSS_HP, BOSS_TIME, SUBJECT_INFO, mmss, perm, predicted } from '../../utils/engine';
 import {
   extractQuestionSpeechScript,
   extractTopicTestIntroSpeechScript,
 } from '../../utils/chemVoiceLogic';
 import { findQuestion, getTopics } from '../../data/curriculum';
 import { typesetMathHtml } from '../../utils/mathTypesetter';
+import { buildLiveTeacherPromptForQuestion } from '../../utils/platformUpgradesLogic';
 import { DiagramFigure, Icon } from '../Icons';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
 import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
@@ -247,6 +248,85 @@ export function TopicTestScreen({
           </div>
         </section>
 
+        {(session.res || []).some((entry) => !entry.ok) && (
+          <section className="rtc-card p-4 sm:p-5 flex flex-col gap-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="h18 text-[var(--ink)]">Questions you missed</h2>
+              <span className="text-[12px] font-bold text-[var(--coral-ink)] tabular-nums">
+                {(session.res || []).filter((e) => !e.ok).length} to review
+              </span>
+            </div>
+            <div className="flex flex-col gap-3">
+              {(session.res || [])
+                .filter((entry) => !entry.ok)
+                .map((entry) => {
+                  const mq = findQuestion(progress, progress.subj, entry.qid);
+                  if (!mq) return null;
+                  return (
+                    <article
+                      key={entry.qid}
+                      className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-3.5 sm:p-4 flex flex-col gap-2.5"
+                    >
+                      <div
+                        className="text-[14.5px] font-semibold text-[var(--ink)] leading-snug"
+                        dangerouslySetInnerHTML={{ __html: typesetMathHtml(mq.q, progress.subj) }}
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[12.5px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-[var(--coral-ink)]">
+                            Your choice:{' '}
+                            <span
+                              dangerouslySetInnerHTML={{
+                                __html: typesetMathHtml(mq.o[entry.picked] || '—', progress.subj),
+                              }}
+                            />
+                          </span>
+                          <span aria-hidden="true" className="text-[var(--dim)]">·</span>
+                          <span className="font-bold text-[var(--green)]">
+                            Correct:{' '}
+                            <span
+                              dangerouslySetInnerHTML={{
+                                __html: typesetMathHtml(mq.o[mq.a] || '', progress.subj),
+                              }}
+                            />
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(
+                              new CustomEvent('rtc:open-live-coach', {
+                                detail: {
+                                  mode: subjectToLiveCoachMode(progress.subj),
+                                  prompt: buildLiveTeacherPromptForQuestion({
+                                    subjectName: SUBJECT_INFO[progress.subj].name,
+                                    topicName: topic.name,
+                                    questionHtml: mq.q,
+                                    chosenOptionHtml: mq.o[entry.picked],
+                                    correctOptionHtml: mq.o[mq.a] || '',
+                                    isCorrect: false,
+                                  }),
+                                },
+                              })
+                            );
+                          }}
+                          className="min-h-[30px] px-2.5 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] hover:brightness-95 text-[11.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                        >
+                          <Icon name="phone" size={12} />
+                          <span>Ask Live Teacher</span>
+                        </button>
+                      </div>
+                      <div
+                        className="text-[13.5px] text-[var(--dim)] leading-relaxed pt-2 border-t border-[var(--line)]"
+                        dangerouslySetInnerHTML={{ __html: typesetMathHtml(mq.e, progress.subj) }}
+                      />
+                    </article>
+                  );
+                })}
+            </div>
+          </section>
+        )}
+
         <div className="flex flex-col gap-3">
           {won && (
             <button type="button" onClick={handleCopyShare} className="btn-tactile paper w-full">
@@ -316,25 +396,53 @@ export function TopicTestScreen({
         }
       />
 
-      {/* Pass mark progress meter (12px tall) */}
-      <div className="rtc-card px-4 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-[13px] font-bold whitespace-nowrap">
-          <span className="text-[var(--dim)]">
-            {isToughJamb ? 'Tough JAMB pass mark' : 'Pass mark'}
-          </span>
-          <span className="font-[var(--display)] font-bold text-[var(--ink)] tabular-nums">
-            {session.hits}/{targetHp} correct
-          </span>
+      {/* Pass mark progress meter + Segmented Question Pips Rail */}
+      <div className="rtc-card px-4 py-3 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-[13px] font-bold whitespace-nowrap">
+            <span className="text-[var(--dim)]">
+              {isToughJamb ? 'Tough JAMB pass mark' : 'Pass mark'}
+            </span>
+            <span className="font-[var(--display)] font-bold text-[var(--ink)] tabular-nums">
+              {session.hits}/{targetHp} correct
+            </span>
+          </div>
+          <div className="flex-1 max-w-[240px]">
+            <SmoothProgressBar
+              value={Math.min(targetHp, session.hits)}
+              max={targetHp}
+              tone="emerald"
+              heightClass="h-2.5"
+              trackClass="bg-[var(--deep)]"
+              ariaLabel="Topic test pass mark"
+            />
+          </div>
         </div>
-        <div className="flex-1 max-w-[260px]">
-          <SmoothProgressBar
-            value={Math.min(targetHp, session.hits)}
-            max={targetHp}
-            tone="emerald"
-            heightClass="h-3"
-            trackClass="bg-[var(--deep)]"
-            ariaLabel="Topic test pass mark"
-          />
+
+        <div
+          aria-label="Topic test question progress"
+          className="grid gap-1.5"
+          style={{ gridTemplateColumns: `repeat(${Math.max(1, session.list.length)}, minmax(0, 1fr))` }}
+        >
+          {session.list.map((itemQid, idx) => {
+            const past = (session.res || [])[idx];
+            const isCur = idx === session.i;
+            const statusCls = past
+              ? past.ok
+                ? 'bg-[var(--green)] text-white border-[var(--green)]'
+                : 'bg-[var(--coral)] text-white border-[var(--coral)]'
+              : isCur
+                ? 'bg-[var(--acc-soft)] text-[var(--gold)] border-[var(--gold)]'
+                : 'bg-[var(--bg)] text-[var(--dim)] border-[var(--line)]';
+            return (
+              <div
+                key={`${itemQid}-${idx}`}
+                className={`h-5 rounded-md border text-[10.5px] font-bold tabular-nums flex items-center justify-center transition-colors ${statusCls}`}
+              >
+                {past ? (past.ok ? '✓' : '×') : idx + 1}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -454,15 +562,41 @@ export function TopicTestScreen({
                       : 'bg-[var(--bad-soft)] border-[var(--bad-line)]'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <Icon
-                      name={isRight ? 'check' : 'x'}
-                      size={18}
-                      className={isRight ? 'text-[var(--green)]' : 'text-[var(--coral-ink)]'}
-                    />
-                    <div className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
-                      {isRight ? 'Correct!' : 'Not quite — see why:'}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Icon
+                        name={isRight ? 'check' : 'x'}
+                        size={18}
+                        className={isRight ? 'text-[var(--green)]' : 'text-[var(--coral-ink)]'}
+                      />
+                      <div className="font-[var(--display)] font-bold text-[16px] text-[var(--ink)]">
+                        {isRight ? 'Correct!' : 'Not quite — see why:'}
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(
+                          new CustomEvent('rtc:open-live-coach', {
+                            detail: {
+                              mode: subjectToLiveCoachMode(progress.subj),
+                              prompt: buildLiveTeacherPromptForQuestion({
+                                subjectName: SUBJECT_INFO[progress.subj].name,
+                                topicName: topic.name,
+                                questionHtml: q.q,
+                                chosenOptionHtml: session.picked !== null ? q.o[session.picked] : undefined,
+                                correctOptionHtml: q.o[q.a] || '',
+                                isCorrect: isRight,
+                              }),
+                            },
+                          })
+                        );
+                      }}
+                      className="min-h-[32px] px-3 rounded-xl bg-[var(--card)] border border-[var(--acc-line)] hover:border-[var(--gold)] text-[12px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Icon name="phone" size={13} />
+                      <span>{isRight ? 'Ask for Shortcut' : 'Ask Live Teacher Why'}</span>
+                    </button>
                   </div>
                   {!isRight && q.w && q.w[session.picked!] && (
                     <div

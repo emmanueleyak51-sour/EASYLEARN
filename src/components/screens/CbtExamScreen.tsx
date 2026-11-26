@@ -13,8 +13,13 @@ import {
   type CbtQuestionItem,
 } from '../../utils/cbtEngine';
 import { auth } from '../../firebase';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { isCbtPresetPaywalled } from '../../utils/paywallLogic';
 import { PUBLIC_FREE_LAUNCH_ACTIVE } from '../../utils/freeLaunchAndPwaLogic';
+import {
+  buildLiveTeacherPromptForQuestion,
+  canRunCbtPresetInCurrentAccess,
+} from '../../utils/platformUpgradesLogic';
 import {
   getSaturdayCbtCampaign,
   getToughJambDrillConfig,
@@ -36,13 +41,16 @@ type ReviewFilter = 'wrong' | 'skipped' | 'flagged' | 'all';
 
 export function CbtExamScreen({
   progress,
+  isTrialActive = false,
   onCompleteCbt,
   onOpenWeakTopic,
+  onOpenWorldMission,
   onExamHallChange,
   onOpenPaywall,
   onBack,
 }: {
   progress: UserProgress;
+  isTrialActive?: boolean;
   onCompleteCbt: (payload: {
     mode: CbtExamMode;
     subjects: SubjectId[];
@@ -52,6 +60,7 @@ export function CbtExamScreen({
     answeredResults: { q: Question; ok: boolean }[];
   }) => void;
   onOpenWeakTopic: (subj: SubjectId, topicId: string) => void;
+  onOpenWorldMission?: (subj: SubjectId, topicId: string) => void;
   onExamHallChange?: (inHall: boolean) => void;
   onOpenPaywall?: (reason?: string) => void;
   onBack: () => void;
@@ -184,9 +193,15 @@ export function CbtExamScreen({
   };
 
   const handleStartExam = () => {
-    if (!PUBLIC_FREE_LAUNCH_ACTIVE && isCbtPresetPaywalled(progress, preset)) {
+    const canRunPreset = canRunCbtPresetInCurrentAccess({
+      preset,
+      isBasePaywalled: isCbtPresetPaywalled(progress, preset),
+      isActiveCountdownTrial: Boolean(isTrialActive),
+      isPublicFreeLaunch: PUBLIC_FREE_LAUNCH_ACTIVE,
+    });
+    if (!canRunPreset) {
       onOpenPaywall?.(
-        'Unlock Half paper (90 questions) and Full 180-question UTME mock exams'
+        'Unlock Half paper (90 questions) and Full 180-question UTME mock exams with Easy Learn Premium, or join the free Saturday National CBT Arena.'
       );
       return;
     }
@@ -516,7 +531,13 @@ export function CbtExamScreen({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {(['sprint', 'half', 'full'] as const).map((pid) => {
                   const cfg = CBT_PRESETS[pid];
-                  const locked = !PUBLIC_FREE_LAUNCH_ACTIVE && isCbtPresetPaywalled(progress, pid);
+                  const basePaywalled = isCbtPresetPaywalled(progress, pid);
+                  const locked = !canRunCbtPresetInCurrentAccess({
+                    preset: pid,
+                    isBasePaywalled: basePaywalled,
+                    isActiveCountdownTrial: Boolean(isTrialActive),
+                    isPublicFreeLaunch: PUBLIC_FREE_LAUNCH_ACTIVE,
+                  });
                   const active = preset === pid && !locked;
                   return (
                     <button
@@ -563,7 +584,11 @@ export function CbtExamScreen({
                               ? '90 questions (30 + 20 × 3)'
                               : '45 questions (15 + 10 × 3)'
                           : `${cfg.waecCount} questions`}
-                        {locked ? ' · Premium' : ''}
+                        {locked
+                          ? ' · Premium'
+                          : pid === 'sprint' && basePaywalled && isTrialActive
+                            ? ' · Free Trial'
+                            : ''}
                       </div>
                     </button>
                   );
@@ -591,7 +616,7 @@ export function CbtExamScreen({
 
               <div className="relative">
                 <input
-                  type="search"
+                  type="text"
                   value={subjectSearch}
                   onChange={(e) => setSubjectSearch(e.target.value)}
                   aria-label="Filter exam subjects"
@@ -1004,11 +1029,9 @@ export function CbtExamScreen({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {report.weakTopics.slice(0, 10).map((wt) => (
-                <button
+                <div
                   key={`${wt.subj}:${wt.topicId}`}
-                  type="button"
-                  onClick={() => onOpenWeakTopic(wt.subj, wt.topicId)}
-                  className="text-left rounded-[16px] bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] p-3.5 flex items-center justify-between gap-3 transition cursor-pointer"
+                  className="rounded-[16px] bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] p-3.5 flex flex-col justify-between gap-3 transition"
                 >
                   <div className="min-w-0">
                     <div className="text-[12px] font-bold text-[var(--gold)]">
@@ -1021,8 +1044,27 @@ export function CbtExamScreen({
                       Missed {wt.missed} of {wt.total} questions
                     </div>
                   </div>
-                  <Icon name="go" size={16} className="text-[var(--gold)] shrink-0" />
-                </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOpenWeakTopic(wt.subj, wt.topicId)}
+                      className="min-h-[34px] px-3 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--gold)] text-[12.5px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Icon name="book" size={13} className="text-[var(--gold)]" />
+                      <span>Revise notes</span>
+                    </button>
+                    {onOpenWorldMission && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenWorldMission(wt.subj, wt.topicId)}
+                        className="min-h-[34px] px-3 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] hover:brightness-95 text-[12.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        <Icon name="compass" size={13} />
+                        <span>World mission</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -1134,13 +1176,40 @@ export function CbtExamScreen({
                       </div>
 
                       <div className="rounded-[16px] bg-[var(--card)] border border-[var(--line)] p-3.5 flex flex-col gap-2 text-[14px]">
-                        <div className="font-bold text-[var(--ink)]">
-                          Correct answer: {rightLetter}
-                          {!isSkipped && !isRight && chosenLetter
-                            ? ` · You chose ${chosenLetter}`
-                            : isSkipped
-                              ? ' · You left this blank'
-                              : ''}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="font-bold text-[var(--ink)]">
+                            Correct answer: {rightLetter}
+                            {!isSkipped && !isRight && chosenLetter
+                              ? ` · You chose ${chosenLetter}`
+                              : isSkipped
+                                ? ' · You left this blank'
+                                : ''}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(
+                                new CustomEvent('rtc:open-live-coach', {
+                                  detail: {
+                                    mode: subjectToLiveCoachMode(item.subj),
+                                    prompt: buildLiveTeacherPromptForQuestion({
+                                      subjectName: SUBJECT_INFO[item.subj].name,
+                                      topicName: item.topicName,
+                                      questionHtml: item.q.q,
+                                      chosenOptionHtml:
+                                        !isSkipped && picked !== undefined ? item.q.o[picked] : undefined,
+                                      correctOptionHtml: item.q.o[item.q.a] || '',
+                                      isCorrect: isRight,
+                                    }),
+                                  },
+                                })
+                              );
+                            }}
+                            className="min-h-[32px] px-3 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] hover:brightness-95 text-[12px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                          >
+                            <Icon name="phone" size={13} />
+                            <span>{isRight ? 'Ask for Shortcut' : 'Ask Live Teacher'}</span>
+                          </button>
                         </div>
                         {!isSkipped && !isRight && item.q.w && item.q.w[picked] && (
                           <div

@@ -45,6 +45,13 @@ import {
 import type { QuestionBankTab } from '../QuestionBankManagerModal';
 import { getPlayableWorldForSubject } from '../../data/learningUniverseWorlds';
 import { computeUniverseLevelSummary, loadUniverseProfile } from '../../utils/learningUniverseLogic';
+import {
+  evaluateHomeQuickWarmup,
+  pickHomeQuickWarmup,
+} from '../../utils/homeQuickCheckLogic';
+import { typesetMathHtml } from '../../utils/mathTypesetter';
+
+const QUICK_LETTERS = ['A', 'B', 'C', 'D'] as const;
 
 interface SubjectGlideCustom {
   dir: -1 | 0 | 1;
@@ -162,6 +169,7 @@ export function HomeScreen({
   onOpenQuestionBank,
   onOpenPaywall,
   onOpenUniverse,
+  onQuickWarmupSolved,
 }: {
   progress: UserProgress;
   dueIds: string[];
@@ -190,6 +198,7 @@ export function HomeScreen({
   onOpenQuestionBank?: (subj?: SubjectId, tab?: QuestionBankTab) => void;
   onOpenPaywall?: (reason?: string) => void;
   onOpenUniverse?: () => void;
+  onQuickWarmupSolved?: (cardKey: string, isCorrect: boolean) => void;
 }) {
   const subj = progress.subj;
   const hasLabs =
@@ -341,26 +350,71 @@ export function HomeScreen({
     [progress.xp]
   );
 
+  const [quickOffset, setQuickOffset] = useState(0);
+  const [pickedQuickIdx, setPickedQuickIdx] = useState<number | null>(null);
+  const [worldThumbFailed, setWorldThumbFailed] = useState<Record<string, boolean>>({});
+  const rewardedQuickKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    setQuickOffset(0);
+    setPickedQuickIdx(null);
+  }, [subj]);
+
+  const quickCard = useMemo(
+    () => pickHomeQuickWarmup(topics, mission?.t.id, quickOffset),
+    [topics, mission?.t.id, quickOffset]
+  );
+  const quickVerdict = useMemo(
+    () =>
+      quickCard && pickedQuickIdx !== null
+        ? evaluateHomeQuickWarmup(quickCard, pickedQuickIdx)
+        : null,
+    [quickCard, pickedQuickIdx]
+  );
+
+  const studioMeta = SUBJECT_STUDIO_META[subj];
+  const hasCompanion = Boolean((studioMeta && onOpenStudio) || hasLabs);
+  const isStudioCompanion = Boolean(studioMeta && onOpenStudio);
+  const companionIcon = isStudioCompanion
+    ? studioMeta!.icon
+    : subj === 'chem'
+      ? 'flask'
+      : subj === 'agric'
+        ? 'leaf'
+        : subj === 'bio'
+          ? 'dna'
+          : subj === 'phys'
+            ? 'atom'
+            : 'pen';
+  const companionTitle = isStudioCompanion
+    ? studioMeta!.title
+    : `${SUBJECT_INFO[subj].short} Virtual Labs`;
+  const companionSubtitle = isStudioCompanion
+    ? studioMeta!.badge
+    : 'Interactive practicals';
+
   return (
-    <div className="flex flex-col gap-4 sm:gap-5">
-      {/* Calm Daily Momentum & Exam Readiness Bar — Warm greeting + immediate metrics without pushing Today's Next Step below the fold */}
-      <section
-        aria-label="Daily greeting and exam readiness"
-        className="rtc-card rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5"
-      >
-        <div className="flex flex-col min-[760px]:flex-row min-[760px]:items-center justify-between gap-3.5">
-          {/* Left: Personalized Scholar Greeting */}
+    <div className="flex flex-col gap-6 sm:gap-7">
+      {/* Zone 1: Clean Unboxed Scholar Header + Inline Subject Bar */}
+      <header aria-label="Daily greeting and subject switcher" className="flex flex-col gap-4">
+        <div className="flex flex-col min-[780px]:flex-row min-[780px]:items-end justify-between gap-4 pb-4 border-b border-[var(--line)]">
           <div className="flex items-start sm:items-center gap-3.5 min-w-0">
             <StudyBuddy
               mood={progress.streak.n >= 3 ? 'cheer' : 'happy'}
-              size={52}
-              className="mt-0.5 sm:mt-0"
+              size={48}
+              className="mt-0.5 sm:mt-0 shrink-0"
             />
             <div className="flex flex-col gap-0.5 min-w-0">
-              <div className="flex items-center gap-2 text-[12px] font-bold text-[var(--dim)] flex-wrap">
-                <span className="text-[var(--gold)]">{momentum.headlineTag}</span>
+              <div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--dim)] flex-wrap tabular-nums">
+                <span className="font-bold text-[var(--gold)]">{momentum.headlineTag}</span>
                 <span aria-hidden="true">·</span>
                 <span>{examBadgeLabel}</span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {examTrack === 'waec'
+                    ? `Target ${progress.target || 75}%`
+                    : `Target ${targetJamb400}/400`}
+                </span>
                 {bothWeightedSlot && (
                   <>
                     <span aria-hidden="true">·</span>
@@ -368,34 +422,31 @@ export function HomeScreen({
                   </>
                 )}
               </div>
-              <h1 className="h22 text-[var(--ink)] truncate">
+              <h1 className="h24 text-[var(--ink)] text-balance">
                 {greet()}, {progress.name || 'Scholar'}
               </h1>
-              <p className="text-[13.5px] text-[var(--dim)] leading-snug max-w-[58ch]">
-                {momentum.encouragement}
+              <p className="text-[13.5px] text-[var(--dim)] leading-snug max-w-[60ch]">
+                {momentum.encouragement || getDailyQuietLine(today())}
               </p>
             </div>
           </div>
 
-          {/* Right: Tactile Readiness, Streak & Quick Icon Controls */}
+          {/* Right: Clean Interactive Readiness & Schedule Controls */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {/* Streak Counter */}
             <div
-              className="min-h-[42px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] inline-flex items-center gap-2"
+              className="min-h-[40px] px-3 rounded-lg bg-[var(--card)] border border-[var(--line)] inline-flex items-center gap-1.5"
               title="Daily study streak"
             >
               <Icon
                 name="flame"
-                size={17}
+                size={15}
                 className={progress.streak.n > 0 ? 'text-[#EA580C]' : 'text-[var(--dim)]'}
               />
-              <span className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
-                <AnimatedNumber value={progress.streak.n} />{' '}
-                {progress.streak.n === 1 ? 'day' : 'days'}
+              <span className="font-[var(--display)] font-bold text-[13.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
+                <AnimatedNumber value={progress.streak.n} />d streak
               </span>
             </div>
 
-            {/* Exam Readiness Score Trigger */}
             <button
               type="button"
               onClick={() => {
@@ -408,22 +459,21 @@ export function HomeScreen({
                   : `Estimated JAMB score ${estimatedJamb400} out of 400. Configure exam track`
               }
               title="Configure exam track and target score"
-              className="min-h-[42px] px-3.5 rounded-xl bg-[var(--acc-soft)] hover:brightness-[0.98] border border-[var(--acc-line)] inline-flex items-center gap-2 cursor-pointer transition active:scale-[0.98]"
+              className="min-h-[40px] px-3.5 rounded-lg bg-[var(--card)] hover:border-[var(--acc-line)] border border-[var(--line)] inline-flex items-center gap-2 cursor-pointer transition active:scale-[0.99]"
             >
-              <Icon name="trophy" size={16} className="text-[var(--gold)] shrink-0" />
+              <Icon name="trophy" size={15} className="text-[var(--gold)] shrink-0" />
               {examTrack === 'waec' ? (
-                <span className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
+                <span className="font-[var(--display)] font-bold text-[13.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
                   <AnimatedNumber value={waecReadinessPct} suffix="%" /> · {waecGradeLabel}
                 </span>
               ) : (
-                <span className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
+                <span className="font-[var(--display)] font-bold text-[13.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
                   <AnimatedNumber value={estimatedJamb400} />
                   <span className="text-[var(--dim)] font-semibold"> / 400</span>
                 </span>
               )}
             </button>
 
-            {/* Icon-First Study Plan / Exam Countdown Trigger */}
             {onOpenPlanner && (
               <button
                 type="button"
@@ -441,18 +491,15 @@ export function HomeScreen({
                     ? `${daysToExam} days to exam`
                     : 'Study plan & exam date'
                 }
-                className="min-h-[42px] min-w-[42px] px-2.5 rounded-xl bg-[var(--bg)] hover:border-[var(--acc-line)] border border-[var(--line)] text-[var(--ink)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-[0.98]"
+                className="min-h-[40px] px-3 rounded-lg bg-[var(--card)] hover:border-[var(--acc-line)] border border-[var(--line)] text-[var(--ink)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-[0.99]"
               >
-                <Icon name="calendar" size={16} className="text-[var(--gold)] shrink-0" />
-                {hasSetExamDate && daysToExam !== null && (
-                  <span className="text-[12.5px] font-bold tabular-nums whitespace-nowrap">
-                    {daysToExam}d
-                  </span>
-                )}
+                <Icon name="calendar" size={15} className="text-[var(--gold)] shrink-0" />
+                <span className="text-[12.5px] font-bold tabular-nums whitespace-nowrap">
+                  {hasSetExamDate && daysToExam !== null ? `${daysToExam}d` : 'Plan'}
+                </span>
               </button>
             )}
 
-            {/* Icon-First Spaced Revision Due Trigger */}
             {dueCount > 0 && (
               <button
                 type="button"
@@ -462,40 +509,67 @@ export function HomeScreen({
                 }}
                 aria-label={`${dueCount} revision questions due`}
                 title={`${dueCount} revision questions ready`}
-                className="min-h-[42px] px-2.5 rounded-xl tile-sky inline-flex items-center gap-1.5 cursor-pointer transition active:scale-[0.98]"
+                className="min-h-[40px] px-3 rounded-lg tile-sky inline-flex items-center gap-1.5 cursor-pointer transition active:scale-[0.99]"
               >
-                <Icon name="rev" size={16} className="shrink-0" />
-                <span className="text-[12.5px] font-extrabold tabular-nums whitespace-nowrap">
-                  {dueCount}
+                <Icon name="rev" size={15} className="shrink-0" />
+                <span className="text-[12.5px] font-bold tabular-nums whitespace-nowrap">
+                  {dueCount} due
                 </span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Slim Goal Progress & Quiet Daily Thought */}
-        <div className="pt-2.5 border-t border-[var(--line)] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-28 sm:w-36 shrink-0">
-              <SmoothProgressBar
-                value={jambPct}
-                max={100}
-                tone="indigo"
-                heightClass="h-2"
-                ariaLabel="Target exam score progress"
-              />
-            </div>
-            <span className="text-[12px] font-semibold text-[var(--dim)] tabular-nums truncate">
-              {examTrack === 'waec'
-                ? `Target ${progress.target || 75}% · ${SUBJECT_INFO[subj].short} ${subjMasteryPct}%`
-                : `Target ${targetJamb400}/400 · ${SUBJECT_INFO[subj].short} ${subjMasteryPct}%`}
-            </span>
+        {/* Inline Subject Switcher Bar (Zero outer wrapper card) */}
+        <div className="flex flex-col min-[880px]:flex-row min-[880px]:items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <LiquidCapsuleBar
+              roleType="group"
+              ariaLabel="Switch subject"
+              layoutMode="grid"
+              gridClassName={
+                visibleSubjs.length <= 4
+                  ? 'grid-cols-2 sm:grid-cols-4 gap-1.5'
+                  : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5'
+              }
+              size="md"
+              items={visibleSubjs.map((sid) => {
+                const subjTopics = getTopics(sid);
+                const subjPct = computeTopicsProgressPct(progress, subjTopics);
+                return {
+                  id: sid,
+                  label: SUBJECT_INFO[sid].compact,
+                  icon: SUBJECT_INFO[sid].icon,
+                  sublabel: subjPct > 0 ? `${subjPct}%` : undefined,
+                };
+              })}
+              value={subj}
+              onChange={onSelectSubject}
+            />
           </div>
-          <p className="hidden md:block text-[12px] font-medium text-[var(--dim)] truncate">
-            {getDailyQuietLine(today())}
-          </p>
+
+          <div className="flex items-center justify-between min-[880px]:justify-end gap-3 shrink-0 text-[12.5px] font-bold">
+            {!hasDiagnosed && (
+              <button
+                type="button"
+                onClick={onStartDiagnostic}
+                className="text-[var(--dim)] hover:text-[var(--ink)] inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <span>Placement check</span>
+                <Icon name="go" size={13} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onManageSubjects}
+              className="min-h-[36px] px-3 rounded-lg bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap"
+            >
+              <Icon name="grid" size={13} className="text-[var(--gold)]" />
+              <span>{examTrack === 'jamb' ? 'Edit 4 Subjects' : 'Choose Subjects'}</span>
+            </button>
+          </div>
         </div>
-      </section>
+      </header>
 
       <div className="relative overflow-x-clip">
         <AnimatePresence initial={false} mode="popLayout" custom={subjGlideCustom}>
@@ -506,101 +580,64 @@ export function HomeScreen({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="flex flex-col gap-4 will-change-transform"
+            className="flex flex-col gap-6 will-change-transform"
           >
             <LayoutGroup id={`home-subj-${subj}`}>
-              {/* Unified Learning Worlds Launch Card — connects Subject Exploration & Exam Mastery */}
-              {onOpenUniverse && (
+              {/* Zone 2: Dominant Split-Screen Hero Workbench (Single Focal Anchor) */}
+              <div className="grid grid-cols-1 min-[880px]:grid-cols-12 gap-5 items-stretch">
+                {/* Left (7 cols): Today's Priority Mission — Houses the ONLY Primary Solid CTA */}
                 <section
-                  aria-label="Learning Worlds"
-                  className="rtc-card rounded-2xl p-4 sm:p-5 flex flex-col min-[760px]:flex-row min-[760px]:items-center justify-between gap-4 border-[var(--acc-line)]"
+                  aria-label="Today's priority mission"
+                  className="min-[880px]:col-span-7 rtc-card rounded-2xl p-5 sm:p-6 flex flex-col justify-between gap-5"
                 >
-                  <div className="flex items-start gap-3.5 min-w-0">
-                    <span className="w-11 h-11 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] border border-[var(--acc-line)] flex items-center justify-center shrink-0">
-                      <Icon name="compass" size={20} />
-                    </span>
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap text-[12px] font-bold text-[var(--dim)] tabular-nums">
-                        <span className="text-[var(--gold)]">{SUBJECT_INFO[subj].name} World</span>
-                        <span aria-hidden="true">·</span>
-                        <span>Level {explorerLevel.level} Explorer</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{currentWorld.missions.length} interactive missions</span>
-                      </div>
-                      <h2 className="h18 text-[var(--ink)]">
-                        {currentWorld.worldTitle} · {currentWorld.heroMissionHeadline}
-                      </h2>
-                      <p className="text-[13.5px] text-[var(--dim)] leading-snug max-w-[54ch]">
-                        Interactive simulations and syllabus missions built to raise your exam score.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerLightHaptic(10);
-                      onOpenUniverse();
-                    }}
-                    className="btn-tactile indigo shrink-0 whitespace-nowrap"
-                  >
-                    <span>Explore Worlds</span>
-                    <Icon name="go" size={16} className="ul-arrow" />
-                  </button>
-                </section>
-              )}
-
-              {/* Student's Next Step (Primary Focal Anchor) + Subjects */}
-              <div className="grid grid-cols-1 min-[820px]:grid-cols-12 gap-4 items-stretch">
-                <section
-                  aria-label="Your next step"
-                  className="min-[820px]:col-span-7 rtc-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4 border-[var(--acc-line)]"
-                >
-                  <div className="flex flex-col gap-2.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap text-[12px] font-bold">
-                      <div className="flex items-center gap-1.5 text-[var(--gold)]">
-                        <Icon name="bolt" size={14} />
-                        <span>Today&apos;s next step</span>
-                        <span aria-hidden="true" className="text-[var(--dim)]">
-                          ·
+                  <div className="flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap text-[12px] font-semibold text-[var(--dim)] tabular-nums">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className="font-bold text-[var(--gold)] whitespace-nowrap">
+                          Priority Mission
                         </span>
-                        <span className="text-[var(--dim)]">{SUBJECT_INFO[subj].name}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="whitespace-nowrap">{SUBJECT_INFO[subj].name}</span>
+                        {mission && (
+                          <span className="hidden sm:inline truncate">· {mission.t.sec}</span>
+                        )}
                       </div>
-                      {mission && (
-                        <span className="text-[var(--dim)] tabular-nums">
-                          {passedCount}/{topics.length} passed
-                        </span>
-                      )}
+                      <span className="whitespace-nowrap">
+                        {passedCount}/{topics.length} mastered · {subjMasteryPct}%
+                      </span>
                     </div>
 
                     {mission ? (
                       <>
-                        <h2 className="h22 text-[var(--ink)]">{mission.t.name}</h2>
-                        <p className="text-[14.5px] text-[var(--dim)] leading-snug">
-                          {mission.stage === 'lesson'
-                            ? `Master core concepts and worked examples in ${mission.t.name.toLowerCase()}.`
-                            : mission.stage === 'practice'
-                              ? drillCfg.isToughJamb
-                                ? '6 tough UTME questions with twin-option traps.'
-                                : '6 practice questions to build accuracy and speed.'
-                              : `Pass ${drillCfg.bossHp}/7 questions in ${
-                                  drillCfg.isToughJamb ? '3:30' : '5:00'
-                                } to clear this topic.`}
-                        </p>
+                        <div className="flex flex-col gap-1.5">
+                          <h2 className="h24 text-[var(--ink)] text-balance">{mission.t.name}</h2>
+                          <p className="text-[14.5px] text-[var(--dim)] leading-relaxed max-w-[58ch]">
+                            {mission.stage === 'lesson'
+                              ? `Study core principles, examiner shortcuts, and worked examples in ${mission.t.name.toLowerCase()}.`
+                              : mission.stage === 'practice'
+                                ? drillCfg.isToughJamb
+                                  ? 'Solve 6 timed UTME questions built with twin-option traps.'
+                                  : 'Complete 6 targeted practice questions to build accuracy and speed.'
+                                : `Score at least ${drillCfg.bossHp}/7 in ${
+                                    drillCfg.isToughJamb ? '3:30' : '5:00'
+                                  } to pass this syllabus topic.`}
+                          </p>
+                        </div>
 
-                        {/* 3-Step Track: Learn -> Practise -> Topic test (12px meters) */}
+                        {/* Clean 3-Step Progression Rail */}
                         <div className="grid grid-cols-3 gap-2.5 pt-1" aria-label="Topic steps">
                           {(
                             [
-                              { id: 'lesson', label: '1. Learn', done: mission.stage !== 'lesson' },
-                              { id: 'practice', label: '2. Practise', done: mission.stage === 'boss' },
-                              { id: 'boss', label: '3. Topic test', done: false },
+                              { id: 'lesson', label: '01. Learn', done: mission.stage !== 'lesson' },
+                              { id: 'practice', label: '02. Practise', done: mission.stage === 'boss' },
+                              { id: 'boss', label: '03. Topic Test', done: false },
                             ] as const
                           ).map((step) => {
                             const isCurrent = mission.stage === step.id;
                             return (
                               <div key={step.id} className="flex flex-col gap-1.5">
                                 <div
-                                  className={`h-3 rounded-full transition-colors duration-200 ${
+                                  className={`h-2 rounded-full transition-colors duration-200 ${
                                     step.done
                                       ? 'bg-[var(--green)]'
                                       : isCurrent
@@ -624,6 +661,23 @@ export function HomeScreen({
                           })}
                         </div>
 
+                        {(mission.t.trap || (mission.t.goals && mission.t.goals[0])) && (
+                          <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3.5 py-3 flex flex-col gap-1">
+                            <span className="text-[11.5px] font-bold text-[var(--gold)]">
+                              {mission.t.trap ? 'Examiner Trap Watch' : 'Key Syllabus Goal'}
+                            </span>
+                            <div
+                              className="text-[13px] text-[var(--ink)] leading-snug line-clamp-2"
+                              dangerouslySetInnerHTML={{
+                                __html: typesetMathHtml(
+                                  mission.t.trap || mission.t.goals![0],
+                                  subj
+                                ),
+                              }}
+                            />
+                          </div>
+                        )}
+
                         <ChemMadScientistBar
                           mode={coachMode as never}
                           variant="compact"
@@ -646,25 +700,26 @@ export function HomeScreen({
                         />
                       </>
                     ) : hasLockedRemaining ? (
-                      <>
-                        <h2 className="h22 text-[var(--ink)]">
+                      <div className="flex flex-col gap-1.5">
+                        <h2 className="h24 text-[var(--ink)] text-balance">
                           Unlock all {topics.length} topics in {SUBJECT_INFO[subj].name}
                         </h2>
-                        <p className="text-[14.5px] text-[var(--dim)] leading-snug">
-                          Free trial ended. Subscribe from ₦1,000/month to unlock all 49 subjects, tutors, mocks, and labs.
+                        <p className="text-[14.5px] text-[var(--dim)] leading-relaxed">
+                          Your free trial has ended. Upgrade from ₦1,000/month to unlock all 49 subjects, voice tutors, mocks, and virtual labs.
                         </p>
-                      </>
+                      </div>
                     ) : (
-                      <>
-                        <h2 className="h22 text-[var(--ink)]">All {passedCount} topics passed</h2>
-                        <p className="text-[14.5px] text-[var(--dim)]">
-                          Keep {SUBJECT_INFO[subj].name} sharp with quick spaced revision.
+                      <div className="flex flex-col gap-1.5">
+                        <h2 className="h24 text-[var(--ink)]">All {passedCount} topics passed</h2>
+                        <p className="text-[14.5px] text-[var(--dim)] leading-relaxed">
+                          Keep {SUBJECT_INFO[subj].name} exam-ready with quick spaced-recall sessions.
                         </p>
-                      </>
+                      </div>
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3">
+                  {/* Single Primary CTA + Quiet Secondary Actions */}
+                  <div className="pt-3 border-t border-[var(--line)] flex flex-wrap items-center gap-2.5">
                     {mission ? (
                       <>
                         <button
@@ -673,10 +728,10 @@ export function HomeScreen({
                             triggerLightHaptic(12);
                             onStartMission(mission.t.id, mission.stage);
                           }}
-                          className="btn-tactile indigo flex-1 min-w-[190px] whitespace-nowrap"
+                          className="btn-tactile indigo flex-1 min-w-[185px] whitespace-nowrap"
                         >
                           <span>{missionLabel}</span>
-                          <Icon name="go" size={18} className="ul-arrow" />
+                          <Icon name="go" size={17} className="ul-arrow" />
                         </button>
                         <button
                           type="button"
@@ -685,11 +740,10 @@ export function HomeScreen({
                             onOpenTopic(mission.t.id);
                           }}
                           aria-label={`Open ${mission.t.name} topic overview and notes`}
-                          title="Topic overview & study notes"
                           className="btn-tactile paper whitespace-nowrap px-3.5"
                         >
-                          <Icon name="book" size={16} />
-                          <span>Notes &amp; overview</span>
+                          <Icon name="book" size={15} />
+                          <span>Study notes</span>
                         </button>
                       </>
                     ) : hasLockedRemaining && onOpenPaywall ? (
@@ -703,8 +757,8 @@ export function HomeScreen({
                           }
                           className="btn-tactile indigo flex-1 min-w-[190px] whitespace-nowrap"
                         >
-                          <Icon name="unlock" size={17} />
-                          <span>Unlock Easy Learn Premium</span>
+                          <Icon name="unlock" size={16} />
+                          <span>Unlock Full Access</span>
                         </button>
                         <button
                           type="button"
@@ -720,247 +774,227 @@ export function HomeScreen({
                         onClick={onOpenReview}
                         className="btn-tactile indigo w-full whitespace-nowrap"
                       >
-                        <span>Start revision</span>
-                        <Icon name="go" size={18} className="ul-arrow" />
+                        <span>Start spaced revision</span>
+                        <Icon name="go" size={17} className="ul-arrow" />
                       </button>
                     )}
                   </div>
                 </section>
 
-                {/* Subjects Card */}
+                {/* Right (5 cols): Subject World Banner + Live 15s Syllabus Quick-Check */}
                 <section
-                  aria-label="Your subjects"
-                  className="min-[820px]:col-span-5 rtc-card rounded-2xl p-4 flex flex-col justify-between gap-3"
+                  aria-label="Subject world and live syllabus quick check"
+                  className="min-[880px]:col-span-5 rtc-card rounded-2xl overflow-hidden flex flex-col justify-between"
                 >
-                  <div className="flex flex-col gap-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <h2 className="h18 text-[var(--ink)]">
-                          {examTrack === 'jamb' ? 'Your 4 JAMB subjects' : 'Subjects'}
-                        </h2>
-                        <p className="text-[12px] text-[var(--dim)]">
-                          {examTrack === 'jamb'
-                            ? '4 UTME subjects · Tap to switch'
-                            : examTrack === 'both'
-                              ? '70% JAMB · 30% WAEC'
-                              : 'Tap to switch subject'}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={onManageSubjects}
-                        className="min-h-[32px] px-2.5 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[12px] font-bold text-[var(--gold)] hover:bg-[var(--card)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                      >
-                        {examTrack === 'jamb' ? 'Edit 4 JAMB' : 'Choose subjects'}
-                      </button>
-                    </div>
+                  {/* Top Illustrated World Strip */}
+                  <div
+                    className="relative min-h-[108px] px-4 py-3.5 flex flex-col justify-end border-b border-[var(--line)]"
+                    style={{ background: currentWorld.fallbackGradient }}
+                  >
+                    {currentWorld.keyArtUrl && !worldThumbFailed[subj] && (
+                      <img
+                        src={currentWorld.keyArtUrl}
+                        alt={`${SUBJECT_INFO[subj].name} — ${currentWorld.worldTitle}`}
+                        referrerPolicy="no-referrer"
+                        onError={() =>
+                          setWorldThumbFailed((prev) => ({ ...prev, [subj]: true }))
+                        }
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#090D16]/92 via-[#090D16]/60 to-[#090D16]/30" />
 
-                    <LiquidCapsuleBar
-                      roleType="group"
-                      ariaLabel="Switch subject"
-                      layoutMode="grid"
-                      gridClassName="grid-cols-2 gap-1.5"
-                      size="md"
-                      items={visibleSubjs.map((sid) => {
-                        const subjTopics = getTopics(sid);
-                        const subjPct = computeTopicsProgressPct(progress, subjTopics);
-                        return {
-                          id: sid,
-                          label: SUBJECT_INFO[sid].compact,
-                          icon: SUBJECT_INFO[sid].icon,
-                          sublabel: subjPct > 0 ? `${subjPct}%` : undefined,
-                        };
-                      })}
-                      value={subj}
-                      onChange={onSelectSubject}
-                    />
+                    <div className="relative z-10 flex items-end justify-between gap-3 text-white">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-bold text-amber-300 tabular-nums truncate">
+                          Level {explorerLevel.level} Explorer · {currentWorld.missions.length}{' '}
+                          Missions
+                        </div>
+                        <h3 className="font-[var(--display)] font-bold text-[16.5px] leading-snug truncate">
+                          {currentWorld.worldTitle}
+                        </h3>
+                      </div>
+                      {onOpenUniverse && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerLightHaptic(8);
+                            onOpenUniverse();
+                          }}
+                          className="min-h-[32px] px-3 rounded-lg bg-white/15 hover:bg-white/25 border border-white/30 text-white font-[var(--display)] font-bold text-[12px] inline-flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 transition"
+                        >
+                          <span>Enter World</span>
+                          <Icon name="go" size={13} />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="pt-3 border-t border-[var(--line)] flex items-center justify-between gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={onOpenTopicsMap}
-                      className="text-[13px] font-bold text-[var(--gold)] hover:underline inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>All {SUBJECT_INFO[subj].short} topics</span>
-                      <Icon name="go" size={14} />
-                    </button>
+                  {/* Live Interactive Quick-Check Body */}
+                  <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between gap-3.5">
+                    {quickCard ? (
+                      <>
+                        <div className="flex flex-col gap-2.5">
+                          <div className="flex items-center justify-between gap-2 text-[11.5px] font-semibold text-[var(--dim)]">
+                            <span className="truncate">
+                              <strong className="text-[var(--gold)]">Quick Check</strong> ·{' '}
+                              {quickCard.topicName}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerLightHaptic(6);
+                                setPickedQuickIdx(null);
+                                setQuickOffset((n) => n + 1);
+                              }}
+                              className="font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              Next question →
+                            </button>
+                          </div>
 
-                    {!hasDiagnosed && (
-                      <button
-                        type="button"
-                        onClick={onStartDiagnostic}
-                        className="text-[12.5px] font-bold text-[var(--dim)] hover:text-[var(--ink)] inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>Placement check</span>
-                        <Icon name="go" size={13} />
-                      </button>
+                          <div
+                            className="font-[var(--body)] font-semibold text-[13.5px] leading-snug text-[var(--ink)]"
+                            dangerouslySetInnerHTML={{
+                              __html: typesetMathHtml(quickCard.prompt, subj),
+                            }}
+                          />
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                            {quickCard.options.map((opt, idx) => {
+                              const isPicked = pickedQuickIdx === idx;
+                              const isRight = idx === quickCard.correctIndex;
+                              let cls =
+                                'border-[var(--line)] bg-[var(--bg)] text-[var(--ink)] hover:border-[var(--acc-line)]';
+                              if (pickedQuickIdx !== null) {
+                                if (isRight) {
+                                  cls =
+                                    'border-[var(--ok-line)] bg-[var(--ok-soft)] text-[var(--ink)]';
+                                } else if (isPicked) {
+                                  cls =
+                                    'border-[var(--bad-line)] bg-[var(--bad-soft)] text-[var(--ink)]';
+                                } else {
+                                  cls =
+                                    'border-[var(--line)] bg-[var(--bg)]/50 text-[var(--dim)] opacity-75';
+                                }
+                              }
+                              return (
+                                <button
+                                  key={`${quickCard.topicId}-${quickOffset}-${idx}`}
+                                  type="button"
+                                  onClick={() => {
+                                    triggerLightHaptic(8);
+                                    const firstPickForCard = pickedQuickIdx === null;
+                                    setPickedQuickIdx(idx);
+                                    if (firstPickForCard && onQuickWarmupSolved) {
+                                      const cardKey = `${subj}:${quickCard.topicId}:${quickOffset}`;
+                                      if (!rewardedQuickKeysRef.current.has(cardKey)) {
+                                        rewardedQuickKeysRef.current.add(cardKey);
+                                        onQuickWarmupSolved(cardKey, idx === quickCard.correctIndex);
+                                      }
+                                    }
+                                  }}
+                                  className={`min-h-[40px] px-3 py-2 rounded-lg border text-left text-[12.5px] font-semibold flex items-center justify-between gap-2 cursor-pointer transition-colors ${cls}`}
+                                >
+                                  <span className="min-w-0 flex items-baseline gap-1.5">
+                                    <span className="font-mono font-bold text-[var(--gold)] shrink-0">
+                                      {QUICK_LETTERS[idx]}.
+                                    </span>
+                                    <span
+                                      className="break-words"
+                                      dangerouslySetInnerHTML={{
+                                        __html: typesetMathHtml(opt, subj),
+                                      }}
+                                    />
+                                  </span>
+                                  {pickedQuickIdx !== null && isRight && (
+                                    <span className="text-[12px] font-extrabold text-[var(--green)] shrink-0">
+                                      ✓
+                                    </span>
+                                  )}
+                                  {pickedQuickIdx !== null && isPicked && !isRight && (
+                                    <span className="text-[12px] font-extrabold text-[var(--coral-ink)] shrink-0">
+                                      ✕
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {quickVerdict ? (
+                          <div className="pt-2.5 border-t border-[var(--line)] flex flex-col gap-1 text-[12px]">
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                className={`font-bold ${
+                                  quickVerdict.isCorrect
+                                    ? 'text-[var(--green)]'
+                                    : 'text-[var(--coral-ink)]'
+                                }`}
+                              >
+                                {quickVerdict.verdictLabel}
+                              </span>
+                              {quickVerdict.isCorrect && (
+                                <span className="font-bold text-[var(--gold)] tabular-nums">
+                                  +5 XP earned
+                                </span>
+                              )}
+                            </div>
+                            <div
+                              className="text-[var(--dim)] leading-snug line-clamp-3"
+                              dangerouslySetInnerHTML={{
+                                __html: typesetMathHtml(quickVerdict.explanation, subj),
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="pt-2 border-t border-[var(--line)] flex items-center justify-between gap-2 text-[11.5px] text-[var(--dim)]">
+                            <span>Tap A–D for instant examiner feedback</span>
+                            <button
+                              type="button"
+                              onClick={() => onOpenTopic(quickCard.topicId)}
+                              className="font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+                            >
+                              Open topic →
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex flex-col justify-center gap-2 text-[13px] text-[var(--dim)]">
+                        <span>Select any topic below to start practising syllabus questions.</span>
+                      </div>
                     )}
                   </div>
                 </section>
               </div>
 
-              {/* Dedicated Subject Companion Workspace (distinct from syllabus topics & general tools) */}
-              {((SUBJECT_STUDIO_META[subj] && onOpenStudio) || hasLabs) && (() => {
-                const studioMeta = SUBJECT_STUDIO_META[subj];
-                const isStudio = Boolean(studioMeta && onOpenStudio);
-                const companionIcon = isStudio
-                  ? studioMeta!.icon
-                  : subj === 'chem'
-                    ? 'flask'
-                    : subj === 'agric'
-                      ? 'leaf'
-                      : subj === 'bio'
-                        ? 'dna'
-                        : subj === 'phys'
-                          ? 'atom'
-                          : 'pen';
-                const companionTitle = isStudio
-                  ? studioMeta!.title
-                  : `${SUBJECT_INFO[subj].short} labs`;
-                const companionBadge = isStudio ? studioMeta!.badge : 'Practical lab';
-                const companionDesc = isStudio
-                  ? studioMeta!.subtitle
-                  : subj === 'chem'
-                    ? 'Titration, reaction speed and gas collection experiments'
-                    : subj === 'agric'
-                      ? 'Soil pH, fertiliser rate and livestock feed mixing'
-                      : subj === 'bio'
-                        ? 'Osmosis in potato strips, enzymes and microscopy'
-                        : subj === 'phys'
-                          ? 'Pendulum timer, lenses, circuits and springs'
-                          : 'Compass, ruler and protractor constructions';
-                const companionCta =
-                  isStudio && (subj === 'eng' || subj === 'lit')
-                    ? 'Open Novels Library'
-                    : isStudio && subj === 'crs'
-                      ? 'Open Study Bible'
-                      : isStudio && subj === 'irs'
-                        ? 'Open Qur’an reader'
-                        : isStudio
-                          ? 'Open practical tool'
-                          : 'Open labs';
-                return (
-                  <section
-                    aria-label={`${SUBJECT_INFO[subj].name} practical companion`}
-                    className="rtc-card rounded-2xl p-4 sm:p-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 border-[var(--acc-line)]"
-                  >
-                    <div className="flex items-start gap-3 min-w-0">
-                      <span className="w-10 h-10 rounded-xl tile-mint flex items-center justify-center shrink-0">
-                        <Icon name={companionIcon} size={19} />
-                      </span>
-                      <div className="flex flex-col gap-0.5 min-w-0">
-                        <div className="text-[11.5px] font-bold text-[var(--gold)]">
-                          {SUBJECT_INFO[subj].name} companion · {companionBadge}
-                        </div>
-                        <h2 className="h18 text-[var(--ink)]">{companionTitle}</h2>
-                        <p className="text-[13.5px] text-[var(--dim)] leading-snug max-w-[56ch]">
-                          {companionDesc}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={isStudio ? onOpenStudio : onOpenLab}
-                      className="btn-tactile paper shrink-0 whitespace-nowrap"
-                    >
-                      <span>{companionCta}</span>
-                      <Icon name="go" size={16} className="ul-arrow" />
-                    </button>
-                  </section>
-                );
-              })()}
-
-              {/* Saturday National CBT Arena & Same-Day Student Ranking Card */}
-              {onOpenCbt && (
+              {/* Zone 3: Hairline Priority Syllabus Queue + Weekly Momentum & Saturday CBT */}
+              <div className="grid grid-cols-1 min-[880px]:grid-cols-12 gap-5 items-stretch">
+                {/* Left (7 cols): Single Card with Hairline-Divided Syllabus Rows */}
                 <section
-                  aria-label="Saturday National CBT Arena"
-                  className={`rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                    satCampaign.isSaturday ? 'rtc-eq-plate text-white' : 'rtc-card border-[var(--acc-line)]'
-                  }`}
+                  aria-label="Priority syllabus topics"
+                  className="min-[880px]:col-span-7 rtc-card rounded-2xl overflow-hidden flex flex-col justify-between"
                 >
-                  <div className="flex items-start gap-3.5 min-w-0">
-                    <span
-                      className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                        satCampaign.isSaturday
-                          ? 'tile-peach'
-                          : 'bg-[var(--acc-soft)] text-[var(--gold)] border border-[var(--acc-line)]'
-                      }`}
-                    >
-                      <Icon name={satCampaign.isSaturday ? 'trophy' : 'clock'} size={20} />
-                    </span>
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <div
-                        className={`flex items-center gap-2 flex-wrap text-[12px] font-bold tabular-nums ${
-                          satCampaign.isSaturday ? 'text-[#FFE1D1]' : 'text-[var(--gold)]'
-                        }`}
-                      >
-                        <span>
-                          {satCampaign.isSaturday
-                            ? 'Saturday National CBT Arena · 2× XP'
-                            : 'Weekly Saturday CBT Habit'}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span>
-                          {dailyCbtCount && dailyCbtCount > 0
-                            ? `${dailyCbtCount} student${dailyCbtCount === 1 ? '' : 's'} ranked today`
-                            : 'Live same-day student ranking'}
-                        </span>
-                        {satCampaign.saturdayStreak > 0 && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span>{satCampaign.saturdayStreak} Sat streak</span>
-                          </>
-                        )}
-                      </div>
-                      <h2
-                        className={`h18 ${satCampaign.isSaturday ? 'text-white' : 'text-[var(--ink)]'}`}
-                      >
-                        {satCampaign.headline}
-                      </h2>
-                      <p
-                        className={`text-[13.5px] leading-snug max-w-[58ch] ${
-                          satCampaign.isSaturday ? 'text-white/90' : 'text-[var(--dim)]'
-                        }`}
-                      >
-                        {satCampaign.subheadline}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onOpenCbt}
-                    className={`btn-tactile shrink-0 whitespace-nowrap ${
-                      satCampaign.isSaturday ? 'paper text-[var(--ink)]' : 'indigo'
-                    }`}
-                  >
-                    <span>{satCampaign.ctaLabel}</span>
-                    <Icon name="go" size={16} className="ul-arrow" />
-                  </button>
-                </section>
-              )}
-
-              {/* Continue Learning + This Week */}
-              <div className="grid grid-cols-1 min-[820px]:grid-cols-12 gap-4 items-start">
-                <section className="min-[820px]:col-span-7 flex flex-col gap-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <h2 className="h18 text-[var(--ink)]">Continue learning</h2>
-                      <p className="text-[12.5px] text-[var(--dim)]">
-                        Active {SUBJECT_INFO[subj].name} topics
-                      </p>
+                  <div className="px-5 py-3.5 border-b border-[var(--line)] flex items-center justify-between gap-2">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <h2 className="h18 text-[var(--ink)]">Syllabus Queue</h2>
+                      <span className="text-[12px] text-[var(--dim)] truncate">
+                        · {SUBJECT_INFO[subj].name}
+                      </span>
                     </div>
                     <button
                       type="button"
                       onClick={onOpenTopicsMap}
                       className="text-[12.5px] font-bold text-[var(--gold)] hover:underline inline-flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                     >
-                      <span>See all topics</span>
-                      <Icon name="go" size={14} />
+                      <span>All {topics.length} topics</span>
+                      <Icon name="go" size={13} />
                     </button>
                   </div>
 
-                  <div className="flex flex-col gap-2">
+                  <div className="divide-y divide-[var(--line)] flex-1 flex flex-col justify-center">
                     {focus.map((topic) => {
                       const locked =
                         !PUBLIC_FREE_LAUNCH_ACTIVE &&
@@ -972,22 +1006,23 @@ export function HomeScreen({
                           key={topic.id}
                           type="button"
                           onClick={() => onOpenTopic(topic.id)}
-                          className="study-card rtc-card text-left rounded-xl px-3.5 py-2.5 sm:px-4 sm:py-3 flex items-center gap-3 cursor-pointer"
+                          className="w-full text-left px-5 py-3.5 hover:bg-[var(--bg)]/70 flex items-center gap-3.5 cursor-pointer transition-colors"
                         >
                           <MiniRing value={score} size={38} />
                           <div className="min-w-0 flex-1">
-                            <div className="text-[11px] font-semibold text-[var(--dim)] truncate">
-                              {topic.sec}
+                            <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--dim)] truncate">
+                              <span className="truncate">{topic.sec}</span>
+                              <span aria-hidden="true">·</span>
+                              <span
+                                className={
+                                  locked ? 'text-[var(--dim)]' : 'font-bold text-[var(--gold)]'
+                                }
+                              >
+                                {locked ? 'Premium' : status}
+                              </span>
                             </div>
-                            <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] truncate">
+                            <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)] truncate">
                               {topic.name}
-                            </div>
-                            <div
-                              className={`text-[11.5px] font-bold mt-0.5 ${
-                                locked ? 'text-[var(--dim)]' : 'text-[var(--gold)]'
-                              }`}
-                            >
-                              {locked ? 'Premium · Tap to unlock' : status}
                             </div>
                           </div>
                           <Icon
@@ -1001,25 +1036,57 @@ export function HomeScreen({
                   </div>
                 </section>
 
-                <section className="min-[820px]:col-span-5 rtc-card rounded-2xl p-4 flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="h18 text-[var(--ink)]">This week</h2>
-                    <span className="text-[12px] font-semibold text-[var(--dim)]">
-                      Questions answered
-                    </span>
+                {/* Right (5 cols): Weekly Momentum + Quiet Saturday CBT Row */}
+                <section
+                  aria-label="Weekly momentum and Saturday CBT"
+                  className="min-[880px]:col-span-5 rtc-card rounded-2xl p-5 flex flex-col justify-between gap-4"
+                >
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="h18 text-[var(--ink)]">This Week</h2>
+                      <span className="text-[12px] font-semibold text-[var(--dim)]">
+                        Questions answered
+                      </span>
+                    </div>
+                    <ActivityBars act={progress.act} />
                   </div>
-                  <ActivityBars act={progress.act} />
+
+                  {onOpenCbt && (
+                    <div className="pt-3.5 border-t border-[var(--line)] flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[11.5px] font-bold text-[var(--gold)] tabular-nums truncate">
+                          {satCampaign.isSaturday
+                            ? 'Saturday National CBT · Live 2× XP'
+                            : 'Saturday National CBT'}
+                          {dailyCbtCount && dailyCbtCount > 0
+                            ? ` · ${dailyCbtCount} ranked`
+                            : ''}
+                        </div>
+                        <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                          {satCampaign.headline}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenCbt}
+                        className="btn-tactile paper px-3 min-h-[38px] text-[12.5px] shrink-0 whitespace-nowrap"
+                      >
+                        <span>{satCampaign.ctaLabel}</span>
+                        <Icon name="go" size={14} />
+                      </button>
+                    </div>
+                  )}
                 </section>
               </div>
 
-              {/* Calm Progressive-Disclosure Study Tools (4 Core Daily Workspaces + Expandable Drawer) */}
-              <section aria-label="Study workspaces" className="flex flex-col gap-2.5">
+              {/* Zone 4: Unified Companion & Study Workspaces Strip */}
+              <section aria-label="Studios and workspaces" className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <h2 className="h18 text-[var(--ink)]">Workspaces</h2>
-                    <p className="text-[12px] text-[var(--dim)]">
-                      Novels, mistake vault, formulas, and study plan
-                    </p>
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="h18 text-[var(--ink)]">Studios &amp; Workspaces</h2>
+                    <span className="hidden sm:inline text-[12px] text-[var(--dim)]">
+                      · Practical labs, set novels, mistake vault, and formulas
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -1028,25 +1095,52 @@ export function HomeScreen({
                       triggerLightHaptic(8);
                       setShowAllTools((v) => !v);
                     }}
-                    className="min-h-[34px] px-3 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap shrink-0"
+                    className="min-h-[34px] px-3 rounded-lg bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap shrink-0"
                   >
-                    <Icon name="grid" size={14} className="text-[var(--gold)]" />
-                    <span>{showAllTools ? 'Fewer tools' : 'All workspaces'}</span>
+                    <Icon name="grid" size={13} className="text-[var(--gold)]" />
+                    <span>{showAllTools ? 'Fewer tools' : 'All tools'}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 min-[920px]:grid-cols-4 gap-2.5">
-                  {onOpenNovels && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 min-[960px]:grid-cols-4 gap-3">
+                  {hasCompanion && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerLightHaptic(8);
+                        if (isStudioCompanion && onOpenStudio) onOpenStudio();
+                        else onOpenLab();
+                      }}
+                      className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-9 h-9 rounded-lg tile-mint flex items-center justify-center shrink-0">
+                          <Icon name={companionIcon} size={16} />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                            {companionTitle}
+                          </div>
+                          <div className="text-[11.5px] text-[var(--dim)] truncate">
+                            {companionSubtitle}
+                          </div>
+                        </div>
+                      </div>
+                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                    </button>
+                  )}
+
+                  {onOpenNovels && !(isStudioCompanion && (subj === 'eng' || subj === 'lit')) && (
                     <button
                       type="button"
                       onClick={() => {
                         triggerLightHaptic(8);
                         onOpenNovels(subj === 'lit' ? 'so-the-path' : 'lekki-headmaster');
                       }}
-                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-9 h-9 rounded-lg bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
                           <Icon name="book" size={16} />
                         </span>
                         <div className="min-w-0">
@@ -1069,20 +1163,18 @@ export function HomeScreen({
                         triggerLightHaptic(8);
                         onOpenMistakes();
                       }}
-                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-[var(--bad-soft)] text-[var(--coral-ink)] flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-9 h-9 rounded-lg bg-[var(--bad-soft)] text-[var(--coral-ink)] flex items-center justify-center shrink-0">
                           <Icon name="target" size={16} />
                         </span>
                         <div className="min-w-0">
                           <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                            Mistakes to fix
+                            Mistakes to Fix
                           </div>
                           <div className="text-[11.5px] text-[var(--dim)] truncate tabular-nums">
-                            {openMistakesCount > 0
-                              ? `${openMistakesCount} waiting`
-                              : 'Clean slate'}
+                            {openMistakesCount > 0 ? `${openMistakesCount} waiting` : 'Clean slate'}
                           </div>
                         </div>
                       </div>
@@ -1097,15 +1189,15 @@ export function HomeScreen({
                         triggerLightHaptic(8);
                         onOpenFormulas();
                       }}
-                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl tile-sky flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-9 h-9 rounded-lg tile-sky flex items-center justify-center shrink-0">
                           <Icon name={subj === 'eng' ? 'book' : 'sigma'} size={16} />
                         </span>
                         <div className="min-w-0">
                           <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                            {subj === 'eng' ? 'Grammar rules' : 'Formulas'}
+                            {subj === 'eng' ? 'Grammar Rules' : 'Formulas'}
                           </div>
                           <div className="text-[11.5px] text-[var(--dim)] truncate">
                             {subj === 'eng' ? 'Concord & stress' : 'Equations & drills'}
@@ -1116,22 +1208,22 @@ export function HomeScreen({
                     </button>
                   )}
 
-                  {onOpenPlanner && (
+                  {onOpenPlanner && (!hasCompanion || isStudioCompanion && (subj === 'eng' || subj === 'lit') || showAllTools) && (
                     <button
                       type="button"
                       onClick={() => {
                         triggerLightHaptic(8);
                         onOpenPlanner();
                       }}
-                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-9 h-9 rounded-lg bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
                           <Icon name="calendar" size={16} />
                         </span>
                         <div className="min-w-0">
                           <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                            Study plan
+                            Study Plan
                           </div>
                           <div className="text-[11.5px] text-[var(--dim)] truncate tabular-nums">
                             {hasSetExamDate && daysToExam !== null
@@ -1150,15 +1242,15 @@ export function HomeScreen({
                         <button
                           type="button"
                           onClick={onOpenSandboxes}
-                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                          className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-lg bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
                               <Icon name="cpu" size={16} />
                             </span>
                             <div className="min-w-0">
                               <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                                Try-it tools
+                                Interactive Tools
                               </div>
                               <div className="text-[11.5px] text-[var(--dim)] truncate">
                                 Graphs, logic &amp; maps
@@ -1173,15 +1265,15 @@ export function HomeScreen({
                         <button
                           type="button"
                           onClick={onOpenTheory}
-                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                          className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-9 h-9 rounded-xl tile-mint flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-lg tile-mint flex items-center justify-center shrink-0">
                               <Icon name="pen" size={16} />
                             </span>
                             <div className="min-w-0">
                               <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                                Theory answers
+                                Theory Answers
                               </div>
                               <div className="text-[11.5px] text-[var(--dim)] truncate">
                                 Written marking guides
@@ -1196,10 +1288,10 @@ export function HomeScreen({
                         <button
                           type="button"
                           onClick={onOpenDuel}
-                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                          className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-9 h-9 rounded-xl tile-peach flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-lg tile-peach flex items-center justify-center shrink-0">
                               <Icon name="trophy" size={16} />
                             </span>
                             <div className="min-w-0">
@@ -1219,10 +1311,10 @@ export function HomeScreen({
                         <button
                           type="button"
                           onClick={onOpenLeaderboard}
-                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                          className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-lg bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
                               <Icon name="crown" size={16} />
                             </span>
                             <div className="min-w-0">
@@ -1242,15 +1334,15 @@ export function HomeScreen({
                         <button
                           type="button"
                           onClick={onOpenTranscript}
-                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                          className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-9 h-9 rounded-xl tile-sky flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-lg tile-sky flex items-center justify-center shrink-0">
                               <Icon name="award" size={16} />
                             </span>
                             <div className="min-w-0">
                               <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                                Report card
+                                Report Card
                               </div>
                               <div className="text-[11.5px] text-[var(--dim)] truncate">
                                 Shareable mastery summary
@@ -1265,15 +1357,15 @@ export function HomeScreen({
                         <button
                           type="button"
                           onClick={() => onOpenQuestionBank(subj, 'overview')}
-                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                          className="study-card rtc-card rounded-xl px-4 py-3.5 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-9 h-9 rounded-lg bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
                               <Icon name="database" size={16} />
                             </span>
                             <div className="min-w-0">
                               <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
-                                Question bank (owner)
+                                Question Bank (Owner)
                               </div>
                               <div className="text-[11.5px] text-[var(--dim)] truncate">
                                 Manage &amp; export sets

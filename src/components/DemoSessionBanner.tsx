@@ -20,19 +20,19 @@ export function TrialCountdownBar({
     <div
       role="status"
       aria-live="polite"
-      className={`w-full border-b px-3 sm:px-4 py-1.5 flex items-center justify-between gap-2 text-[12px] sm:text-[12.5px] ${
+      className={`w-full border-b px-3 sm:px-5 py-1.5 flex items-center justify-between gap-2 text-[12px] ${
         countdown.isWarning
           ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--coral-ink)]'
-          : 'bg-[var(--card)] border-[var(--acc-line)] text-[var(--ink)]'
+          : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)]'
       }`}
     >
-      <div className="flex items-center gap-2 font-semibold min-w-0">
-        <span className="inline-flex items-center gap-1.5 font-mono font-extrabold tabular-nums whitespace-nowrap shrink-0">
+      <div className="flex items-center gap-2 font-medium min-w-0">
+        <span className="inline-flex items-center gap-1.5 font-mono font-bold tabular-nums whitespace-nowrap shrink-0 text-[var(--gold)]">
           <Icon name="clock" size={13} />
           <span className="sm:hidden">Trial · {countdown.formattedCountdown}</span>
           <span className="hidden sm:inline">Free Trial · {countdown.formattedCountdown}</span>
         </span>
-        <span aria-hidden="true" className="hidden lg:inline opacity-45">
+        <span aria-hidden="true" className="hidden lg:inline text-[var(--dim)]">
           ·
         </span>
         <span
@@ -41,21 +41,21 @@ export function TrialCountdownBar({
           }`}
         >
           {countdown.isWarning
-            ? 'Trial ending soon — subscribe to keep access.'
+            ? 'Trial ending soon — upgrade to keep full access.'
             : isCancelled
               ? 'Auto-renew off · Locks at 00:00:00.'
               : trialLink?.linked
                 ? `${trialLink.methodType === 'google_pay' ? 'Google Pay' : 'Payment'} linked · Cancel anytime`
-                : 'Subscribe anytime to keep full access.'}
+                : 'Full access active across 49 subjects, tutors, and labs.'}
         </span>
       </div>
       <button
         type="button"
         onClick={onManageOrSubscribe}
-        aria-label={trialLink?.linked ? 'Manage trial' : 'Subscribe'}
-        className="btn-tactile indigo min-h-[30px] px-2.5 sm:px-3 text-[11.5px] sm:text-[12px] whitespace-nowrap shrink-0"
+        aria-label={trialLink?.linked ? 'Manage trial' : 'Upgrade pass'}
+        className="min-h-[28px] px-2.5 sm:px-3 rounded-lg bg-[var(--acc-soft)] hover:brightness-95 border border-[var(--acc-line)] text-[var(--gold)] font-[var(--display)] font-bold text-[11.5px] whitespace-nowrap shrink-0 cursor-pointer transition"
       >
-        <span>{trialLink?.linked ? 'Manage Trial' : 'Subscribe'}</span>
+        <span>{trialLink?.linked ? 'Manage Trial' : 'Upgrade Pass'}</span>
       </button>
     </div>
   );
@@ -74,17 +74,17 @@ export function DemoCountdownBar({
     <div
       role="status"
       aria-live="polite"
-      className={`w-full border-b px-3 sm:px-4 py-1.5 flex items-center justify-between gap-2 text-[12px] sm:text-[12.5px] ${
+      className={`w-full border-b px-3 sm:px-5 py-1.5 flex items-center justify-between gap-2 text-[12px] ${
         status.isWarning
           ? 'bg-[var(--bad-soft)] border-[var(--bad-line)] text-[var(--coral-ink)]'
-          : 'bg-[var(--card)] border-[var(--acc-line)] text-[var(--ink)]'
+          : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)]'
       }`}
     >
-      <div className="flex items-center gap-2 font-semibold min-w-0">
-        <span className="font-mono font-extrabold tabular-nums whitespace-nowrap shrink-0">
+      <div className="flex items-center gap-2 font-medium min-w-0">
+        <span className="font-mono font-bold tabular-nums whitespace-nowrap shrink-0 text-[var(--gold)]">
           Demo · {status.formattedRemaining}
         </span>
-        <span aria-hidden="true" className="hidden md:inline opacity-45">
+        <span aria-hidden="true" className="hidden md:inline text-[var(--dim)]">
           ·
         </span>
         <span
@@ -94,13 +94,13 @@ export function DemoCountdownBar({
         >
           {status.isWarning
             ? 'Demo ending — create a free account to continue.'
-            : '5-minute preview · Create a free account for full access.'}
+            : '5-minute preview · Create a free account to save progress.'}
         </span>
       </div>
       <button
         type="button"
         onClick={onCreateAccount}
-        className="btn-tactile indigo min-h-[30px] px-2.5 sm:px-3 text-[11.5px] sm:text-[12px] whitespace-nowrap shrink-0"
+        className="min-h-[28px] px-2.5 sm:px-3 rounded-lg bg-[var(--acc-soft)] hover:brightness-95 border border-[var(--acc-line)] text-[var(--gold)] font-[var(--display)] font-bold text-[11.5px] whitespace-nowrap shrink-0 cursor-pointer transition"
       >
         <span className="sm:hidden">Free Account</span>
         <span className="hidden sm:inline">Create Free Account</span>

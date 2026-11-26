@@ -6,65 +6,65 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 :root,
 [data-theme="stage-1-adire"] {
-  --bg: #F5F1FF;
-  --bg-out: #EAE3FC;
-  --deep: #EAE3FC;
+  --bg: #F6F8FC;
+  --bg-out: #EDF1F7;
+  --deep: #E8EEF7;
   --card: #FFFFFF;
-  --line: #E2DAFB;
-  --ink: #241A45;
-  --dim: #5A4E80;
-  --gold: #5B2BD6;
-  --acc-hi: #6B3FE6;
-  --acc-d: #3E1A9E;
+  --line: #DDE4EE;
+  --ink: #0F172A;
+  --dim: #475569;
+  --gold: #1D4ED8;
+  --acc-hi: #2563EB;
+  --acc-d: #1E3A8A;
   --on-acc: #FFFFFF;
-  --acc-soft: #EFEAFE;
-  --acc-line: #C9B8F7;
-  --acc-glow: rgba(91, 43, 214, 0.2);
-  --green: #0F8A5F;
-  --ok-soft: #D3F5EA;
-  --ok-line: #8FD9C1;
+  --acc-soft: #EFF6FF;
+  --acc-line: #BFDBFE;
+  --acc-glow: rgba(37, 99, 235, 0.16);
+  --green: #059669;
+  --ok-soft: #ECFDF5;
+  --ok-line: #A7F3D0;
   --coral: #E11D48;
   --coral-ink: #BE123C;
-  --bad-soft: #FFE4E6;
-  --bad-line: #F9B3BC;
-  --warn-soft: #EEF6FF;
-  --warn-line: #9AC5FA;
+  --bad-soft: #FFF1F2;
+  --bad-line: #FECDD3;
+  --warn-soft: #F0F9FF;
+  --warn-line: #BAE6FD;
   --warn-ink: #0369A1;
-  --peach-bg: #FFE1D1;
-  --peach-ink: #5C1F00;
-  --mint-bg: #D3F5EA;
-  --mint-ink: #0B4A37;
-  --sky-bg: #DCEBFF;
-  --sky-ink: #0D3570;
-  --r-sm: 12px;
-  --r-md: 16px;
-  --r-lg: 20px;
-  --hint: #5B2BD6;
-  --hint-soft: #EFEAFE;
-  --hint-line: #C9B8F7;
-  --mark: #FFE1D1;
-  --mark-soft: #FFF1E8;
-  --mark-line: #F6C5AD;
-  --hero-start: #4920B5;
-  --hero-mid: #5B2BD6;
-  --hero-end: #6B3FE6;
-  --hero-glow: rgba(220, 235, 255, 0.2);
-  --hero-badge: #FFE1D1;
-  --crest-bg: #241A45;
-  --dot-grid: rgba(91, 43, 214, 0.06);
-  --bg-sheen: rgba(255, 255, 255, 0.5);
-  --row-alt: #F9F6FF;
-  --board: #15102B;
-  --eq-bg: #3E1A9E;
-  --eq-bg-2: #5B2BD6;
-  --eq-border: #3E1A9E;
+  --peach-bg: #FFF7ED;
+  --peach-ink: #9A3412;
+  --mint-bg: #ECFDF5;
+  --mint-ink: #065F46;
+  --sky-bg: #EFF6FF;
+  --sky-ink: #1E40AF;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
+  --hint: #1D4ED8;
+  --hint-soft: #EFF6FF;
+  --hint-line: #BFDBFE;
+  --mark: #FEF08A;
+  --mark-soft: #FEFCE8;
+  --mark-line: #FDE047;
+  --hero-start: #0F2557;
+  --hero-mid: #1D4ED8;
+  --hero-end: #2563EB;
+  --hero-glow: rgba(147, 197, 253, 0.22);
+  --hero-badge: #DBEAFE;
+  --crest-bg: #0F172A;
+  --dot-grid: rgba(15, 23, 42, 0.035);
+  --bg-sheen: rgba(255, 255, 255, 0.65);
+  --row-alt: #F8FAFC;
+  --board: #0B1120;
+  --eq-bg: #0F2557;
+  --eq-bg-2: #1E3A8A;
+  --eq-border: #1E40AF;
   --eq-ink: #FFFFFF;
-  --eq-dim: #EFEAFE;
-  --shadow-card: 0 2px 0 var(--line);
-  --shadow-card-hover: 0 2px 0 var(--acc-line);
-  --shadow-hero: 0 3px 0 var(--acc-d);
-  --display: 'Fredoka', ui-rounded, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --body: 'Nunito', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --eq-dim: #DBEAFE;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-card-hover: 0 4px 12px -4px rgba(15, 23, 42, 0.08);
+  --shadow-hero: 0 10px 28px -12px rgba(15, 37, 87, 0.28);
+  --display: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --math: 'STIX Two Text', 'Cambria Math', Cambria, Georgia, serif;
   color-scheme: light;
@@ -345,31 +345,31 @@
   color-scheme: dark;
 }
 
-/* Stage 1 Dark (0% Goal): Playful Grape — Deep Nocturnal Grape */
+/* Stage 1 Dark (0% Goal): Academic Sapphire — Deep Nocturnal Obsidian & Sapphire */
 [data-mode="dark"][data-theme="stage-1-adire"] {
-  --bg: #15102B;
-  --bg-out: #0E0A1F;
-  --deep: #241C47;
-  --card: #1E1739;
-  --line: #34295F;
-  --ink: #F1ECFF;
-  --dim: #B3A8D9;
-  --gold: #9D7BFF;
-  --acc-hi: #AE92FF;
-  --acc-d: #6A45E0;
-  --on-acc: #15102B;
-  --acc-soft: #2A2052;
-  --acc-line: #4E3E8F;
-  --acc-glow: rgba(157, 123, 255, 0.28);
-  --hero-start: #2A2052;
-  --hero-mid: #4B2EC4;
-  --hero-end: #6A45E0;
-  --hero-glow: rgba(174, 146, 255, 0.2);
-  --hero-badge: #FFE1D1;
-  --crest-bg: #2A2052;
-  --dot-grid: rgba(157, 123, 255, 0.08);
-  --bg-sheen: rgba(157, 123, 255, 0.08);
-  --row-alt: #241C45;
+  --bg: #0B1120;
+  --bg-out: #070B14;
+  --deep: #162238;
+  --card: #111A2E;
+  --line: #22314F;
+  --ink: #F1F5F9;
+  --dim: #94A3B8;
+  --gold: #60A5FA;
+  --acc-hi: #7DB5FC;
+  --acc-d: #2563EB;
+  --on-acc: #081020;
+  --acc-soft: #172746;
+  --acc-line: #2B487D;
+  --acc-glow: rgba(96, 165, 250, 0.24);
+  --hero-start: #0F2557;
+  --hero-mid: #1D4ED8;
+  --hero-end: #2563EB;
+  --hero-glow: rgba(147, 197, 253, 0.2);
+  --hero-badge: #DBEAFE;
+  --crest-bg: #172746;
+  --dot-grid: rgba(148, 163, 184, 0.07);
+  --bg-sheen: rgba(37, 99, 235, 0.08);
+  --row-alt: #152038;
 }
 
 /* Stage 2 Dark (12% Goal): Savanna Sunrise — Warm Ember Dusk & Terracotta */
@@ -659,13 +659,13 @@ select,
 }
 
 html.dark body {
-  letter-spacing: 0.005em;
-  --eq-bg: #2A2052;
-  --eq-bg-2: #3A2C72;
-  --eq-border: #4E3E8F;
-  --shadow-card: 0 2px 0 var(--line);
-  --shadow-card-hover: 0 2px 0 var(--acc-line);
-  --shadow-hero: 0 3px 0 var(--acc-d);
+  letter-spacing: 0.006em;
+  --eq-bg: #152546;
+  --eq-bg-2: #1E3A8A;
+  --eq-border: #2B487D;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-card-hover: 0 6px 16px -4px rgba(0, 0, 0, 0.36);
+  --shadow-hero: 0 12px 28px -10px rgba(0, 0, 0, 0.5);
 }
 
 h1,
@@ -768,21 +768,21 @@ sub { bottom: -0.24em; }
   color: #FFFFFF;
 }
 
-/* Sleek tactile cards & surfaces (refined radii & crisp 2px base shadow) */
+/* Sleek single-elevation architectural surfaces */
 .rtc-card {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: 0 2px 0 var(--line);
+  box-shadow: var(--shadow-card);
 }
 html.dark .rtc-card {
-  box-shadow: 0 2px 0 var(--line);
+  box-shadow: var(--shadow-card);
 }
 .rtc-eq-plate {
-  background: var(--eq-bg-2);
-  border: 1.5px solid var(--eq-border);
+  background: linear-gradient(135deg, var(--hero-start) 0%, var(--eq-bg-2) 100%);
+  border: 1px solid var(--eq-border);
   border-radius: 18px;
-  box-shadow: 0 3px 0 var(--eq-border);
+  box-shadow: var(--shadow-hero);
   color: var(--eq-ink);
 }
 .rtc-lab-plate {
@@ -1517,26 +1517,26 @@ sup.fr-sup {
 .found .rules li, .card .rules li { background: var(--deep); border-color: var(--line); box-shadow: none; }
 .found .rules li { color: var(--ink); }
 
-/* Sleek tactile buttons & answer tiles (proportionate sizing, 12-14px radii, crisp base shadow) */
+/* Precision studio buttons & answer tiles (2x horizontal-to-vertical padding, crisp subtle elevation) */
 .btn-tactile {
   min-height: 42px;
-  border-radius: 12px;
+  border-radius: 11px;
   font-family: var(--display);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 0 16px;
+  padding: 0 18px;
   cursor: pointer;
-  border: 1.5px solid transparent;
+  border: 1px solid transparent;
   transition:
-    transform 0.15s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.15s cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 0.15s ease,
-    border-color 0.15s ease;
+    transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.14s ease,
+    border-color 0.14s ease;
 }
 .btn-tactile.compact-step {
   min-height: 38px;
@@ -1546,45 +1546,49 @@ sup.fr-sup {
 }
 .btn-tactile.indigo {
   background: var(--gold);
-  border-color: var(--acc-d);
+  border-color: color-mix(in srgb, var(--acc-d) 65%, transparent);
   color: var(--on-acc);
-  box-shadow: 0 2.5px 0 var(--acc-d);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 2px 6px -1px var(--acc-glow),
+    0 1px 2px rgba(15, 23, 42, 0.12);
 }
 .btn-tactile.indigo:hover:not(:disabled) {
   background: var(--acc-hi);
 }
 .btn-tactile.indigo:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: 0 1.5px 0 var(--acc-d);
 }
 .btn-tactile.emerald {
   background: var(--green);
-  border-color: #096343;
+  border-color: #047857;
   color: #FFFFFF;
-  box-shadow: 0 2.5px 0 #096343;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(15, 23, 42, 0.12);
 }
 .btn-tactile.emerald:hover:not(:disabled) {
   filter: brightness(1.04);
 }
 .btn-tactile.emerald:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: 0 1.5px 0 #096343;
 }
 .btn-tactile.coral {
   background: var(--coral);
-  border-color: #9F1239;
+  border-color: #BE123C;
   color: #FFFFFF;
-  box-shadow: 0 2.5px 0 #9F1239;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(15, 23, 42, 0.12);
 }
 .btn-tactile.coral:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: 0 1.5px 0 #9F1239;
 }
 .btn-tactile.paper {
   background: var(--card);
   color: var(--ink);
   border: 1px solid var(--line);
-  box-shadow: 0 2px 0 var(--line);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .btn-tactile.paper:hover:not(:disabled) {
   border-color: var(--acc-line);
@@ -1592,7 +1596,6 @@ sup.fr-sup {
 }
 .btn-tactile.paper:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: 0 1px 0 var(--line);
 }
 .btn-tactile:disabled {
   opacity: 0.45;
@@ -2797,3 +2800,14 @@ html {
     color: #0F172A !important;
   }
 }
+
+/* Prevent duplicate native WebKit search clear buttons next to custom clear buttons */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+

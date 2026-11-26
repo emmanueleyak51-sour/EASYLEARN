@@ -24,6 +24,8 @@ import { typesetMathHtml } from '../../utils/mathTypesetter';
 import { playLabFoleySchedule } from '../../utils/sound';
 import { Icon, LabGlyph } from '../Icons';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
+import { buildLiveTeacherPromptForQuestion } from '../../utils/platformUpgradesLogic';
 import { SubscreenTopBar } from '../AppShell';
 import { LiquidCapsuleBar, SmoothCollapse, SmoothViewSwitch } from '../ULessonMotion';
 
@@ -1295,6 +1297,42 @@ export function LabPlayerScreen({
               </div>
             </div>
 
+            {/* Segmented Step Progress Rail — instant jump across bench stages */}
+            <div
+              role="group"
+              aria-label="Practical procedure step rail"
+              className="grid gap-1.5 px-1 pt-0.5"
+              style={{ gridTemplateColumns: `repeat(${Math.max(1, steps.length)}, minmax(0, 1fr))` }}
+            >
+              {steps.map((_s, idx) => {
+                const isCur = idx === stepIdx;
+                const isDone = idx < stepIdx;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      if (idx !== stepIdx) {
+                        setStepDir(idx > stepIdx ? 'fwd' : 'back');
+                        setStepIdx(idx);
+                      }
+                    }}
+                    aria-label={`Jump to step ${idx + 1} of ${steps.length}`}
+                    aria-current={isCur ? 'step' : undefined}
+                    className={`h-6 rounded-lg border text-[11px] font-bold tabular-nums flex items-center justify-center transition cursor-pointer ${
+                      isCur
+                        ? 'bg-[var(--gold)] border-[var(--acc-d)] text-[var(--on-acc)] shadow-xs'
+                        : isDone
+                          ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--green)]'
+                          : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:border-[var(--acc-line)] hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    {isDone ? '✓' : idx + 1}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Collapsible Apparatus & Instruments Tray */}
             {showEquipment && (
               <div className="rounded-xl bg-[var(--bg)] border border-[var(--line)] px-3 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] anim-rise">
@@ -1628,28 +1666,55 @@ export function LabPlayerScreen({
 
             {vivaPicked !== null && (
               <div
-                className={`rounded-xl border p-3.5 flex flex-col gap-1.5 anim-explain-reveal ${
+                className={`rounded-xl border p-3.5 flex flex-col gap-2 anim-explain-reveal ${
                   vivaPicked === vivaCheck.answerIdx
                     ? 'bg-[var(--ok-soft)] border-[var(--ok-line)]'
                     : 'bg-[var(--bad-soft)] border-[var(--bad-line)]'
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
                     {vivaPicked === vivaCheck.answerIdx
                       ? 'Spot on — full practical mastery!'
                       : 'Trap spotted — see why:'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVivaPicked(null);
-                      setVivaEliminated({});
-                    }}
-                    className="text-[12px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
-                  >
-                    Try again
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const labSubj: SubjectId = lab.subj || 'chem';
+                        window.dispatchEvent(
+                          new CustomEvent('rtc:open-live-coach', {
+                            detail: {
+                              mode: subjectToLiveCoachMode(labSubj),
+                              prompt: buildLiveTeacherPromptForQuestion({
+                                subjectName: SUBJECT_INFO[labSubj].name,
+                                topicName: `${cleanLabName} Practical Viva`,
+                                questionHtml: vivaCheck.promptHtml,
+                                chosenOptionHtml: vivaCheck.options[vivaPicked],
+                                correctOptionHtml: vivaCheck.options[vivaCheck.answerIdx] || '',
+                                isCorrect: vivaPicked === vivaCheck.answerIdx,
+                              }),
+                            },
+                          })
+                        );
+                      }}
+                      className="min-h-[30px] px-2.5 rounded-lg bg-[var(--card)] border border-[var(--acc-line)] hover:border-[var(--gold)] text-[11.5px] font-bold text-[var(--gold)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Icon name="phone" size={12} />
+                      <span>Ask Lab Teacher</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVivaPicked(null);
+                        setVivaEliminated({});
+                      }}
+                      className="text-[12px] font-bold text-[var(--gold)] hover:underline cursor-pointer whitespace-nowrap"
+                    >
+                      Try again
+                    </button>
+                  </div>
                 </div>
                 <p
                   className="text-[13.5px] text-[var(--ink)] leading-relaxed"

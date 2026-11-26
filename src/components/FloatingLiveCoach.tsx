@@ -148,6 +148,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   const turnIdRef = useRef(1);
   const retryTimerRef = useRef<number | null>(null);
   const stopRingRef = useRef<(() => void) | null>(null);
+  const pendingAutoPromptRef = useRef<string | null>(null);
   const meterBarsRef = useRef<(HTMLSpanElement | null)[]>([]);
   const mutedLiveRef = useRef<boolean>(muted || speakerMuted);
   mutedLiveRef.current = muted || speakerMuted;
@@ -580,6 +581,16 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
             sfx('callConnect', mutedLiveRef.current);
             setLiveError(null);
             setLiveStatus('ready');
+            const queuedPrompt = pendingAutoPromptRef.current;
+            if (queuedPrompt && ws.readyState === WebSocket.OPEN) {
+              pendingAutoPromptRef.current = null;
+              turnIdRef.current += 1;
+              setTranscripts((prev) => [
+                ...prev.slice(-7),
+                { id: turnIdRef.current++, who: 'you', text: queuedPrompt },
+              ]);
+              ws.send(JSON.stringify({ type: 'text', text: queuedPrompt }));
+            }
           } else if (msg.type === 'audio' && typeof msg.audio === 'string') {
             stopCallRinging();
             schedulePcm24kChunk(msg.audio);
@@ -733,20 +744,53 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
     }
   };
 
-  const sendLivePrompt = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    window.dispatchEvent(new CustomEvent('rtc:stop-tts'));
-    clearScheduledLiveAudio();
-    turnIdRef.current += 1;
-    setTranscripts((prev) => [
-      ...prev.slice(-7),
-      { id: turnIdRef.current++, who: 'you', text: trimmed },
-    ]);
-    wsRef.current.send(JSON.stringify({ type: 'text', text: trimmed }));
-    setPromptInput('');
-  };
+  const sendLivePrompt = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      window.dispatchEvent(new CustomEvent('rtc:stop-tts'));
+      clearScheduledLiveAudio();
+      turnIdRef.current += 1;
+      setTranscripts((prev) => [
+        ...prev.slice(-7),
+        { id: turnIdRef.current++, who: 'you', text: trimmed },
+      ]);
+      wsRef.current.send(JSON.stringify({ type: 'text', text: trimmed }));
+      setPromptInput('');
+    },
+    [clearScheduledLiveAudio]
+  );
+
+  // Allow any screen (Voice Bar, Quiz explanation, World Mission) to launch Live Coach with a prompt
+  useEffect(() => {
+    const onOpenLiveCoach = (ev: Event) => {
+      const custom = ev as CustomEvent<{ prompt?: string; mode?: LiveCoachMode }>;
+      const targetMode = custom.detail?.mode || mode;
+      const incomingPrompt = custom.detail?.prompt?.trim() || null;
+
+      setLiveOpen(true);
+      setPanelExpanded(true);
+
+      if (
+        liveStatus === 'ready' &&
+        connectedModeRef.current === targetMode &&
+        wsRef.current &&
+        wsRef.current.readyState === WebSocket.OPEN
+      ) {
+        if (incomingPrompt) {
+          sendLivePrompt(incomingPrompt);
+        }
+        return;
+      }
+
+      pendingAutoPromptRef.current = incomingPrompt;
+      startLiveSession(targetMode);
+    };
+
+    window.addEventListener('rtc:open-live-coach', onOpenLiveCoach);
+    return () => window.removeEventListener('rtc:open-live-coach', onOpenLiveCoach);
+  }, [liveStatus, mode, sendLivePrompt, startLiveSession]);
 
   const endLiveCompletely = () => {
     closeLiveSession();

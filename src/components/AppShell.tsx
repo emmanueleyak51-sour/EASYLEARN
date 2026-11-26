@@ -7,7 +7,8 @@ import { getVisibleEnrolledSubjects, resolveExamTrack } from '../utils/examTrack
 import { SUBJECT_STUDIO_META } from '../utils/subjectStudioMeta';
 import { getTopicsForProgress, SUBJECT_IDS } from '../data/curriculum';
 import type { ScreenTransitionSpec } from '../utils/screenTransitionLogic';
-import { CrestSvg, Icon } from './Icons';
+import { Icon } from './Icons';
+import { EasyLearnAnimatedIcon } from './EasyLearnAnimatedIcon';
 import { ElementalEmblem } from './ElementalRankVisuals';
 import { FxCelebration, type XpBurstItem } from './FxCelebration';
 import {
@@ -152,12 +153,15 @@ export function AppShell({
   dueCount,
   showNav,
   isExamHall = false,
+  appearanceMode = 'light',
   badgeToast,
   xpBursts = [],
   confettiKey = 0,
   screenTransition = { kind: 'fade', direction: 0 },
   onDismissToast,
   onNavigateTab,
+  onOpenSearch,
+  onToggleAppearance,
   onOpenStudio,
   onOpenLab,
   onOpenWebsite,
@@ -169,12 +173,15 @@ export function AppShell({
   dueCount: number;
   showNav: boolean;
   isExamHall?: boolean;
+  appearanceMode?: 'light' | 'dark';
   badgeToast: BadgeDef | null;
   xpBursts?: XpBurstItem[];
   confettiKey?: number;
   screenTransition?: ScreenTransitionSpec;
   onDismissToast: () => void;
   onNavigateTab: (tab: MainTab) => void;
+  onOpenSearch?: () => void;
+  onToggleAppearance?: () => void;
   onSelectSubject?: (s: SubjectId) => void;
   onManageSubjects?: () => void;
   onOpenStudio?: () => void;
@@ -259,15 +266,48 @@ export function AppShell({
       {effectiveShowNav && (
         <aside
           aria-label="Primary navigation"
-          className="hidden min-[980px]:flex min-[980px]:flex-col min-[980px]:w-[260px] min-[980px]:shrink-0 min-[980px]:sticky min-[980px]:top-0 min-[980px]:h-screen bg-[var(--card)] border-r-2 border-[var(--line)] px-4 py-5 justify-between z-20 overflow-y-auto"
+          className="hidden min-[980px]:flex min-[980px]:flex-col min-[980px]:w-[256px] min-[980px]:shrink-0 min-[980px]:sticky min-[980px]:top-0 min-[980px]:h-screen bg-[var(--card)] border-r border-[var(--line)] px-4 py-4 justify-between z-20 overflow-y-auto"
         >
-          <div className="flex flex-col gap-5">
-            <div className="flex items-center gap-3 px-1 pb-4 border-b-2 border-[var(--line)]">
-              <CrestSvg size={38} />
-              <span className="font-[var(--display)] font-extrabold text-[21px] leading-tight text-[var(--ink)] whitespace-nowrap">
-                Easy Learn
-              </span>
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center justify-between gap-2 px-1 pb-3 border-b border-[var(--line)]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <EasyLearnAnimatedIcon size={34} />
+                <span className="font-[var(--display)] font-extrabold text-[19px] tracking-tight leading-tight text-[var(--ink)] whitespace-nowrap">
+                  Easy Learn
+                </span>
+              </div>
+              {onToggleAppearance && (
+                <button
+                  type="button"
+                  onClick={onToggleAppearance}
+                  aria-label={
+                    appearanceMode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+                  }
+                  title={appearanceMode === 'dark' ? 'Light mode' : 'Dark mode'}
+                  className="w-8 h-8 rounded-lg bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[var(--ink)] flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                >
+                  <Icon name={appearanceMode === 'dark' ? 'sun' : 'moon'} size={15} />
+                </button>
+              )}
             </div>
+
+            {onOpenSearch && (
+              <button
+                type="button"
+                onClick={onOpenSearch}
+                aria-label="Quick search across topics, worlds, labs, and novels"
+                aria-keyshortcuts="Control+K Meta+K"
+                className="w-full min-h-[38px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[var(--dim)] hover:text-[var(--ink)] flex items-center justify-between gap-2 text-[12.5px] font-semibold cursor-pointer transition-colors"
+              >
+                <span className="inline-flex items-center gap-2 truncate">
+                  <Icon name="search" size={14} className="text-[var(--gold)] shrink-0" />
+                  <span className="truncate">Quick search...</span>
+                </span>
+                <kbd className="px-1.5 py-0.5 rounded bg-[var(--card)] border border-[var(--line)] text-[10.5px] font-mono font-bold text-[var(--dim)] shrink-0">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
 
             <LiquidCapsuleBar
               roleType="nav"
@@ -312,44 +352,45 @@ export function AppShell({
                   />
                   <span className="relative z-10 truncate">
                     {activeStudioMeta
-                      ? activeStudioMeta.title
-                      : `${SUBJECT_INFO[progress.subj].short} labs`}
+                      ? progress.subj === 'eng' || progress.subj === 'lit'
+                        ? 'Set Novels Library'
+                        : activeStudioMeta.title
+                      : `${SUBJECT_INFO[progress.subj].short} Labs`}
                   </span>
                 </button>
               </div>
             )}
           </div>
 
-          <div className="pt-4 border-t-2 border-[var(--line)] flex flex-col gap-3.5 px-1">
+          <div className="pt-3.5 border-t border-[var(--line)] flex flex-col gap-2.5 px-1">
             <div className="flex items-center justify-between gap-2 text-[13.5px]">
               <div className="flex items-center gap-2.5 min-w-0">
                 <span
                   aria-hidden="true"
-                  className="w-8 h-8 rounded-[12px] bg-[var(--acc-soft)] text-[var(--gold)] font-[var(--display)] font-bold text-[14px] flex items-center justify-center shrink-0"
+                  className="w-8 h-8 rounded-[10px] bg-[var(--acc-soft)] text-[var(--gold)] font-[var(--display)] font-bold text-[13.5px] flex items-center justify-center shrink-0"
                 >
                   {(progress.name || 'S').slice(0, 1).toUpperCase()}
                 </span>
-                <span className="font-bold text-[var(--ink)] truncate">
-                  {progress.name || 'Student'}
-                </span>
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-[var(--ink)] truncate leading-tight">
+                    {progress.name || 'Student'}
+                  </span>
+                  <span className="text-[11.5px] font-semibold text-[var(--dim)] tabular-nums whitespace-nowrap">
+                    {progress.streak.n}d streak · {subjectPct}%
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="inline-flex items-center gap-1 text-[12.5px] font-bold text-[var(--peach-ink)] bg-[var(--peach-bg)] px-2 py-0.5 rounded-full tabular-nums">
-                  <Icon name="flame" size={13} />
-                  {progress.streak.n}d
-                </span>
-                {onSignOut && (
-                  <button
-                    type="button"
-                    onClick={onSignOut}
-                    aria-label="Sign out"
-                    title="Sign out"
-                    className="p-1.5 rounded-[12px] text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--bg)] transition-colors duration-150 cursor-pointer"
-                  >
-                    <Icon name="logout" size={15} />
-                  </button>
-                )}
-              </div>
+              {onSignOut && (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  aria-label="Sign out"
+                  title="Sign out"
+                  className="p-1.5 rounded-[10px] text-[var(--dim)] hover:text-[var(--ink)] hover:bg-[var(--bg)] transition-colors duration-150 cursor-pointer shrink-0"
+                >
+                  <Icon name="logout" size={15} />
+                </button>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5 pt-3 border-t border-[var(--line)]">
@@ -420,21 +461,52 @@ export function AppShell({
             isExamHall || screen === 'landing'
               ? 'max-w-none p-0'
               : isStudyWorkbench
-                ? 'max-w-[1120px] px-4 sm:px-6 min-[1200px]:px-8 pt-4 pb-24'
+                ? 'max-w-[1120px] px-4 sm:px-6 min-[1200px]:px-8 pt-4 pb-28'
                 : effectiveShowNav
-                  ? 'max-w-[1080px] px-4 sm:px-6 min-[1200px]:px-8 pt-4 pb-32 min-[980px]:pt-7 min-[980px]:pb-24'
-                  : 'max-w-[980px] px-4 sm:px-6 py-4'
+                  ? 'max-w-[1080px] px-4 sm:px-6 min-[1200px]:px-8 pt-4 pb-36 min-[980px]:pt-7 min-[980px]:pb-28'
+                  : 'max-w-[980px] px-4 sm:px-6 pt-4 pb-24'
           }`}
         >
           {effectiveShowNav && !isStudyWorkbench && (
             <div className="min-[980px]:hidden flex items-center justify-between gap-2 pb-2.5 mb-3.5 border-b border-[var(--line)]">
               <div className="flex items-center gap-2 shrink-0">
-                <CrestSvg size={32} />
-                <span className="font-[var(--display)] font-extrabold text-[18.5px] tracking-tight text-[var(--ink)] whitespace-nowrap">
+                <EasyLearnAnimatedIcon size={30} />
+                <span className="font-[var(--display)] font-extrabold text-[18px] tracking-tight text-[var(--ink)] whitespace-nowrap">
                   Easy Learn
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 text-[12px] font-extrabold shrink-0">
+              <div className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--dim)] tabular-nums shrink-0">
+                <span className="text-[var(--ink)] whitespace-nowrap mr-0.5">
+                  {progress.streak.n}d
+                  <span aria-hidden="true" className="mx-1 text-[var(--dim)]">
+                    ·
+                  </span>
+                  <span className="text-[var(--gold)]">{subjectPct}%</span>
+                </span>
+                {onOpenSearch && (
+                  <button
+                    type="button"
+                    onClick={onOpenSearch}
+                    aria-label="Quick search"
+                    title="Quick search"
+                    className="w-8 h-8 rounded-lg bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center justify-center cursor-pointer shrink-0"
+                  >
+                    <Icon name="search" size={14} className="text-[var(--gold)]" />
+                  </button>
+                )}
+                {onToggleAppearance && (
+                  <button
+                    type="button"
+                    onClick={onToggleAppearance}
+                    aria-label={
+                      appearanceMode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+                    }
+                    title={appearanceMode === 'dark' ? 'Light mode' : 'Dark mode'}
+                    className="w-8 h-8 rounded-lg bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center justify-center cursor-pointer shrink-0"
+                  >
+                    <Icon name={appearanceMode === 'dark' ? 'sun' : 'moon'} size={14} />
+                  </button>
+                )}
                 <PWAInstallButton iconOnly label="Install offline app" />
                 {onOpenWebsite && !isInstalled && (
                   <button
@@ -442,19 +514,12 @@ export function AppShell({
                     onClick={onOpenWebsite}
                     aria-label="Open public website"
                     title="Public website"
-                    className="w-8 h-8 min-[460px]:w-auto min-[460px]:px-2.5 rounded-full bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                    className="w-8 h-8 min-[480px]:w-auto min-[480px]:px-2.5 rounded-lg bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                   >
                     <Icon name="globe" size={13} className="text-[var(--gold)]" />
-                    <span className="hidden min-[460px]:inline">Website</span>
+                    <span className="hidden min-[480px]:inline">Website</span>
                   </button>
                 )}
-                <span className="inline-flex items-center gap-1 text-[var(--peach-ink)] bg-[var(--peach-bg)] border border-[var(--peach-line)] px-2.5 h-7 rounded-full tabular-nums">
-                  <Icon name="flame" size={13} className="text-[#EA580C]" />
-                  {progress.streak.n}d
-                </span>
-                <span className="inline-flex items-center px-2.5 h-7 rounded-full bg-[var(--gold)] text-[var(--on-acc)] tabular-nums">
-                  {subjectPct}%
-                </span>
               </div>
             </div>
           )}

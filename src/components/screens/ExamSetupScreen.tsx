@@ -23,7 +23,8 @@ import {
   type ActiveAudioHandle,
   type DecodedTtsPayload,
 } from '../../utils/studioAudioPlayer';
-import { CrestSvg, Icon } from '../Icons';
+import { EasyLearnAnimatedIcon } from '../EasyLearnAnimatedIcon';
+import { Icon } from '../Icons';
 import { LiquidCapsuleBar, SmoothCollapse, SmoothViewSwitch } from '../ULessonMotion';
 
 const introTtsCache = new Map<string, Promise<DecodedTtsPayload>>();
@@ -429,7 +430,7 @@ export function ExamSetupScreen({
       {/* Header */}
       <div className="flex items-center justify-between gap-3 pb-3 border-b border-[var(--line)]">
         <div className="flex items-center gap-3 min-w-0">
-          <CrestSvg size={40} />
+          <EasyLearnAnimatedIcon size={46} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-bold text-[var(--gold)]">
               <span>
@@ -552,44 +553,18 @@ export function ExamSetupScreen({
               </div>
             </section>
 
-            {/* Dynamic Track Commitment Callout */}
-            <SmoothViewSwitch viewKey={activeTrack || 'none'}>
-              {activeTrack === 'jamb' && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1">
-                  <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--gold)]">
-                    JAMB-Only Tough Mode
-                  </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-snug">
-                    Shows strictly your <strong>4 UTME subjects</strong> and <strong>4 voice teachers</strong>. Topic tests require <strong>6/7 in 3:30</strong>.
-                  </p>
-                </div>
-              )}
-              {activeTrack === 'both' && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1">
-                  <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--gold)]">
-                    Combined Track · 70% JAMB + 30% WAEC
-                  </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-snug">
-                    <strong>70% of daily missions</strong> drill your 4 UTME subjects; <strong>30%</strong> covers WAEC theory and extra subjects.
-                  </p>
-                </div>
-              )}
-              {activeTrack === 'waec' && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1">
-                  <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--gold)]">
-                    WAEC Distinction Track
-                  </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-snug">
-                    Method workings, SI units, labelled diagrams, and Chief Examiner pitfall checks.
-                  </p>
-                </div>
-              )}
-              {!activeTrack && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--line)] text-[13px] font-semibold text-[var(--muted)]">
-                  Select <strong>JAMB UTME</strong>, <strong>WAEC / SSCE</strong>, or <strong>both</strong> above.
-                </div>
-              )}
-            </SmoothViewSwitch>
+            {!activeTrack && (
+              <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--line)] text-[13px] font-semibold text-[var(--muted)]">
+                Select <strong>JAMB UTME</strong>, <strong>WAEC / SSCE</strong>, or <strong>both</strong> above.
+              </div>
+            )}
+            {activeTrack === 'both' && (
+              <div className="px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--acc-line)] flex items-center justify-between gap-2 text-[13px] text-[var(--muted)]">
+                <span>
+                  <strong className="text-[var(--gold)]">Combined 70 / 30 Track:</strong> 70% daily UTME speed + 30% WAEC Paper 2 theory.
+                </span>
+              </div>
+            )}
 
             {/* Quick Department Presets + Subject Search */}
             {activeTrack && (
@@ -664,13 +639,20 @@ export function ExamSetupScreen({
                             type="button"
                             aria-pressed={selected}
                             onClick={() => handleToggleJambElective(sid)}
-                            className={`min-h-[40px] px-3 rounded-xl border text-[13px] font-semibold flex items-center justify-between gap-2 text-left cursor-pointer transition-colors duration-150 ${
+                            className={`min-h-[42px] px-3 rounded-xl border text-[13px] font-semibold flex items-center justify-between gap-2 text-left cursor-pointer transition-colors duration-150 ${
                               selected
                                 ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)] font-bold'
                                 : 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)]'
                             }`}
                           >
-                            <span className="truncate">{SUBJECT_INFO[sid].short}</span>
+                            <span className="inline-flex items-center gap-2 min-w-0">
+                              <Icon
+                                name={SUBJECT_INFO[sid].icon}
+                                size={15}
+                                className={selected ? 'text-[var(--gold)] shrink-0' : 'text-[var(--dim)] shrink-0'}
+                              />
+                              <span className="truncate">{SUBJECT_INFO[sid].short}</span>
+                            </span>
                             {selected && <Icon name="check" size={14} className="shrink-0" />}
                           </button>
                         );
@@ -702,15 +684,22 @@ export function ExamSetupScreen({
                             type="button"
                             aria-pressed={selected}
                             onClick={() => handleToggleWaecSubject(sid)}
-                            className={`min-h-[40px] px-3 rounded-xl border text-[13px] font-semibold flex items-center justify-between gap-2 text-left cursor-pointer transition-colors duration-150 ${
+                            className={`min-h-[42px] px-3 rounded-xl border text-[13px] font-semibold flex items-center justify-between gap-2 text-left cursor-pointer transition-colors duration-150 ${
                               selected
                                 ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)] font-bold'
                                 : 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)]'
                             }`}
                           >
-                            <span className="truncate">
-                              {SUBJECT_INFO[sid].short}
-                              {isSchoolOrTrade ? ' · WAEC' : ''}
+                            <span className="inline-flex items-center gap-2 min-w-0">
+                              <Icon
+                                name={SUBJECT_INFO[sid].icon}
+                                size={15}
+                                className={selected ? 'text-[var(--gold)] shrink-0' : 'text-[var(--dim)] shrink-0'}
+                              />
+                              <span className="truncate">
+                                {SUBJECT_INFO[sid].short}
+                                {isSchoolOrTrade ? ' · WAEC' : ''}
+                              </span>
                             </span>
                             {selected && <Icon name="check" size={14} className="shrink-0" />}
                           </button>

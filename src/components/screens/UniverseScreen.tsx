@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { SubjectId, UserProgress } from '../../types';
-import { getTopics } from '../../data/curriculum';
+import { SUBJECT_IDS, getTopics } from '../../data/curriculum';
 import { SUBJECT_INFO, today } from '../../utils/engine';
 import { getVisibleEnrolledSubjects } from '../../utils/examTrackLogic';
 import { triggerLightHaptic } from '../../utils/readingComfortLogic';
+import { ChemMadScientistBar } from '../ChemMadScientistBar';
+import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { sfx, type SoundEffectName } from '../../utils/sound';
 import {
   EQUIPMENT_CATALOG,
@@ -54,6 +56,8 @@ type MissionStageIndex = 1 | 2 | 3 | 4 | 'victory';
 
 export function UniverseScreen({
   progress,
+  initialWorldSubj = null,
+  launchHeart3dToken = 0,
   onAwardUniverseXp,
   onSelectSubject,
   onOpenTopicNotes,
@@ -63,6 +67,8 @@ export function UniverseScreen({
   onBackHome,
 }: {
   progress: UserProgress;
+  initialWorldSubj?: SubjectId | null;
+  launchHeart3dToken?: number;
   onAwardUniverseXp: (xpDelta: number, solvedQuestionCount: number, label?: string) => void;
   onSelectSubject: (s: SubjectId) => void;
   onOpenTopicNotes: (subj: SubjectId, topicId?: string) => void;
@@ -73,9 +79,12 @@ export function UniverseScreen({
 }) {
   const [profile, setProfile] = useState<UniverseProfile>(() => loadUniverseProfile());
   const [hubTab, setHubTab] = useState<UniverseHubTab>('worlds');
-  const [selectedWorldId, setSelectedWorldId] = useState<SubjectId | null>(null);
+  const [selectedWorldId, setSelectedWorldId] = useState<SubjectId | null>(initialWorldSubj);
+  const [worldSearch, setWorldSearch] = useState('');
+  const [showAll49Worlds, setShowAll49Worlds] = useState(false);
   const [activeMission, setActiveMission] = useState<UniverseMission | null>(null);
   const [showCirculatory3D, setShowCirculatory3D] = useState<boolean>(() => {
+    if (launchHeart3dToken > 0) return true;
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('adventure') === 'heart';
   });
@@ -86,6 +95,23 @@ export function UniverseScreen({
   const [missionStage, setMissionStage] = useState<MissionStageIndex>(1);
   const [heroArtFailed, setHeroArtFailed] = useState(false);
   const [failedWorldArt, setFailedWorldArt] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (initialWorldSubj) {
+      setSelectedWorldId(initialWorldSubj);
+      setActiveMission(null);
+      setActiveBoss(null);
+    }
+  }, [initialWorldSubj]);
+
+  useEffect(() => {
+    if (launchHeart3dToken > 0) {
+      setSelectedWorldId('bio');
+      setActiveMission(null);
+      setActiveBoss(null);
+      setShowCirculatory3D(true);
+    }
+  }, [launchHeart3dToken]);
 
   // Stage 2, 3, 4 interactive state
   const [simCompleted, setSimCompleted] = useState(false);
@@ -178,9 +204,20 @@ export function UniverseScreen({
     return merged;
   }, [progress]);
 
+  const displayedWorldIds = useMemo(() => {
+    const q = worldSearch.trim().toLowerCase();
+    const pool = showAll49Worlds || q.length > 0 ? SUBJECT_IDS : worldSubjectIds;
+    if (!q) return pool;
+    return pool.filter((sid) => {
+      const w = getPlayableWorldForSubject(sid, progress);
+      const hay = `${w.subjectName} ${w.worldTitle} ${w.companionName} ${w.tagline}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [progress, showAll49Worlds, worldSearch, worldSubjectIds]);
+
   const worldCards = useMemo(
-    () => worldSubjectIds.map((sid) => getPlayableWorldForSubject(sid, progress)),
-    [worldSubjectIds, progress]
+    () => displayedWorldIds.map((sid) => getPlayableWorldForSubject(sid, progress)),
+    [displayedWorldIds, progress]
   );
 
   const activeWorld: SubjectWorldDef | null = useMemo(() => {
@@ -635,15 +672,41 @@ export function UniverseScreen({
           })}
         </nav>
 
-        {/* Mission Title Header */}
-        <header className="rtc-card rounded-2xl p-5 flex flex-col gap-2">
-          <div className="text-[12px] font-bold text-[var(--dim)]">
-            {activeWorld.subjectName} · {activeWorld.worldTitle} · Guide: {activeWorld.companionName}
+        {/* Mission Title Header + Companion Voice Guide */}
+        <header className="rtc-card rounded-2xl p-5 flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[12px] font-bold text-[var(--dim)]">
+              {activeWorld.subjectName} · {activeWorld.worldTitle} · Guide: {activeWorld.companionName}
+            </div>
+            <h1 className="h22 text-[var(--ink)]">{activeMission.title}</h1>
+            <p className="text-[14.5px] text-[var(--dim)] leading-relaxed max-w-[68ch]">
+              {activeMission.subtitle}
+            </p>
           </div>
-          <h1 className="h22 text-[var(--ink)]">{activeMission.title}</h1>
-          <p className="text-[14.5px] text-[var(--dim)] leading-relaxed max-w-[68ch]">
-            {activeMission.subtitle}
-          </p>
+          <ChemMadScientistBar
+            mode={subjectToLiveCoachMode(activeWorld.worldId)}
+            variant="compact"
+            muted={progress.muted}
+            stepKey={`univ|${activeMission.id}|stage-${missionStage}`}
+            context={{
+              topicName: activeMission.title,
+              sectionName: activeWorld.worldTitle,
+              stepLabel:
+                missionStage === 'victory'
+                  ? 'Mission Complete'
+                  : `Stage ${missionStage} of 4`,
+              stepText:
+                missionStage === 1
+                  ? `${activeMission.stage1Discover.hook} ${activeMission.stage1Discover.companionIntro}`
+                  : missionStage === 2
+                    ? activeMission.stage2Explore.instruction
+                    : missionStage === 3
+                      ? `${activeMission.stage3Decision.scenarioContext} ${activeMission.stage3Decision.prompt}`
+                      : missionStage === 4
+                        ? `${activeMission.stage4Complete.applicationChallenge.prompt} Then confirm: ${activeMission.stage4Complete.teachBackChallenge.prompt}`
+                        : activeMission.stage4Complete.victoryNarrative,
+            }}
+          />
         </header>
 
         {/* STAGE 1: DISCOVER */}
@@ -1592,7 +1655,7 @@ export function UniverseScreen({
                   onChange={(e) => setBuilderSubj(e.target.value as SubjectId)}
                   className="min-h-[42px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] text-[13.5px] font-semibold text-[var(--ink)]"
                 >
-                  {worldSubjectIds.map((sid) => (
+                  {SUBJECT_IDS.map((sid) => (
                     <option key={sid} value={sid}>
                       {SUBJECT_INFO[sid].name}
                     </option>
@@ -1623,7 +1686,7 @@ export function UniverseScreen({
                   type="button"
                   disabled={isGeneratingAdventure || builderTopics.length === 0}
                   onClick={handleGeneratePersonalisedAdventure}
-                  className="btn-tactile indigo w-full whitespace-nowrap disabled:opacity-60"
+                  className="btn-tactile paper border-[var(--acc-line)] text-[var(--gold)] w-full whitespace-nowrap disabled:opacity-60"
                 >
                   <span>{isGeneratingAdventure ? 'Preparing Mission...' : 'Start Topic Mission'}</span>
                   <Icon name="go" size={15} />
@@ -1636,17 +1699,77 @@ export function UniverseScreen({
             )}
           </section>
 
-          {/* Subject Worlds Grid */}
-          <section aria-label="Learning Worlds" className="flex flex-col gap-3">
-            <div>
-              <h2 className="h18 text-[var(--ink)]">Explore Subject Worlds</h2>
-              <p className="text-[13px] text-[var(--dim)]">
-                Each world pairs interactive experiments with real JAMB &amp; WAEC concepts.
-              </p>
+          {/* Subject Worlds Grid + Search & 49-Subject Toggle */}
+          <section aria-label="Learning Worlds" className="flex flex-col gap-3.5">
+            <div className="flex flex-col min-[760px]:flex-row min-[760px]:items-end justify-between gap-3">
+              <div>
+                <h2 className="h18 text-[var(--ink)]">Explore Subject Worlds</h2>
+                <p className="text-[13px] text-[var(--dim)]">
+                  Each world pairs interactive experiments with real JAMB &amp; WAEC concepts.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex items-center">
+                  <Icon
+                    name="search"
+                    size={14}
+                    className="absolute left-3 text-[var(--dim)] pointer-events-none"
+                  />
+                  <label htmlFor="universe-world-search" className="sr-only">
+                    Search subject worlds
+                  </label>
+                  <input
+                    id="universe-world-search"
+                    type="search"
+                    value={worldSearch}
+                    onChange={(e) => setWorldSearch(e.target.value)}
+                    placeholder="Filter 49 subject worlds..."
+                    className="min-h-[36px] pl-8 pr-3 rounded-xl bg-[var(--card)] border border-[var(--line)] text-[12.5px] font-medium text-[var(--ink)] placeholder:text-[var(--dim)] outline-none focus:border-[var(--acc-line)] w-52"
+                  />
+                </div>
+
+                <div className="inline-flex items-center p-1 rounded-xl bg-[var(--card)] border border-[var(--line)]">
+                  <button
+                    type="button"
+                    onClick={() => setShowAll49Worlds(false)}
+                    className={`min-h-[28px] px-2.5 rounded-lg text-[11.5px] font-bold cursor-pointer whitespace-nowrap ${
+                      !showAll49Worlds && !worldSearch.trim()
+                        ? 'bg-[var(--gold)] text-[var(--on-acc)]'
+                        : 'text-[var(--dim)] hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    My Worlds ({worldSubjectIds.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAll49Worlds(true)}
+                    className={`min-h-[28px] px-2.5 rounded-lg text-[11.5px] font-bold cursor-pointer whitespace-nowrap ${
+                      showAll49Worlds || Boolean(worldSearch.trim())
+                        ? 'bg-[var(--gold)] text-[var(--on-acc)]'
+                        : 'text-[var(--dim)] hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    All 49 Subjects
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {worldCards.map((w) => {
+            {worldCards.length === 0 ? (
+              <div className="rtc-card rounded-2xl p-6 text-center text-[13.5px] text-[var(--dim)]">
+                No subject world matched &ldquo;{worldSearch}&rdquo;.{' '}
+                <button
+                  type="button"
+                  onClick={() => setWorldSearch('')}
+                  className="font-bold text-[var(--gold)] hover:underline cursor-pointer"
+                >
+                  Clear filter
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {worldCards.map((w) => {
                 const showArt = Boolean(w.keyArtUrl && !failedWorldArt[w.worldId]);
                 const completedInWorld = w.missions.filter(
                   (m) => (profile.completedMissions[m.id]?.bestAccuracyPct || 0) >= 65
@@ -1708,7 +1831,8 @@ export function UniverseScreen({
                   </article>
                 );
               })}
-            </div>
+              </div>
+            )}
           </section>
 
           {/* Daily Quests Strip */}

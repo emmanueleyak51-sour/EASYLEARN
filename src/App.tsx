@@ -67,9 +67,15 @@ import {
   type ScreenTransitionSpec,
 } from './utils/screenTransitionLogic';
 import { AppShell, type MainTab } from './components/AppShell';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
+import type { GlobalCatalogRouteAction } from './utils/platformUpgradesLogic';
 import { ClockFormatProvider } from './components/WatClock';
 import { FloatingLiveCoach } from './components/FloatingLiveCoach';
 import { BadgeUnlockCelebration, type XpBurstItem } from './components/FxCelebration';
+import {
+  AnimatedEasyLearnCrest,
+  OpeningWelcomeSplash,
+} from './components/OpeningWelcomeSplash';
 import {
   LiveCoachProvider,
   subjectToLiveCoachMode,
@@ -502,6 +508,11 @@ export default function App() {
   const [demoSession, setDemoSession] = useState<DemoSessionRecord | null>(() => loadDemoSession());
   const [clockNowMs, setClockNowMs] = useState<number>(() => Date.now());
   const [isExamHallActive, setIsExamHallActive] = useState<boolean>(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
+  const [universeDeepLink, setUniverseDeepLink] = useState<{
+    worldSubj: SubjectId | null;
+    heartToken: number;
+  }>({ worldSubj: null, heartToken: 0 });
 
   // Hold milestone pop-ups while inside an active lesson, quiz, topic test, or mock exam
   const deferredMilestonesRef = useRef<{
@@ -867,6 +878,21 @@ export default function App() {
     document.body.dataset.screen = screen;
     document.body.dataset.subj = progress.subj;
   }, [screen, progress.subj]);
+
+  // Global Ctrl+K / Cmd+K shortcut for Command Palette (disabled during live CBT exam hall or landing/welcome)
+  useEffect(() => {
+    const onGlobalKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        if (screen === 'landing' || screen === 'welcome' || (screen === 'cbt' && isExamHallActive)) {
+          return;
+        }
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, [screen, isExamHallActive]);
 
   // Auto-dismiss badge unlock toast after 4.2s
   useEffect(() => {
@@ -1463,6 +1489,7 @@ export default function App() {
       picked: null,
       result: null,
       pred0: predicted(progress, topics),
+      res: [],
     });
     setScreen('boss');
   };
@@ -1620,6 +1647,7 @@ export default function App() {
         combo,
         best,
         hp: Math.max(0, targetHp - hits),
+        res: [...(prev.res || []), { qid: q.id, picked: origIdx, ok }],
       };
     });
   };
@@ -1686,9 +1714,9 @@ export default function App() {
   const handleNavigateTab = (tab: MainTab) => {
     if (tab === 'cbt') {
       const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
-      if (!isPremiumStudent && !satOpen) {
+      if (!isPremiumStudent && isTrialLockedOut && !satOpen) {
         handleOpenPaywall(
-          'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+          'Your free trial has ended. CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
         );
         return;
       }
@@ -1704,9 +1732,9 @@ export default function App() {
 
   const openCbtGated = () => {
     const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
-    if (!isPremiumStudent && !satOpen) {
+    if (!isPremiumStudent && isTrialLockedOut && !satOpen) {
       handleOpenPaywall(
-        'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+        'Your free trial has ended. CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
       );
       return;
     }
@@ -1714,9 +1742,9 @@ export default function App() {
   };
 
   const openLabDirectoryGated = () => {
-    if (!isPremiumStudent) {
+    if (!isPremiumStudent && isTrialLockedOut) {
       handleOpenPaywall(
-        'Virtual Practical Labs are locked during your 1-day free trial. Subscribe from ₦1,000/month to unlock every practical lab.'
+        'Your free trial has ended. Subscribe from ₦1,000/month to unlock every practical lab across all subjects.'
       );
       return;
     }
@@ -1849,9 +1877,9 @@ export default function App() {
       setScreen('studio');
       return;
     }
-    if (!isPremiumStudent) {
+    if (!isPremiumStudent && isTrialLockedOut) {
       handleOpenPaywall(
-        'Subject Studios & Practical Companions are locked during your 1-day free trial. Subscribe from ₦1,000/month for 100% full access.'
+        'Your free trial has ended. Subscribe from ₦1,000/month for full access to Subject Studios & Practical Companions.'
       );
       return;
     }
@@ -1860,9 +1888,9 @@ export default function App() {
   };
 
   const openSandboxesGated = () => {
-    if (!isPremiumStudent) {
+    if (!isPremiumStudent && isTrialLockedOut) {
       handleOpenPaywall(
-        'Interactive Try-it Labs are locked during your 1-day free trial. Subscribe from ₦1,000/month for 100% full access.'
+        'Your free trial has ended. Subscribe from ₦1,000/month for full access to Interactive Try-it Labs.'
       );
       return;
     }
@@ -1902,15 +1930,111 @@ export default function App() {
   };
 
   const openLabPlayer = (labId: string, returnTo: ScreenName) => {
-    if (!isPremiumStudent) {
+    if (!isPremiumStudent && isTrialLockedOut) {
       handleOpenPaywall(
-        'Virtual Practical Labs are locked during your 1-day free trial. Subscribe from ₦1,000/month to unlock every practical lab.'
+        'Your free trial has ended. Subscribe from ₦1,000/month to unlock every practical lab.'
       );
       return;
     }
     setActiveLabId(labId);
     setLabReturnScreen(returnTo);
     setScreen('labrun');
+  };
+
+  const handleCommandPaletteAction = (action: GlobalCatalogRouteAction) => {
+    playSound('tap');
+    const ensureEnrolled = (sid: SubjectId) => {
+      setProgress((prev) => ({
+        ...prev,
+        subj: sid,
+        subjs: prev.subjs.includes(sid)
+          ? prev.subjs
+          : SUBJECT_IDS.filter((id) => id === sid || prev.subjs.includes(id)),
+      }));
+    };
+
+    if (action.kind === 'screen' && action.screen) {
+      if (action.screen === 'cbt') {
+        openCbtGated();
+        return;
+      }
+      if (action.screen === 'sandboxes') {
+        openSandboxesGated();
+        return;
+      }
+      if (action.screen === 'theory' || action.screen === 'duel') {
+        setCompanionReturnScreen(screen === 'landing' || screen === 'welcome' ? 'home' : screen);
+        if (action.screen === 'duel') setActiveDuelCode(null);
+      }
+      setScreen(action.screen);
+      return;
+    }
+
+    if (action.kind === 'subject-home' && action.subj) {
+      ensureEnrolled(action.subj);
+      setScreen('home');
+      return;
+    }
+
+    if (action.kind === 'topic' && action.subj && action.topicId) {
+      const subjTopics = getTopics(action.subj);
+      if (!PUBLIC_FREE_LAUNCH_ACTIVE && isTopicLocked(progress, action.topicId, subjTopics)) {
+        const lockedTopic = getTopic(action.subj, action.topicId);
+        handleOpenPaywall(
+          lockedTopic
+            ? `Unlock “${lockedTopic.name}” and all 600+ topics across 49 subjects`
+            : 'Unlock all 600+ topics across 49 subjects'
+        );
+        return;
+      }
+      ensureEnrolled(action.subj);
+      setActiveTopicId(action.topicId);
+      setScreen('topic');
+      return;
+    }
+
+    if (action.kind === 'lesson' && action.subj && action.topicId) {
+      ensureEnrolled(action.subj);
+      setLessonReturnScreen('topic');
+      setActiveTopicId(action.topicId);
+      setScreen('lesson');
+      return;
+    }
+
+    if (action.kind === 'world' && action.subj) {
+      ensureEnrolled(action.subj);
+      setUniverseDeepLink((prev) => ({ worldSubj: action.subj!, heartToken: prev.heartToken }));
+      setScreen('universe');
+      return;
+    }
+
+    if (action.kind === 'heart-3d') {
+      ensureEnrolled('bio');
+      setUniverseDeepLink((prev) => ({ worldSubj: 'bio', heartToken: prev.heartToken + 1 }));
+      setScreen('universe');
+      return;
+    }
+
+    if (action.kind === 'lab' && action.subj && action.labId) {
+      ensureEnrolled(action.subj);
+      openLabPlayer(action.labId, 'home');
+      return;
+    }
+
+    if (action.kind === 'novel' && action.novelId) {
+      if (action.subj) ensureEnrolled(action.subj);
+      openNovelsStudio('home', action.novelId);
+      return;
+    }
+
+    if (action.kind === 'formulas') {
+      const targetSubj =
+        action.subj && hasFormulaSheet(action.subj) ? action.subj : 'maths';
+      ensureEnrolled(targetSubj);
+      setFormulaReturnScreen('home');
+      setFormulaTopicFilterId(null);
+      setScreen('formulas');
+    }
   };
 
   const applyWebsiteBlueprintToState = (
@@ -2037,12 +2161,12 @@ export default function App() {
       );
       const satOpen = getSaturdayCbtCampaign(Date.now(), progress.cbtHistory).isSaturday;
       if (progress.name.trim() && isSessionUnlocked()) {
-        if (isPremiumStudent || satOpen) {
+        if (isPremiumStudent || !isTrialLockedOut || satOpen) {
           setScreen('cbt');
         } else {
           setScreen('home');
           handleOpenPaywall(
-            'CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
+            'Your free trial has ended. CBT Mock Exams unlock free every Saturday in the National CBT Arena, or subscribe from ₦1,000/month for daily UTME & WAEC mock access.'
           );
         }
       } else {
@@ -2691,6 +2815,13 @@ export default function App() {
             openPaywall: handleOpenPaywall,
           }}
         >
+        <OpeningWelcomeSplash
+          studentName={progress.name}
+          appearanceMode={effectiveThemeMode}
+          subjectCount={progress.subjs.length}
+          streakDays={progress.streak.n}
+          muted={progress.muted}
+        />
         {isInsideAppSession && !isPremiumStudent && demoStatus.isDemoActive && !demoStatus.isExpired && (
           <DemoCountdownBar
             status={demoStatus}
@@ -2723,8 +2854,18 @@ export default function App() {
         xpBursts={xpBursts}
         confettiKey={confettiKey}
         screenTransition={screenTransition}
+        appearanceMode={effectiveThemeMode}
+        onToggleAppearance={() =>
+          handleChangeThemeMode(effectiveThemeMode === 'dark' ? 'light' : 'dark')
+        }
+        onOpenSearch={() => setCommandPaletteOpen(true)}
         onDismissToast={() => setBadgeToast(null)}
-        onNavigateTab={handleNavigateTab}
+        onNavigateTab={(tab) => {
+          if (tab === 'worlds') {
+            setUniverseDeepLink((prev) => ({ worldSubj: null, heartToken: prev.heartToken }));
+          }
+          handleNavigateTab(tab);
+        }}
         onSelectSubject={handleSelectSubject}
         onManageSubjects={() => setScreen('subjs')}
         onOpenStudio={
@@ -2740,11 +2881,11 @@ export default function App() {
         fallback={
           <div
             role="status"
-            aria-label="Loading screen"
+            aria-label="Opening workspace"
             className="w-full py-12 flex flex-col items-center justify-center gap-3 text-[var(--dim)]"
           >
-            <div className="w-8 h-8 rounded-full border-2 border-[var(--line)] border-t-[var(--gold)] animate-spin" />
-            <span className="text-[13px] font-semibold">Loading workspace...</span>
+            <AnimatedEasyLearnCrest size={56} />
+            <span className="text-[13px] font-semibold">Opening workspace...</span>
           </div>
         }
       >
@@ -2930,13 +3071,32 @@ export default function App() {
           onOpenLeaderboard={() => setScreen('leaderboard')}
           onOpenQuestionBank={handleOpenQuestionBank}
           onOpenPaywall={handleOpenPaywall}
-          onOpenUniverse={() => setScreen('universe')}
+          onOpenUniverse={() => {
+            setUniverseDeepLink((prev) => ({
+              worldSubj: progress.subj,
+              heartToken: prev.heartToken,
+            }));
+            setScreen('universe');
+          }}
+          onQuickWarmupSolved={(_cardKey, isCorrect) => {
+            playSound(isCorrect ? 'right' : 'wrong', 1);
+            commitProgressWithBadges((prev) => {
+              const d = today();
+              return {
+                ...prev,
+                xp: prev.xp + (isCorrect ? 5 : 1),
+                act: { ...prev.act, [d]: (prev.act[d] || 0) + 1 },
+              };
+            });
+          }}
         />
       )}
 
       {screen === 'universe' && (
         <UniverseScreen
           progress={progress}
+          initialWorldSubj={universeDeepLink.worldSubj}
+          launchHeart3dToken={universeDeepLink.heartToken}
           onAwardUniverseXp={(xpDelta, solvedQuestionCount) => {
             if (xpDelta <= 0 && solvedQuestionCount <= 0) return;
             commitProgressWithBadges((prev) => {
@@ -3256,8 +3416,14 @@ export default function App() {
       {screen === 'cbt' && (
         <CbtExamScreen
           progress={progress}
+          isTrialActive={!isTrialLockedOut}
           onCompleteCbt={handleCompleteCbt}
           onOpenWeakTopic={handleOpenWeakTopic}
+          onOpenWorldMission={(subj) => {
+            handleSelectSubject(subj);
+            setUniverseDeepLink((prev) => ({ worldSubj: subj, heartToken: prev.heartToken }));
+            setScreen('universe');
+          }}
           onExamHallChange={setIsExamHallActive}
           onOpenPaywall={handleOpenPaywall}
           onBack={() => setScreen('home')}
@@ -3455,7 +3621,13 @@ export default function App() {
           setBadgeQueue((cur) => cur.slice(1));
         }}
       />
-      {isPremiumStudent && showNav && !(screen === 'cbt' && isExamHallActive) && (
+      <CommandPaletteModal
+        open={commandPaletteOpen}
+        progress={progress}
+        onClose={() => setCommandPaletteOpen(false)}
+        onExecuteAction={handleCommandPaletteAction}
+      />
+      {(isPremiumStudent || !isTrialLockedOut) && showNav && !(screen === 'cbt' && isExamHallActive) && (
         <FloatingLiveCoach muted={progress.muted} />
       )}
       <OfflineIndicator />

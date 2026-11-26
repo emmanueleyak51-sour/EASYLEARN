@@ -18,6 +18,8 @@ export type UniverseSimulationKind =
   | 'chem_atom'
   | 'phys_gravity'
   | 'math_temple'
+  | 'eng_concord'
+  | 'econ_market'
   | 'concept_pathway';
 
 export interface MissionQuestionCheck {
@@ -1265,32 +1267,10 @@ const ENGLISH_WORLD: SubjectWorldDef = {
         ],
       },
       stage2Explore: {
-        simulationKind: 'concept_pathway',
+        simulationKind: 'eng_concord',
         instruction:
-          'Trace the 4 linguistic verification checkpoints to unlock the Citadel seal.',
-        targetGoalLabel: 'Verify all 4 grammar & phonetic checkpoints',
-        pathwayNodes: [
-          {
-            id: 'n1',
-            label: '1. Isolate True Subject',
-            stateNote: 'Bracket away "together with / as well as ..."',
-          },
-          {
-            id: 'n2',
-            label: '2. Check Number (Singular/Plural)',
-            stateNote: 'Match singular subject → singular verb (-s / is / has)',
-          },
-          {
-            id: 'n3',
-            label: '3. Test Proximity Pairings',
-            stateNote: 'Either/Or & Neither/Nor match the closer noun',
-          },
-          {
-            id: 'n4',
-            label: '4. Verify Vowel Length',
-            stateNote: 'Distinguish short /ɪ/ (sit) from long /iː/ (seat)',
-          },
-        ],
+          'Bracket away distractor phrases and lock the true verb agreement across all 3 Chronicle scrolls.',
+        targetGoalLabel: 'Authenticate all 3 Concord Scrolls (3/3)',
       },
       stage3Decision: {
         scenarioContext:
@@ -1453,9 +1433,24 @@ export function buildDynamicTopicMission(
             ],
     },
     stage2Explore: {
-      simulationKind: 'concept_pathway',
-      instruction: `Step through each reasoning checkpoint for ${topic.name} and inspect how examiners set traps.`,
-      targetGoalLabel: 'Inspect all 4 field checkpoints',
+      simulationKind:
+        subj === 'econ' || subj === 'comm' || subj === 'acct'
+          ? 'econ_market'
+          : subj === 'eng' || subj === 'lit'
+            ? 'eng_concord'
+            : 'concept_pathway',
+      instruction:
+        subj === 'econ' || subj === 'comm' || subj === 'acct'
+          ? `Adjust market price between ₦200 and ₦800 to observe shortage vs surplus and lock equilibrium before tackling ${topic.name}.`
+          : subj === 'eng' || subj === 'lit'
+            ? `Bracket away grammatical distractors and lock all 3 concord seals before testing ${topic.name}.`
+            : `Step through each reasoning checkpoint for ${topic.name} and inspect how examiners set traps.`,
+      targetGoalLabel:
+        subj === 'econ' || subj === 'comm' || subj === 'acct'
+          ? 'Test market imbalance and lock P* = ₦500 equilibrium'
+          : subj === 'eng' || subj === 'lit'
+            ? 'Authenticate all 3 Concord Scrolls (3/3)'
+            : 'Inspect all 4 field checkpoints',
       pathwayNodes: [
         {
           id: 'p1',

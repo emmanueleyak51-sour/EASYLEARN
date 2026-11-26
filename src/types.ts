@@ -533,6 +533,7 @@ export interface TopicTestSession {
   picked: number | null;
   result: 'right' | 'wrong' | null;
   pred0: number;
+  res?: { qid: string; picked: number; ok: boolean }[];
 }
 
 export interface LabStep {

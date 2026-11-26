@@ -7,6 +7,10 @@ import {
 import { useEntitlement } from '../context/EntitlementContext';
 import type { ChemLessonVoiceContext } from '../utils/chemVoiceLogic';
 import { SUBJECT_TUTOR_REGISTRY } from '../utils/tutorRegistry';
+import {
+  resolveActiveCaptionIndex,
+  splitSpeechIntoCaptions,
+} from '../utils/platformUpgradesLogic';
 import { unlockStudioAudioOnGesture } from '../utils/studioAudioPlayer';
 import { Icon } from './Icons';
 
@@ -107,7 +111,8 @@ export function ChemMadScientistBar({
   actionLabel?: string;
   muted?: boolean;
 }) {
-  const { isPremium } = useEntitlement();
+  const { isPremium, isTrialExpired } = useEntitlement();
+  const hasVoiceAccess = isPremium || !isTrialExpired;
   const isMathLab = mode === 'mathLab';
   const subjId = liveCoachModeToSubjectId(mode);
   const tutorMeta = SUBJECT_TUTOR_REGISTRY[subjId];
@@ -130,14 +135,30 @@ export function ChemMadScientistBar({
   const [prefetchedCount, setPrefetchedCount] = useState(0);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [playbackRate, setPlaybackRate] = useState<number>(readInitialTtsSpeed);
+  const [audioProgress, setAudioProgress] = useState<number>(0);
+  const [captionsOpen, setCaptionsOpen] = useState<boolean>(false);
 
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const usingBrowserSpeechRef = useRef<boolean>(false);
+  const browserSpeechTimerRef = useRef<number | null>(null);
   const playRequestIdRef = useRef(0);
   const loadedStepKeyRef = useRef<string>('');
   const mountedRef = useRef(true);
   const playbackRateRef = useRef<number>(playbackRate);
   playbackRateRef.current = playbackRate;
+
+  const captions = React.useMemo(
+    () => splitSpeechIntoCaptions(context.stepText),
+    [context.stepText]
+  );
+  const activeCaptionIdx = React.useMemo(
+    () =>
+      ttsState === 'playing' || ttsState === 'paused'
+        ? resolveActiveCaptionIndex(captions, audioProgress)
+        : 0,
+    [audioProgress, captions, ttsState]
+  );
 
   const cyclePlaybackRate = useCallback(() => {
     setPlaybackRate((prev) => {
@@ -157,6 +178,18 @@ export function ChemMadScientistBar({
 
   const stopTtsAudio = useCallback(() => {
     playRequestIdRef.current += 1;
+    if (browserSpeechTimerRef.current !== null) {
+      window.clearInterval(browserSpeechTimerRef.current);
+      browserSpeechTimerRef.current = null;
+    }
+    if (usingBrowserSpeechRef.current) {
+      usingBrowserSpeechRef.current = false;
+      try {
+        window.speechSynthesis?.cancel();
+      } catch {
+        /* ignore */
+      }
+    }
     if (audioElRef.current) {
       audioElRef.current.pause();
       audioElRef.current.currentTime = 0;
@@ -166,6 +199,7 @@ export function ChemMadScientistBar({
       URL.revokeObjectURL(audioUrlRef.current);
       audioUrlRef.current = null;
     }
+    setAudioProgress(0);
     setTtsState('idle');
   }, []);
 
@@ -197,7 +231,7 @@ export function ChemMadScientistBar({
 
   // Pre-synthesize all remaining steps/chapters in the background once Teach is tapped
   const triggerBackgroundPreSynthesis = useCallback(() => {
-    if (!isPremium) return;
+    if (!hasVoiceAccess) return;
     if (!upcomingScripts || upcomingScripts.length <= 1) return;
     const queue = upcomingScripts
       .map((s) => s.trim())
@@ -234,11 +268,11 @@ export function ChemMadScientistBar({
     return () => {
       cancelled = true;
     };
-  }, [context.stepText, context.topicName, isPremium, mode, upcomingScripts]);
+  }, [context.stepText, context.topicName, hasVoiceAccess, mode, upcomingScripts]);
 
   const playCurrentScreenTts = useCallback(
     async (forceReload = false) => {
-      if (!isPremium) return;
+      if (!hasVoiceAccess) return;
       window.dispatchEvent(new CustomEvent('rtc:clear-live-audio'));
 
       if (!forceReload && audioElRef.current && loadedStepKeyRef.current === stepKey) {
@@ -259,12 +293,100 @@ export function ChemMadScientistBar({
         }
       }
 
+      if (!forceReload && usingBrowserSpeechRef.current && loadedStepKeyRef.current === stepKey) {
+        if (ttsState === 'playing') {
+          try {
+            window.speechSynthesis?.pause();
+          } catch {
+            /* ignore */
+          }
+          activeVoiceSessions.delete(effectiveSessionKey);
+          setSessionActive(false);
+          setTtsState('paused');
+          return;
+        }
+        if (ttsState === 'paused') {
+          try {
+            window.speechSynthesis?.resume();
+          } catch {
+            /* ignore */
+          }
+          activeVoiceSessions.add(effectiveSessionKey);
+          setSessionActive(true);
+          setTtsState('playing');
+          return;
+        }
+      }
+
       stopTtsAudio();
       const reqId = playRequestIdRef.current;
       activeVoiceSessions.add(effectiveSessionKey);
       setSessionActive(true);
       setTtsError(null);
       setTtsState('loading');
+
+      const speakWithBrowserFallback = (): boolean => {
+        if (
+          typeof window === 'undefined' ||
+          !('speechSynthesis' in window) ||
+          typeof SpeechSynthesisUtterance === 'undefined'
+        ) {
+          return false;
+        }
+        try {
+          window.speechSynthesis.cancel();
+          const cleanSpeech = context.stepText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          if (!cleanSpeech) return false;
+          const utter = new SpeechSynthesisUtterance(cleanSpeech);
+          const voices = window.speechSynthesis.getVoices?.() || [];
+          const preferred =
+            voices.find((v) => /en[-_](NG|GB)/i.test(v.lang)) ||
+            voices.find((v) => /^en/i.test(v.lang));
+          if (preferred) utter.voice = preferred;
+          utter.rate = playbackRateRef.current;
+          usingBrowserSpeechRef.current = true;
+          loadedStepKeyRef.current = stepKey;
+
+          const estDurationMs = Math.max(
+            2200,
+            Math.round(((cleanSpeech.split(' ').length || 12) / (2.6 * playbackRateRef.current)) * 1000)
+          );
+          const startedAt = Date.now();
+          browserSpeechTimerRef.current = window.setInterval(() => {
+            if (!mountedRef.current || playRequestIdRef.current !== reqId) return;
+            const pct = Math.min(0.98, (Date.now() - startedAt) / estDurationMs);
+            setAudioProgress(pct);
+          }, 160);
+
+          utter.onend = () => {
+            if (browserSpeechTimerRef.current !== null) {
+              window.clearInterval(browserSpeechTimerRef.current);
+              browserSpeechTimerRef.current = null;
+            }
+            usingBrowserSpeechRef.current = false;
+            if (mountedRef.current && playRequestIdRef.current === reqId) {
+              setAudioProgress(1);
+              setTtsState('idle');
+            }
+          };
+          utter.onerror = () => {
+            if (browserSpeechTimerRef.current !== null) {
+              window.clearInterval(browserSpeechTimerRef.current);
+              browserSpeechTimerRef.current = null;
+            }
+            usingBrowserSpeechRef.current = false;
+            if (mountedRef.current && playRequestIdRef.current === reqId) {
+              setTtsState('idle');
+            }
+          };
+
+          window.speechSynthesis.speak(utter);
+          setTtsState('playing');
+          return true;
+        } catch {
+          return false;
+        }
+      };
 
       try {
         const payload = await fetchAndCacheTts(
@@ -286,15 +408,28 @@ export function ChemMadScientistBar({
         const audio = new Audio(url);
         audio.playbackRate = playbackRateRef.current;
         audioElRef.current = audio;
+        audio.ontimeupdate = () => {
+          if (
+            mountedRef.current &&
+            playRequestIdRef.current === reqId &&
+            Number.isFinite(audio.duration) &&
+            audio.duration > 0
+          ) {
+            setAudioProgress(Math.min(1, audio.currentTime / audio.duration));
+          }
+        };
         audio.onended = () => {
           if (mountedRef.current && playRequestIdRef.current === reqId) {
+            setAudioProgress(1);
             setTtsState('idle');
           }
         };
         audio.onerror = () => {
           if (mountedRef.current && playRequestIdRef.current === reqId) {
-            setTtsState('idle');
-            setTtsError('Audio playback failed.');
+            if (!speakWithBrowserFallback()) {
+              setTtsState('idle');
+              setCaptionsOpen(true);
+            }
           }
         };
         await audio.play();
@@ -303,8 +438,11 @@ export function ChemMadScientistBar({
         }
       } catch (err) {
         if (!mountedRef.current || playRequestIdRef.current !== reqId) return;
-        setTtsState('idle');
-        setTtsError((err as Error).message || 'Voice request failed.');
+        if (!speakWithBrowserFallback()) {
+          setTtsState('idle');
+          setCaptionsOpen(true);
+          setTtsError((err as Error).message || 'Showing written voice breakdown below.');
+        }
       }
     },
     [
@@ -312,7 +450,7 @@ export function ChemMadScientistBar({
       context.stepText,
       context.topicName,
       effectiveSessionKey,
-      isPremium,
+      hasVoiceAccess,
       mode,
       stepKey,
       stopTtsAudio,
@@ -330,13 +468,13 @@ export function ChemMadScientistBar({
     loadedStepKeyRef.current = '';
     stopTtsAudio();
 
-    if (isPremium && activeVoiceSessions.has(effectiveSessionKey) && !muted) {
+    if (hasVoiceAccess && activeVoiceSessions.has(effectiveSessionKey) && !muted) {
       setSessionActive(true);
       void playCurrentScreenTts(true);
     }
-  }, [effectiveSessionKey, isPremium, muted, playCurrentScreenTts, stepKey, stopTtsAudio]);
+  }, [effectiveSessionKey, hasVoiceAccess, muted, playCurrentScreenTts, stepKey, stopTtsAudio]);
 
-  if (!isPremium) {
+  if (!hasVoiceAccess) {
     return null;
   }
 
@@ -377,8 +515,8 @@ export function ChemMadScientistBar({
           : 'rounded-2xl rtc-card px-4 py-3.5'
       }`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-3 min-w-[200px] flex-1">
           <div
             className={`${
               isCompact ? 'w-9 h-9 rounded-xl' : 'w-10 h-10 rounded-xl'
@@ -410,7 +548,24 @@ export function ChemMadScientistBar({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          {captions.length > 0 && (
+            <button
+              type="button"
+              aria-pressed={captionsOpen}
+              onClick={() => setCaptionsOpen((v) => !v)}
+              aria-label={captionsOpen ? 'Hide Captions' : 'Show Captions'}
+              title="Toggle teacher captions"
+              className={`min-h-[38px] px-2.5 rounded-xl border text-[12px] font-bold cursor-pointer whitespace-nowrap shrink-0 transition ${
+                captionsOpen
+                  ? 'bg-[var(--acc-soft)] border-[var(--acc-line)] text-[var(--gold)]'
+                  : 'bg-[var(--card)] border-[var(--line)] hover:border-[var(--acc-line)] text-[var(--dim)] hover:text-[var(--ink)]'
+              }`}
+            >
+              Captions
+            </button>
+          )}
+
           <button
             type="button"
             onClick={cyclePlaybackRate}
@@ -428,7 +583,11 @@ export function ChemMadScientistBar({
               unlockStudioAudioOnGesture();
               void playCurrentScreenTts(false);
             }}
-            className="min-h-[38px] px-3.5 rounded-xl bg-[var(--gold)] hover:brightness-105 active:scale-[0.985] disabled:opacity-60 text-[var(--on-acc)] font-[var(--display)] font-bold text-[13px] shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition"
+            className={`min-h-[38px] px-3.5 rounded-xl active:scale-[0.985] disabled:opacity-60 font-[var(--display)] font-bold text-[13px] flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition ${
+              isCompact
+                ? 'bg-[var(--acc-soft)] hover:brightness-95 border border-[var(--acc-line)] text-[var(--gold)]'
+                : 'bg-[var(--gold)] hover:brightness-105 text-[var(--on-acc)] shadow-xs'
+            }`}
           >
             <Icon name={ttsState === 'playing' ? 'pause' : 'play'} size={14} />
             <span>
@@ -456,8 +615,62 @@ export function ChemMadScientistBar({
               <Icon name="replay" size={15} />
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => {
+              const targetMode: LiveCoachMode = mode === 'mathLab' ? 'math' : mode;
+              window.dispatchEvent(
+                new CustomEvent('rtc:open-live-coach', {
+                  detail: {
+                    mode: targetMode,
+                    prompt: `Walk me through "${context.topicName}" (${context.stepLabel || 'this view'}) clearly and highlight the key exam trap.`,
+                  },
+                })
+              );
+            }}
+            aria-label={`Ask ${tutorMeta.tutorName} live about ${context.topicName}`}
+            title={`Ask ${tutorMeta.tutorName} live`}
+            className="min-h-[38px] px-2.5 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition"
+          >
+            <Icon name="phone" size={13} className="text-[var(--green)]" />
+            <span className="hidden sm:inline">Ask Live</span>
+          </button>
         </div>
       </div>
+
+      {(ttsState === 'playing' || ttsState === 'paused') && (
+        <div className="h-1 w-full rounded-full bg-[var(--line)] overflow-hidden" aria-hidden="true">
+          <div
+            className="h-full bg-[var(--gold)] origin-left transition-transform duration-150"
+            style={{ transform: `scaleX(${Math.max(0.04, Math.min(1, audioProgress))})` }}
+          />
+        </div>
+      )}
+
+      {captionsOpen && captions.length > 0 && (
+        <div
+          aria-live="polite"
+          className="rounded-xl bg-[var(--card)] border border-[var(--line)] px-3.5 py-2.5 text-[13px] leading-relaxed flex flex-wrap gap-x-1.5 gap-y-1"
+        >
+          {captions.map((sentence, idx) => {
+            const isActive =
+              (ttsState === 'playing' || ttsState === 'paused') && idx === activeCaptionIdx;
+            return (
+              <span
+                key={`${idx}-${sentence.slice(0, 12)}`}
+                className={
+                  isActive
+                    ? 'font-semibold text-[var(--ink)] bg-[var(--acc-soft)] px-1 rounded transition-colors'
+                    : 'text-[var(--dim)]'
+                }
+              >
+                {sentence}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {ttsError && (
         <div
