@@ -23,6 +23,19 @@ interface CachedAudioPayload {
 const clientTtsAudioCache = new Map<string, Promise<CachedAudioPayload>>();
 const MAX_CLIENT_TTS_CACHE = 180;
 const activeVoiceSessions = new Set<string>();
+const TTS_SPEED_STORAGE_KEY = 'rtc_tts_speed_v1';
+const TTS_SPEED_STEPS = [1, 1.25, 1.5] as const;
+
+function readInitialTtsSpeed(): number {
+  try {
+    if (typeof window === 'undefined') return 1;
+    const raw = Number(window.localStorage.getItem(TTS_SPEED_STORAGE_KEY));
+    if (raw === 1 || raw === 1.25 || raw === 1.5) return raw;
+  } catch {
+    /* ignore */
+  }
+  return 1;
+}
 
 function makeTtsCacheKey(mode: VoiceMode, text: string): string {
   return `${mode}|${text.trim()}`;
@@ -116,12 +129,31 @@ export function ChemMadScientistBar({
   );
   const [prefetchedCount, setPrefetchedCount] = useState(0);
   const [ttsError, setTtsError] = useState<string | null>(null);
+  const [playbackRate, setPlaybackRate] = useState<number>(readInitialTtsSpeed);
 
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const playRequestIdRef = useRef(0);
   const loadedStepKeyRef = useRef<string>('');
   const mountedRef = useRef(true);
+  const playbackRateRef = useRef<number>(playbackRate);
+  playbackRateRef.current = playbackRate;
+
+  const cyclePlaybackRate = useCallback(() => {
+    setPlaybackRate((prev) => {
+      const idx = TTS_SPEED_STEPS.indexOf(prev as (typeof TTS_SPEED_STEPS)[number]);
+      const next = TTS_SPEED_STEPS[(idx + 1) % TTS_SPEED_STEPS.length];
+      try {
+        window.localStorage.setItem(TTS_SPEED_STORAGE_KEY, String(next));
+      } catch {
+        /* ignore */
+      }
+      if (audioElRef.current) {
+        audioElRef.current.playbackRate = next;
+      }
+      return next;
+    });
+  }, []);
 
   const stopTtsAudio = useCallback(() => {
     playRequestIdRef.current += 1;
@@ -252,6 +284,7 @@ export function ChemMadScientistBar({
         loadedStepKeyRef.current = stepKey;
 
         const audio = new Audio(url);
+        audio.playbackRate = playbackRateRef.current;
         audioElRef.current = audio;
         audio.onended = () => {
           if (mountedRef.current && playRequestIdRef.current === reqId) {
@@ -261,7 +294,7 @@ export function ChemMadScientistBar({
         audio.onerror = () => {
           if (mountedRef.current && playRequestIdRef.current === reqId) {
             setTtsState('idle');
-            setTtsError('Browser could not play the generated audio clip.');
+            setTtsError('Audio playback failed.');
           }
         };
         await audio.play();
@@ -315,23 +348,21 @@ export function ChemMadScientistBar({
   const totalUpcoming = upcomingScripts?.length || 0;
   const readyBadge =
     sessionActive && totalUpcoming > 1 && prefetchedCount > 1
-      ? ` · ${prefetchedCount}/${totalUpcoming} screens ready`
+      ? ` · ${prefetchedCount}/${totalUpcoming} ready`
       : '';
 
   const statusSubtitle =
     ttsState === 'loading'
-      ? `Preparing your mentor's classroom explanation...`
+      ? 'Preparing voice...'
       : ttsState === 'playing'
-        ? `Teaching the core intuition, real-world link & traps${
-            totalUpcoming > 1 ? ' · continues as you step forward' : ''
-          }${readyBadge}`
+        ? `Playing${totalUpcoming > 1 ? ' · Auto-advances' : ''}${readyBadge}`
         : sessionActive && totalUpcoming > 1
-          ? `Continuous teaching active — advance to the next step or chapter anytime${readyBadge}`
+          ? `Auto-play active${readyBadge}`
           : isMathLab
-            ? 'Tap Teach once — coaches every practical step automatically as you move forward'
+            ? 'Step-by-step voice guide'
             : totalUpcoming > 1
-              ? 'Tap Teach once — explains the core intuition, why it works & key traps across screens'
-              : 'Tap Teach to hear a focused mentor breakdown of the core intuition & trap';
+              ? 'Voice breakdown · Auto-advances'
+              : 'Focused voice breakdown';
 
   return (
     <section
@@ -379,7 +410,17 @@ export function ChemMadScientistBar({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={cyclePlaybackRate}
+            aria-label={`Voice speed ${playbackRate}x — tap to change`}
+            title="Change narration speed"
+            className="min-h-[38px] px-2.5 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12px] font-mono font-bold text-[var(--ink)] tabular-nums cursor-pointer whitespace-nowrap shrink-0 transition"
+          >
+            {playbackRate}×
+          </button>
+
           <button
             type="button"
             disabled={ttsState === 'loading'}
@@ -392,7 +433,7 @@ export function ChemMadScientistBar({
             <Icon name={ttsState === 'playing' ? 'pause' : 'play'} size={14} />
             <span>
               {ttsState === 'loading'
-                ? 'Preparing...'
+                ? 'Loading'
                 : ttsState === 'playing'
                   ? 'Pause'
                   : ttsState === 'paused'

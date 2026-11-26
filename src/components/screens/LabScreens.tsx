@@ -14,6 +14,8 @@ import { extractLabStepSpeechScript, htmlToSpeakableChem } from '../../utils/che
 import { getLabStepAudioCues } from '../../utils/labAudioLogic';
 import { getLabVivaCheck } from '../../utils/labVivaLogic';
 import {
+  computeLabTrialStats,
+  formatLabReportText,
   formatLabTrialRow,
   getLabSimulationSpec,
   type LoggedLabTrial,
@@ -66,15 +68,18 @@ function InteractiveLabInstrumentDeck({ lab }: { lab: LabItem }) {
     return init;
   });
   const [trials, setTrials] = useState<LoggedLabTrial[]>([]);
+  const [copiedLog, setCopiedLog] = useState(false);
 
   useEffect(() => {
     const init: Record<string, number> = {};
     for (const s of spec.sliders) init[s.id] = s.defaultValue;
     setSliderValues(init);
     setTrials([]);
+    setCopiedLog(false);
   }, [lab.id, spec]);
 
   const evalResult = useMemo(() => spec.evaluate(sliderValues), [spec, sliderValues]);
+  const trialStats = useMemo(() => computeLabTrialStats(trials), [trials]);
   const curve = evalResult.curve;
 
   const statusPillCls =
@@ -293,6 +298,18 @@ function InteractiveLabInstrumentDeck({ lab }: { lab: LabItem }) {
               strokeLinejoin="round"
               points={polylinePoints}
             />
+            {/* Logged trial markers on calibration graph */}
+            {trials.map((tr) => (
+              <circle
+                key={tr.trialNo}
+                cx={toSvgX(tr.xValue)}
+                cy={toSvgY(tr.yValue)}
+                r="3.6"
+                fill="#38BDF8"
+                stroke="#0C1D16"
+                strokeWidth="1.4"
+              />
+            ))}
             {/* Active crosshair */}
             <line
               x1={curCx}
@@ -356,35 +373,77 @@ function InteractiveLabInstrumentDeck({ lab }: { lab: LabItem }) {
         </div>
       </div>
 
-      {/* Multi-Trial Observation Data Logger Table */}
+      {/* Multi-Trial Observation Data Logger Table + WAEC Slope / Mean Readout */}
       {trials.length > 0 && (
         <div className="rounded-xl bg-[#0C1D16] border border-[#285240] p-3 flex flex-col gap-2 anim-rise">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11.5px] font-bold text-[#9ED6B5]">
-              Recorded readings ({trials.length} {trials.length === 1 ? 'trial' : 'trials'})
-            </span>
-            <button
-              type="button"
-              onClick={() => setTrials([])}
-              className="text-[11.5px] font-bold text-[#FCA5A5] hover:underline cursor-pointer"
-            >
-              Clear log
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-[11.5px] font-bold text-[#9ED6B5] tabular-nums">
+              <span>
+                Readings ({trials.length})
+              </span>
+              {trialStats.meanY !== null && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-[#3BDC86]">
+                    Mean: {trialStats.meanY.toFixed(2)}
+                    {evalResult.primaryUnit ? ` ${evalResult.primaryUnit}` : ''}
+                  </span>
+                </>
+              )}
+              {trialStats.slope !== null && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-[#FFC531]">
+                    Slope (Δy/Δx): {trialStats.slope.toFixed(3)}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const report = formatLabReportText(
+                    lab.name.replace(/<[^>]+>/g, ''),
+                    evalResult.primaryLabel,
+                    trials,
+                    trialStats
+                  );
+                  navigator.clipboard?.writeText(report).then(
+                    () => {
+                      setCopiedLog(true);
+                      window.setTimeout(() => setCopiedLog(false), 1800);
+                    },
+                    () => {}
+                  );
+                }}
+                className="text-[11.5px] font-bold text-[#38BDF8] hover:underline cursor-pointer whitespace-nowrap"
+              >
+                {copiedLog ? 'Copied' : 'Copy table'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTrials([])}
+                className="text-[11.5px] font-bold text-[#FCA5A5] hover:underline cursor-pointer whitespace-nowrap"
+              >
+                Clear
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[12px] tabular-nums border-collapse">
               <thead>
                 <tr className="border-b border-[#24493B] text-[#9ED6B5]">
-                  <th className="py-1.5 pr-2 font-bold">Trial</th>
-                  <th className="py-1.5 pr-3 font-bold">Set Parameters</th>
+                  <th className="py-1.5 pr-2 font-bold">#</th>
+                  <th className="py-1.5 pr-3 font-bold">Inputs</th>
                   <th className="py-1.5 pr-3 font-bold">{evalResult.primaryLabel}</th>
-                  <th className="py-1.5 font-bold">Bench State</th>
+                  <th className="py-1.5 font-bold">State</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1A382B]">
                 {trials.map((tr) => (
                   <tr key={tr.trialNo}>
-                    <td className="py-1.5 pr-2 font-extrabold text-[#FFC531]">#{tr.trialNo}</td>
+                    <td className="py-1.5 pr-2 font-extrabold text-[#FFC531]">{tr.trialNo}</td>
                     <td className="py-1.5 pr-3 text-[#D6E8DF]">{tr.inputsSummary}</td>
                     <td className="py-1.5 pr-3 font-bold text-[#3BDC86]">{tr.primaryOutput}</td>
                     <td className="py-1.5 text-[#B9CCC1]">{tr.statusLabel}</td>

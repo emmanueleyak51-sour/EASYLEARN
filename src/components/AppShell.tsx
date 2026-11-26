@@ -79,10 +79,11 @@ const SCREEN_STAGE_VARIANTS: Variants = {
   },
 };
 
-export type MainTab = 'home' | 'subjects' | 'topics' | 'cbt' | 'more';
+export type MainTab = 'home' | 'worlds' | 'subjects' | 'topics' | 'cbt' | 'more';
 
 export function activeTabForScreen(scr: ScreenName): MainTab {
-  if (scr === 'subjs' || scr === 'studio' || scr === 'novels' || scr === 'lab' || scr === 'labrun') return 'subjects';
+  if (scr === 'universe') return 'worlds';
+  if (scr === 'subjs' || scr === 'studio' || scr === 'novels' || scr === 'lab' || scr === 'labrun') return 'worlds';
   if (scr === 'cbt') return 'cbt';
   if (
     scr === 'topics' ||
@@ -224,14 +225,14 @@ export function AppShell({
 
   const navItems: { id: MainTab; label: string; icon: string; badge?: number }[] = [
     { id: 'home', label: 'Home', icon: 'home' },
+    { id: 'worlds', label: 'Worlds', icon: 'compass' },
     {
-      id: 'subjects',
-      label: 'Subjects',
-      icon: 'grid',
+      id: 'topics',
+      label: 'Topics',
+      icon: 'map',
       badge: dueCount > 0 ? dueCount : undefined,
     },
-    { id: 'topics', label: 'Topics', icon: 'map' },
-    { id: 'cbt', label: 'Mock exam', icon: 'clock' },
+    { id: 'cbt', label: 'Exam Arena', icon: 'clock' },
     { id: 'more', label: 'Settings', icon: 'settings' },
   ];
 
@@ -262,15 +263,10 @@ export function AppShell({
         >
           <div className="flex flex-col gap-5">
             <div className="flex items-center gap-3 px-1 pb-4 border-b-2 border-[var(--line)]">
-              <CrestSvg size={42} />
-              <div className="flex flex-col min-w-0">
-                <span className="font-[var(--display)] font-extrabold text-[21px] leading-tight text-[var(--ink)] whitespace-nowrap">
-                  Easy Learn
-                </span>
-                <span className="text-[12px] font-semibold text-[var(--dim)] whitespace-nowrap">
-                  Your road to campus
-                </span>
-              </div>
+              <CrestSvg size={38} />
+              <span className="font-[var(--display)] font-extrabold text-[21px] leading-tight text-[var(--ink)] whitespace-nowrap">
+                Easy Learn
+              </span>
             </div>
 
             <LiquidCapsuleBar
@@ -431,35 +427,32 @@ export function AppShell({
           }`}
         >
           {effectiveShowNav && !isStudyWorkbench && (
-            <div className="min-[980px]:hidden flex items-center justify-between gap-2.5 pb-2.5 mb-3.5 border-b border-[var(--line)]">
-              <div className="flex items-center gap-2 min-w-0">
-                <CrestSvg size={34} />
-                <span className="font-[var(--display)] font-extrabold text-[19.5px] tracking-tight text-[var(--ink)] whitespace-nowrap">
+            <div className="min-[980px]:hidden flex items-center justify-between gap-2 pb-2.5 mb-3.5 border-b border-[var(--line)]">
+              <div className="flex items-center gap-2 shrink-0">
+                <CrestSvg size={32} />
+                <span className="font-[var(--display)] font-extrabold text-[18.5px] tracking-tight text-[var(--ink)] whitespace-nowrap">
                   Easy Learn
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-[12px] font-extrabold shrink-0">
-                <PWAInstallButton
-                  compact
-                  label="Install"
-                  className="!w-auto !min-h-[28px] !px-2.5 !py-0.5 !rounded-full !text-[12px]"
-                />
+                <PWAInstallButton iconOnly label="Install offline app" />
                 {onOpenWebsite && !isInstalled && (
                   <button
                     type="button"
                     onClick={onOpenWebsite}
                     aria-label="Open public website"
-                    className="min-h-[28px] px-2.5 py-0.5 rounded-full bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                    title="Public website"
+                    className="w-8 h-8 min-[460px]:w-auto min-[460px]:px-2.5 rounded-full bg-[var(--card)] border border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)] inline-flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <Icon name="globe" size={12} className="text-[var(--gold)]" />
-                    <span>Website</span>
+                    <Icon name="globe" size={13} className="text-[var(--gold)]" />
+                    <span className="hidden min-[460px]:inline">Website</span>
                   </button>
                 )}
-                <span className="inline-flex items-center gap-1 text-[var(--peach-ink)] bg-[var(--peach-bg)] border border-[var(--peach-line)] px-2.5 py-0.5 rounded-full tabular-nums">
+                <span className="inline-flex items-center gap-1 text-[var(--peach-ink)] bg-[var(--peach-bg)] border border-[var(--peach-line)] px-2.5 h-7 rounded-full tabular-nums">
                   <Icon name="flame" size={13} className="text-[#EA580C]" />
                   {progress.streak.n}d
                 </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[var(--gold)] text-[var(--on-acc)] tabular-nums">
+                <span className="inline-flex items-center px-2.5 h-7 rounded-full bg-[var(--gold)] text-[var(--on-acc)] tabular-nums">
                   {subjectPct}%
                 </span>
               </div>

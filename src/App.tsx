@@ -79,16 +79,6 @@ import { SUBJECT_TUTOR_REGISTRY } from './utils/tutorRegistry';
 import { DxIntroScreen, WelcomeScreen } from './components/screens/OnboardingScreen';
 import { LandingWebsiteScreen } from './components/screens/LandingWebsiteScreen';
 import { HomeScreen } from './components/screens/HomeScreen';
-import { TopicsMapScreen } from './components/screens/TopicsMapScreen';
-import { TopicHubScreen } from './components/screens/TopicHubScreen';
-import { NotesScreen } from './components/screens/NotesScreen';
-import { LessonScreen } from './components/screens/LessonScreen';
-import { QuizScreen, SummaryScreen } from './components/screens/QuizScreen';
-import { TopicTestScreen } from './components/screens/TopicTestScreen';
-import { LabListScreen, LabPlayerScreen } from './components/screens/LabScreens';
-import { SubjectStudioScreen } from './components/screens/SubjectStudioScreen';
-import { NovelsStudioScreen } from './components/screens/NovelsStudioScreen';
-import { ChemFormulasScreen } from './components/screens/ChemFormulasScreen';
 import { hasFormulaSheet, hasSubjectStudio } from './utils/subjectStudioMeta';
 import {
   getDefaultNovelIdForSubject,
@@ -100,16 +90,6 @@ import {
   updateNovelPersonalNotes,
   type NovelFinalExamEvaluation,
 } from './utils/novelsLogic';
-import { ReviewScreen } from './components/screens/ReviewScreen';
-import { AccountScreen, SubjectsScreen } from './components/screens/AccountScreen';
-import { CbtExamScreen } from './components/screens/CbtExamScreen';
-import { MistakeVaultScreen } from './components/screens/MistakeVaultScreen';
-import { StudyPlannerScreen } from './components/screens/StudyPlannerScreen';
-import { InteractiveSandboxesScreen } from './components/screens/InteractiveSandboxesScreen';
-import { TheoryCoachScreen } from './components/screens/TheoryCoachScreen';
-import { TranscriptScreen } from './components/screens/TranscriptScreen';
-import { PeerDuelScreen } from './components/screens/PeerDuelScreen';
-import { LeaderboardScreen } from './components/screens/LeaderboardScreen';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CloudSyncProvider, mergeCloudProgress } from './context/CloudSyncContext';
 import { installCopyProtection } from './utils/copyProtection';
@@ -124,9 +104,95 @@ import {
   normalizeJambQuartet,
   resolveExamTrack,
 } from './utils/examTrackLogic';
-import { ExamSetupScreen, type ExamSetupResult } from './components/screens/ExamSetupScreen';
-import { QuestionBankManagerModal, type QuestionBankTab } from './components/QuestionBankManagerModal';
-import { PaywallModal } from './components/PaywallModal';
+import type { ExamSetupResult } from './components/screens/ExamSetupScreen';
+import type { QuestionBankTab } from './components/QuestionBankManagerModal';
+import { lazyWithRetry } from './utils/lazyWithRetry';
+
+const UniverseScreen = lazyWithRetry(() =>
+  import('./components/screens/UniverseScreen').then((m) => ({ default: m.UniverseScreen }))
+);
+const TopicsMapScreen = lazyWithRetry(() =>
+  import('./components/screens/TopicsMapScreen').then((m) => ({ default: m.TopicsMapScreen }))
+);
+const TopicHubScreen = lazyWithRetry(() =>
+  import('./components/screens/TopicHubScreen').then((m) => ({ default: m.TopicHubScreen }))
+);
+const NotesScreen = lazyWithRetry(() =>
+  import('./components/screens/NotesScreen').then((m) => ({ default: m.NotesScreen }))
+);
+const LessonScreen = lazyWithRetry(() =>
+  import('./components/screens/LessonScreen').then((m) => ({ default: m.LessonScreen }))
+);
+const QuizScreen = lazyWithRetry(() =>
+  import('./components/screens/QuizScreen').then((m) => ({ default: m.QuizScreen }))
+);
+const SummaryScreen = lazyWithRetry(() =>
+  import('./components/screens/QuizScreen').then((m) => ({ default: m.SummaryScreen }))
+);
+const TopicTestScreen = lazyWithRetry(() =>
+  import('./components/screens/TopicTestScreen').then((m) => ({ default: m.TopicTestScreen }))
+);
+const LabListScreen = lazyWithRetry(() =>
+  import('./components/screens/LabScreens').then((m) => ({ default: m.LabListScreen }))
+);
+const LabPlayerScreen = lazyWithRetry(() =>
+  import('./components/screens/LabScreens').then((m) => ({ default: m.LabPlayerScreen }))
+);
+const SubjectStudioScreen = lazyWithRetry(() =>
+  import('./components/screens/SubjectStudioScreen').then((m) => ({ default: m.SubjectStudioScreen }))
+);
+const NovelsStudioScreen = lazyWithRetry(() =>
+  import('./components/screens/NovelsStudioScreen').then((m) => ({ default: m.NovelsStudioScreen }))
+);
+const ChemFormulasScreen = lazyWithRetry(() =>
+  import('./components/screens/ChemFormulasScreen').then((m) => ({ default: m.ChemFormulasScreen }))
+);
+const ReviewScreen = lazyWithRetry(() =>
+  import('./components/screens/ReviewScreen').then((m) => ({ default: m.ReviewScreen }))
+);
+const AccountScreen = lazyWithRetry(() =>
+  import('./components/screens/AccountScreen').then((m) => ({ default: m.AccountScreen }))
+);
+const SubjectsScreen = lazyWithRetry(() =>
+  import('./components/screens/AccountScreen').then((m) => ({ default: m.SubjectsScreen }))
+);
+const CbtExamScreen = lazyWithRetry(() =>
+  import('./components/screens/CbtExamScreen').then((m) => ({ default: m.CbtExamScreen }))
+);
+const MistakeVaultScreen = lazyWithRetry(() =>
+  import('./components/screens/MistakeVaultScreen').then((m) => ({ default: m.MistakeVaultScreen }))
+);
+const StudyPlannerScreen = lazyWithRetry(() =>
+  import('./components/screens/StudyPlannerScreen').then((m) => ({ default: m.StudyPlannerScreen }))
+);
+const InteractiveSandboxesScreen = lazyWithRetry(() =>
+  import('./components/screens/InteractiveSandboxesScreen').then((m) => ({
+    default: m.InteractiveSandboxesScreen,
+  }))
+);
+const TheoryCoachScreen = lazyWithRetry(() =>
+  import('./components/screens/TheoryCoachScreen').then((m) => ({ default: m.TheoryCoachScreen }))
+);
+const TranscriptScreen = lazyWithRetry(() =>
+  import('./components/screens/TranscriptScreen').then((m) => ({ default: m.TranscriptScreen }))
+);
+const PeerDuelScreen = lazyWithRetry(() =>
+  import('./components/screens/PeerDuelScreen').then((m) => ({ default: m.PeerDuelScreen }))
+);
+const LeaderboardScreen = lazyWithRetry(() =>
+  import('./components/screens/LeaderboardScreen').then((m) => ({ default: m.LeaderboardScreen }))
+);
+const ExamSetupScreen = lazyWithRetry(() =>
+  import('./components/screens/ExamSetupScreen').then((m) => ({ default: m.ExamSetupScreen }))
+);
+const QuestionBankManagerModal = lazyWithRetry(() =>
+  import('./components/QuestionBankManagerModal').then((m) => ({
+    default: m.QuestionBankManagerModal,
+  }))
+);
+const PaywallModal = lazyWithRetry(() =>
+  import('./components/PaywallModal').then((m) => ({ default: m.PaywallModal }))
+);
 import {
   DemoCountdownBar,
   DemoExpiredModal,
@@ -342,6 +408,15 @@ function loadInitialProgress(): { progress: UserProgress; startScreen: ScreenNam
       merged.ob = 1;
     }
     return { progress: merged, startScreen: 'novels', initialDuelCode: null };
+  }
+
+  if (screenParam === 'universe' || params?.get('adventure') === 'heart') {
+    setSessionUnlocked();
+    if (!merged.name) {
+      merged.name = 'Ada';
+      merged.ob = 1;
+    }
+    return { progress: merged, startScreen: 'universe', initialDuelCode: null };
   }
 
   if (!autostart && merged.name && isSessionUnlocked() && !merged.flags?.examSetupDone) {
@@ -1621,6 +1696,7 @@ export default function App() {
       return;
     }
     if (tab === 'home') setScreen('home');
+    else if (tab === 'worlds') setScreen('universe');
     else if (tab === 'subjects') setScreen('subjs');
     else if (tab === 'topics') setScreen('topics');
     else setScreen('more');
@@ -2632,7 +2708,7 @@ export default function App() {
               trialLink={billingMeta.trialLink}
               onManageOrSubscribe={() =>
                 handleOpenPaywall(
-                  'Your 1-day free trial counts down live — subscribe from ₦1,000/month (auto-renews unless cancelled; Lifetime is one-time) or manage your linked payment account below.'
+                  '1-day trial active. Subscribe from ₦1,000/mo or manage linked payment below.'
                 )
               }
             />
@@ -2659,6 +2735,18 @@ export default function App() {
         onOpenLab={openLabDirectoryGated}
         onOpenWebsite={() => setScreen('landing')}
         onSignOut={handleSignOut}
+      >
+      <React.Suspense
+        fallback={
+          <div
+            role="status"
+            aria-label="Loading screen"
+            className="w-full py-12 flex flex-col items-center justify-center gap-3 text-[var(--dim)]"
+          >
+            <div className="w-8 h-8 rounded-full border-2 border-[var(--line)] border-t-[var(--gold)] animate-spin" />
+            <span className="text-[13px] font-semibold">Loading workspace...</span>
+          </div>
+        }
       >
       {screen === 'landing' && (
         <LandingWebsiteScreen
@@ -2842,6 +2930,47 @@ export default function App() {
           onOpenLeaderboard={() => setScreen('leaderboard')}
           onOpenQuestionBank={handleOpenQuestionBank}
           onOpenPaywall={handleOpenPaywall}
+          onOpenUniverse={() => setScreen('universe')}
+        />
+      )}
+
+      {screen === 'universe' && (
+        <UniverseScreen
+          progress={progress}
+          onAwardUniverseXp={(xpDelta, solvedQuestionCount) => {
+            if (xpDelta <= 0 && solvedQuestionCount <= 0) return;
+            commitProgressWithBadges((prev) => {
+              const d = today();
+              return {
+                ...prev,
+                xp: prev.xp + Math.max(0, xpDelta),
+                act:
+                  solvedQuestionCount > 0
+                    ? { ...prev.act, [d]: (prev.act[d] || 0) + solvedQuestionCount }
+                    : prev.act,
+              };
+            });
+          }}
+          onSelectSubject={handleSelectSubject}
+          onOpenTopicNotes={(sid, tid) => {
+            handleSelectSubject(sid);
+            const subjTopics = getTopics(sid);
+            const chosen = (tid ? subjTopics.find((t) => t.id === tid) : undefined) || subjTopics[0];
+            if (chosen) {
+              setActiveTopicId(chosen.id);
+              setScreen('notes');
+            } else {
+              setScreen('topics');
+            }
+          }}
+          onOpenCbt={openCbtGated}
+          onOpenDuel={() => {
+            setCompanionReturnScreen('universe');
+            setActiveDuelCode(null);
+            setScreen('duel');
+          }}
+          onOpenLab={openLabDirectoryGated}
+          onBackHome={() => setScreen('home')}
         />
       )}
 
@@ -3257,57 +3386,66 @@ export default function App() {
           onBack={() => setScreen('more')}
         />
       )}
+      </React.Suspense>
       </AppShell>
       </EntitlementProvider>
       </ClockFormatProvider>
-      <QuestionBankManagerModal
-        open={qbankModal.open}
-        initialSubject={qbankModal.subject}
-        initialTab={qbankModal.tab}
-        onClose={() => setQbankModal((prev) => ({ ...prev, open: false }))}
-      />
+      {qbankModal.open && (
+        <React.Suspense fallback={null}>
+          <QuestionBankManagerModal
+            open={qbankModal.open}
+            initialSubject={qbankModal.subject}
+            initialTab={qbankModal.tab}
+            onClose={() => setQbankModal((prev) => ({ ...prev, open: false }))}
+          />
+        </React.Suspense>
+      )}
       <DemoExpiredModal
         open={isDemoLockedOut}
         onCreateAccount={() => exitDemoToScreen('welcome', 'register')}
         onSignIn={() => exitDemoToScreen('welcome', 'login')}
         onBackToWebsite={() => exitDemoToScreen('landing')}
       />
-      <PaywallModal
-        open={paywallModal.open || isTrialLockedOut}
-        blocking={isTrialLockedOut}
-        trialDaysRemaining={trialStatus.daysRemaining}
-        trialCountdownLabel={trialCountdown.formattedCountdown}
-        trialLink={billingMeta.trialLink}
-        subscriptionAutoRenew={billingMeta.subscriptionAutoRenew}
-        onTrialLinkChanged={(nextLink, nextTrial) => {
-          setBillingMeta((prev) => ({ ...prev, trialLink: nextLink }));
-          if (nextTrial) {
-            setProgress((prev) => ({ ...prev, trial: nextTrial }));
-          }
-        }}
-        onSubscriptionAutoRenewChanged={(nextSub) => {
-          setBillingMeta((prev) => ({ ...prev, subscriptionAutoRenew: nextSub }));
-        }}
-        onSignOut={handleSignOut}
-        reason={paywallModal.reason}
-        progress={progress}
-        paystackEnabled={billingMeta.paystackEnabled}
-        initialReference={paywallModal.initialRef}
-        initialPlanId={paywallModal.initialPlanId}
-        onActivated={(pro) => {
-          playSound('win');
-          setProgress((prev) => ({ ...prev, pro }));
-        }}
-        onClose={() => {
-          if (isTrialLockedOut) return;
-          setPaywallModal((prev) => ({
-            ...prev,
-            open: false,
-            initialRef: null,
-            initialPlanId: null,
-          }));
-        }}
-      />
+      {(paywallModal.open || isTrialLockedOut) && (
+        <React.Suspense fallback={null}>
+          <PaywallModal
+            open={paywallModal.open || isTrialLockedOut}
+            blocking={isTrialLockedOut}
+            trialDaysRemaining={trialStatus.daysRemaining}
+            trialCountdownLabel={trialCountdown.formattedCountdown}
+            trialLink={billingMeta.trialLink}
+            subscriptionAutoRenew={billingMeta.subscriptionAutoRenew}
+            onTrialLinkChanged={(nextLink, nextTrial) => {
+              setBillingMeta((prev) => ({ ...prev, trialLink: nextLink }));
+              if (nextTrial) {
+                setProgress((prev) => ({ ...prev, trial: nextTrial }));
+              }
+            }}
+            onSubscriptionAutoRenewChanged={(nextSub) => {
+              setBillingMeta((prev) => ({ ...prev, subscriptionAutoRenew: nextSub }));
+            }}
+            onSignOut={handleSignOut}
+            reason={paywallModal.reason}
+            progress={progress}
+            paystackEnabled={billingMeta.paystackEnabled}
+            initialReference={paywallModal.initialRef}
+            initialPlanId={paywallModal.initialPlanId}
+            onActivated={(pro) => {
+              playSound('win');
+              setProgress((prev) => ({ ...prev, pro }));
+            }}
+            onClose={() => {
+              if (isTrialLockedOut) return;
+              setPaywallModal((prev) => ({
+                ...prev,
+                open: false,
+                initialRef: null,
+                initialPlanId: null,
+              }));
+            }}
+          />
+        </React.Suspense>
+      )}
       <BadgeUnlockCelebration
         badge={badgeQueue[0]?.badge || null}
         isPreview={badgeQueue[0]?.isPreview}

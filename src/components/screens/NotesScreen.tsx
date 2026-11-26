@@ -38,6 +38,15 @@ import { CivicNoteVisual } from '../CivicNoteVisuals';
 import { ExplorerCanvas, initExplorerState } from '../Explorers';
 import { DiagramFigure, Icon } from '../Icons';
 import { SlidingTabs, SmoothProgressBar } from '../ULessonMotion';
+import {
+  estimateReadingMinutesFromHtml,
+  loadReadingComfortPrefs,
+  saveReadingComfortPrefs,
+  triggerLightHaptic,
+  type ReadingComfortPrefs,
+  type ReadingFontScale,
+  type ReadingSurface,
+} from '../../utils/readingComfortLogic';
 
 function RuleItemRenderer({ html, subj }: { html: string; subj: SubjectId }) {
   const split = splitRuleEquation(html, subj);
@@ -752,6 +761,17 @@ export function NotesScreen({
   const [chapterDir, setChapterDir] = useState<'fwd' | 'back'>('fwd');
   const [hiddenExSteps, setHiddenExSteps] = useState<Record<number, boolean>>({});
   const [recallAnswers, setRecallAnswers] = useState<Record<number, number>>({});
+  const [comfort, setComfort] = useState<ReadingComfortPrefs>(() => loadReadingComfortPrefs());
+  const [showComfortBar, setShowComfortBar] = useState(false);
+
+  const updateComfort = (patch: Partial<ReadingComfortPrefs>) => {
+    triggerLightHaptic(8);
+    setComfort((prev) => {
+      const next = { ...prev, ...patch };
+      saveReadingComfortPrefs(next);
+      return next;
+    });
+  };
 
   // Reset active chapter when topic changes (start at first unread chapter if any)
   useEffect(() => {
@@ -889,6 +909,34 @@ export function NotesScreen({
 
   const stepAnimCls = chapterDir === 'fwd' ? 'anim-step-fwd' : 'anim-step-back';
 
+  const chapterReadMinutes = useMemo(
+    () =>
+      topic.parts.map((p, idx) => {
+        const ex = partExtras[idx];
+        const teachChunks = ex
+          ? ex.teaches.flatMap((t) =>
+              t.body.map((blk) =>
+                blk[0] === 'p' || blk[0] === 'h' || blk[0] === 'wn' || blk[0] === 'key'
+                  ? blk[1]
+                  : blk[0] === 'eg'
+                    ? `${blk[1]} ${blk[2]}`
+                    : ''
+              )
+            )
+          : [];
+        return estimateReadingMinutesFromHtml([
+          p.title,
+          p.idea,
+          ...p.rules,
+          ...(p.ex ? [p.ex.q, ...p.ex.steps.map((s) => `${s[0]} ${s[1] || ''}`)] : []),
+          ...teachChunks,
+        ]);
+      }),
+    [topic.parts, partExtras]
+  );
+
+  const activeChapterMins = chapterReadMinutes[safePartIdx] || 2;
+
   return (
     <div className="max-w-[820px] mx-auto flex flex-col gap-5 anim-rise">
       <SubscreenTopBar
@@ -896,15 +944,119 @@ export function NotesScreen({
         subtitle={subtitleParts.join(' · ')}
         onBack={onBack}
         right={
-          <button
-            type="button"
-            onClick={onStartLesson}
-            className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[var(--gold)] hover:brightness-105 text-[var(--on-acc)] font-bold text-[13px] shadow-[0_2px_0_var(--acc-d)] transition cursor-pointer whitespace-nowrap shrink-0"
-          >
-            Start lesson
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              aria-expanded={showComfortBar}
+              aria-label="Reading comfort: paper tone and text size"
+              title="Reading comfort (Aa)"
+              onClick={() => {
+                triggerLightHaptic(8);
+                setShowComfortBar((v) => !v);
+              }}
+              className={`min-h-[36px] min-w-[40px] px-2.5 rounded-xl border font-[var(--display)] font-bold text-[13.5px] inline-flex items-center justify-center gap-1 cursor-pointer transition shrink-0 ${
+                showComfortBar || comfort.surface !== 'default' || comfort.fontScale !== 'comfort'
+                  ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)]'
+                  : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)]'
+              }`}
+            >
+              <span>Aa</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerLightHaptic(10);
+                onStartLesson();
+              }}
+              className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[var(--gold)] hover:brightness-105 text-[var(--on-acc)] font-bold text-[13px] shadow-[0_2px_0_var(--acc-d)] transition cursor-pointer whitespace-nowrap shrink-0"
+            >
+              Start lesson
+            </button>
+          </div>
         }
       />
+
+      {/* Apple Books Reading Comfort Drawer (Paper Surface + Font Size) */}
+      {showComfortBar && (
+        <section
+          aria-label="Reading appearance controls"
+          className="rtc-card rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 anim-rise border-[var(--acc-line)]"
+        >
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <span className="text-[12px] font-bold text-[var(--dim)] mr-0.5">Paper</span>
+            {(
+              [
+                {
+                  id: 'default',
+                  label: 'Default',
+                  aria: 'Default theme paper',
+                  swatch: 'bg-[var(--card)] border-[var(--line)]',
+                },
+                {
+                  id: 'sepia',
+                  label: 'Sepia',
+                  aria: 'Warm Sepia paper',
+                  swatch: 'bg-[#F5EEDB] border-[#DFC196]',
+                },
+                {
+                  id: 'night',
+                  label: 'Night',
+                  aria: 'Quiet Night paper',
+                  swatch: 'bg-[#161B29] border-[#344773]',
+                },
+              ] as Array<{ id: ReadingSurface; label: string; aria: string; swatch: string }>
+            ).map((opt) => {
+              const active = comfort.surface === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  aria-label={opt.aria}
+                  aria-pressed={active}
+                  onClick={() => updateComfort({ surface: opt.id })}
+                  className={`min-h-[36px] px-2.5 sm:px-3 rounded-xl border text-[12.5px] font-bold inline-flex items-center gap-1.5 sm:gap-2 cursor-pointer transition whitespace-nowrap ${
+                    active
+                      ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--ink)]'
+                      : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  <span className={`w-3.5 h-3.5 rounded-full border ${opt.swatch} shrink-0`} />
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12px] font-bold text-[var(--dim)] mr-1">Size</span>
+            {(
+              [
+                { id: 'compact', label: 'A−', aria: 'Compact text size' },
+                { id: 'comfort', label: 'Aa', aria: 'Comfortable text size' },
+                { id: 'large', label: 'A+', aria: 'Large text size' },
+              ] as Array<{ id: ReadingFontScale; label: string; aria: string }>
+            ).map((sz) => {
+              const active = comfort.fontScale === sz.id;
+              return (
+                <button
+                  key={sz.id}
+                  type="button"
+                  aria-label={sz.aria}
+                  aria-pressed={active}
+                  onClick={() => updateComfort({ fontScale: sz.id })}
+                  className={`min-h-[36px] min-w-[42px] px-2.5 rounded-xl border font-[var(--display)] font-bold text-[13px] inline-flex items-center justify-center cursor-pointer transition ${
+                    active
+                      ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)]'
+                      : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  {sz.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Calm Chapter Progress & Focused Reading Controls */}
       <section className="rtc-card rounded-2xl p-4 sm:p-5 flex flex-col gap-4">
@@ -916,7 +1068,9 @@ export function NotesScreen({
                 {topic.parts.length === 1 ? 'chapter' : 'short chapters'} read
               </span>
               <span aria-hidden="true">·</span>
-              <span className="tabular-nums text-[var(--gold)]">~2 min per chapter</span>
+              <span className="tabular-nums text-[var(--gold)]">
+                ~{activeChapterMins} min read
+              </span>
             </div>
             <SmoothProgressBar
               value={readPct}
@@ -1014,6 +1168,11 @@ export function NotesScreen({
         />
       )}
 
+      <div
+        className="eyak-reading-canvas flex flex-col gap-5"
+        data-reading-surface={comfort.surface}
+        data-reading-scale={comfort.fontScale}
+      >
       {viewMode === 'reread' ? (
         /* ─────────────── ONE-MINUTE RECAP ─────────────── */
         <div className="flex flex-col gap-5 anim-rise">
@@ -1248,7 +1407,9 @@ export function NotesScreen({
                       <span aria-hidden="true" className="text-[var(--dim)]">
                         ·
                       </span>
-                      <span className="text-[var(--dim)]">~2 min read</span>
+                      <span className="text-[var(--dim)] tabular-nums">
+                        ~{chapterReadMinutes[idx] || 2} min read
+                      </span>
                       {read && (
                         <>
                           <span aria-hidden="true" className="text-[var(--dim)]">
@@ -1266,10 +1427,11 @@ export function NotesScreen({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        triggerLightHaptic(12);
                         onToggleReadPart(idx);
                       }}
                       aria-pressed={read}
-                      className={`min-h-[36px] px-3 rounded-xl text-[12.5px] font-bold border flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      className={`min-h-[38px] px-3 rounded-xl text-[12.5px] font-bold border flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 active:scale-[0.98] ${
                         read
                           ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--green)]'
                           : 'bg-[var(--bg)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--acc-line)]'
@@ -1661,6 +1823,7 @@ export function NotesScreen({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

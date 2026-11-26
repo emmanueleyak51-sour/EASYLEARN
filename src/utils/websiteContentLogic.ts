@@ -150,22 +150,22 @@ export const EXAM_TRACK_SHOWCASES: Record<ExamTrack, ExamTrackShowcase> = {
     subjectScopeLabel: '4 JAMB subjects · Use of English + 3 electives',
     trainingStandardLabel: '6/7 in 3:30 topic bar · Look-alike distractor traps',
     summary:
-      'Every non-JAMB school or trade subject disappears from your dashboard. You meet only your 4 JAMB voice teachers once during setup, then drill deep conceptual questions where twin options differ by a single sign, unit, or concord rule.',
+      'Locks onto your 4 UTME subjects, introduces your 4 voice teachers once, and drills twin-option traps calibrated tougher than exam day.',
     pillars: [
       {
         title: 'Tougher-than-UTME calibration',
         detail:
-          'Practice starts at higher difficulty and topic tests require 6 out of 7 in 3 minutes 30 seconds so real JAMB feels calmer and slower.',
+          'Topic tests require 6/7 in 3:30 so real JAMB feels calmer.',
       },
       {
         title: 'Look-alike option discrimination',
         detail:
-          'Questions intentionally pair near-identical distractors to cure rushing and surface-level cramming before examination day.',
+          'Near-identical distractors cure rushing before exam day.',
       },
       {
-        title: 'Every Saturday live /400 cohort ranking',
+        title: 'Saturday live /400 cohort ranking',
         detail:
-          'Sit full 180-question timed UTME papers every Saturday and see where your /400 score ranks among every student who wrote that day.',
+          '180-question timed papers every Saturday with live national rank.',
       },
     ],
     examExample: {
@@ -177,36 +177,36 @@ export const EXAM_TRACK_SHOWCASES: Record<ExamTrack, ExamTrackShowcase> = {
       winningRule:
         'Using CₐVₐ / CᵦVᵦ = nₐ / nᵦ gives (0.25 × Vₐ) / (0.50 × 25.0) = 1 / 2 → Vₐ = 25.0 cm³.',
     },
-    ctaLabel: 'Start with JAMB UTME Track',
+    ctaLabel: 'Start JAMB Track',
   },
   waec: {
     id: 'waec',
     tabLabel: 'WAEC / SSCE Only',
     shortLabel: 'WAEC Only',
-    headline: 'Paper 1 objectives, Paper 2 theory marking schemes, and practical labs.',
-    audienceLine: 'For SS1–SS3 & GCE candidates targeting A1–B2 credit distinctions',
+    headline: 'Paper 1 objectives, Paper 2 theory rubrics, and practical labs.',
+    audienceLine: 'For SS1–SS3 & GCE candidates targeting A1–B2 distinctions',
     focusRatioLabel: 'Paper 1 Objective + Paper 2 Theory + Paper 3 Practicals',
     jambWeightPct: 0,
     waecWeightPct: 100,
-    subjectScopeLabel: '7 to 9 subjects across all 49 NERDC school & trade syllabuses',
+    subjectScopeLabel: '7–9 subjects across all 49 school & trade syllabuses',
     trainingStandardLabel: 'Chief Examiner mistake alerts · Method-mark rubrics',
     summary:
-      'Built around how WAEC and NECO scripts are actually graded. Learn step-by-step method workings, compulsory SI units, single-line biological diagrams, and non-lifted English summary clauses so you stop giving away easy marks.',
+      'Aligned to official WASSCE & NECO marking schemes — step-by-step workings, SI units, labelled diagrams, and non-lifted summaries.',
     pillars: [
       {
         title: 'Chief Examiner mistake shield',
         detail:
-          'Every topic highlights the exact errors WAEC examiners penalize each year — from missing state symbols to unlabelled graph axes.',
+          'Flags penalized slips like missing state symbols and unlabelled axes.',
       },
       {
-        title: 'Paper 2 Theory Coach & self-grading rubrics',
+        title: 'Paper 2 Theory Coach',
         detail:
-          'Practise structured essay and calculation questions line-by-line against official mark-allocation checkpoints.',
+          'Self-grade essays and calculations against M1/A1 mark checkpoints.',
       },
       {
-        title: 'Virtual science & locus construction benches',
+        title: '87 virtual practical benches',
         detail:
-          'Run 20 Chemistry titrations, 16 Physics optics/circuit practicals, 28 Biology/Agric specimens, and 23 compass-and-ruler constructions.',
+          'Titrations, optics, circuits, specimens, and compass constructions.',
       },
     ],
     examExample: {
@@ -218,36 +218,36 @@ export const EXAM_TRACK_SHOWCASES: Record<ExamTrack, ExamTrackShowcase> = {
       winningRule:
         'State the formula, show clean substitution, keep 3 significant figures, and attach exact units on the final line.',
     },
-    ctaLabel: 'Start with WAEC / SSCE Track',
+    ctaLabel: 'Start WAEC Track',
   },
   both: {
     id: 'both',
     tabLabel: 'Both (70% JAMB · 30% WAEC)',
     shortLabel: 'Both 70/30',
-    headline: 'One coordinated SS3 timetable: 70% tough JAMB power, 30% WAEC precision.',
-    audienceLine: 'Recommended for SS3 secondary school students sitting both exams in one academic year',
+    headline: 'One SS3 timetable: 70% tough JAMB speed, 30% WAEC precision.',
+    audienceLine: 'Recommended for SS3 finalists sitting both exams',
     focusRatioLabel: '70% UTME 4-subject intensity · 30% WASSCE theory & school subjects',
     jambWeightPct: 70,
     waecWeightPct: 30,
-    subjectScopeLabel: '4 priority JAMB subjects + up to 5 additional WAEC school/trade subjects',
-    trainingStandardLabel: 'Dual /400 UTME & A1–F9 WASSCE readiness tracking',
+    subjectScopeLabel: '4 JAMB subjects + up to 5 WAEC school/trade subjects',
+    trainingStandardLabel: 'Dual /400 UTME & A1–F9 WASSCE readiness',
     summary:
-      'Secondary school finalists rarely have luxury to study JAMB and WAEC in separate silos. Easy Learn puts 70% of your daily mission weight behind your 4 high-stakes UTME subjects while keeping your WAEC theory rubrics, practicals, and extra school subjects sharp.',
+      'Puts 70% of daily missions on your 4 high-stakes UTME subjects while keeping WAEC Paper 2 workings, practicals, and extra subjects sharp.',
     pillars: [
       {
-        title: '70 / 30 weighted daily study planner',
+        title: '70 / 30 weighted daily planner',
         detail:
-          'Seven out of every ten daily drills target your 4 JAMB subjects under tough time limits, while three maintain WAEC theory and extra subjects.',
+          '7 of 10 drills target UTME speed; 3 maintain WAEC theory and extras.',
       },
       {
-        title: '4 primary JAMB voice teachers + full subject roster',
+        title: '4 core voice teachers + full roster',
         detail:
-          'Meet your 4 core UTME teachers during setup, with instant access to specialist tutors across Further Maths, Civic, Data Processing, and Trade subjects.',
+          'Meet your 4 UTME teachers once, plus specialist tutors for all 49 subjects.',
       },
       {
-        title: 'Saturday UTME cohort mocks + WASSCE theory checks',
+        title: 'Saturday /400 mocks + Paper 2 checks',
         detail:
-          'Compete every Saturday on the national /400 CBT leaderboard without neglecting Paper 2 written workings.',
+          'Rank nationally every Saturday without losing written method marks.',
       },
     ],
     examExample: {
@@ -259,7 +259,7 @@ export const EXAM_TRACK_SHOWCASES: Record<ExamTrack, ExamTrackShowcase> = {
       winningRule:
         'One unified syllabus map credits overlapping topics across both exams while training each paper’s distinct exam technique.',
     },
-    ctaLabel: 'Start Combined 70/30 Track',
+    ctaLabel: 'Start 70/30 Track',
   },
 };
 
@@ -503,7 +503,7 @@ export const UNIVERSITY_COURSE_PRESETS: readonly UniversityCoursePreset[] = [
     id: 'cs',
     shortTab: 'Comp. Science',
     title: 'Computer Science & Software Engineering',
-    facultyLine: 'Computing, AI & Systems Engineering',
+    facultyLine: 'Computing, Software & Systems Engineering',
     campusesLine: 'UNILAG · OAU · FUTA · Covenant · UI · FUTMINNA',
     cutOffTarget400: 285,
     jambQuartet: ['eng', 'maths', 'phys', 'chem'],
@@ -1172,33 +1172,33 @@ export interface PlatformComparisonRow {
 export const PLATFORM_COMPARISON_ROWS: readonly PlatformComparisonRow[] = [
   {
     dimension: 'Exam Track Focus',
-    eyakValue: 'Strict 4-subject JAMB lock, full WAEC/SSCE, or 70/30 combined SS3 planner',
-    standardValue: 'Mixed subject dump with no JAMB vs WAEC daily focus weighting',
+    eyakValue: '4-subject JAMB lock, full WAEC, or 70/30 combined planner',
+    standardValue: 'Unfiltered subject dump',
   },
   {
     dimension: 'Voice Teachers',
-    eyakValue: '49 distinct subject personalities — one-time intro, zero repetition in lessons',
-    standardValue: 'Silent text screens or robotic voice greetings repeated every click',
+    eyakValue: '49 specialist voices — one-time intro, instant lesson explanations',
+    standardValue: 'Silent text or repetitive greetings',
   },
   {
-    dimension: 'UTME Question Rigor',
-    eyakValue: 'Twin-option look-alike distractors & 6/7 in 3:30 tougher-than-UTME drills',
-    standardValue: 'Recycled surface questions with obvious throwaway options',
+    dimension: 'UTME Rigor',
+    eyakValue: 'Twin-option traps & 6/7 in 3:30 topic bar',
+    standardValue: 'Surface questions with obvious options',
   },
   {
-    dimension: 'Saturday Competition',
-    eyakValue: 'Every Saturday /400 National CBT Arena with live same-day student rank',
-    standardValue: 'Isolated solo quizzes with no national cohort benchmark',
+    dimension: 'Saturday CBT',
+    eyakValue: 'Live /400 national mock & same-day student rank',
+    standardValue: 'Isolated solo quizzes',
   },
   {
-    dimension: 'Science & Maths Practicals',
-    eyakValue: '87 interactive Chemistry, Physics, Biology & compass construction labs',
-    standardValue: 'Static scanned diagrams with no hands-on experimentation',
+    dimension: 'Virtual Labs',
+    eyakValue: '87 interactive Chemistry, Physics, Bio & compass benches',
+    standardValue: 'Static scanned diagrams',
   },
   {
-    dimension: 'WAEC Paper 2 Marking',
-    eyakValue: 'Chief Examiner mistake shields + M1/M2/A1 step-by-step Theory Coach',
-    standardValue: 'Multiple-choice only with no written method-mark coaching',
+    dimension: 'WAEC Paper 2',
+    eyakValue: 'Chief Examiner alerts + M1/A1 Theory Coach',
+    standardValue: 'Multiple-choice only',
   },
 ];
 

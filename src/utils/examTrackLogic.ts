@@ -96,7 +96,13 @@ export interface WaecMistakeGuidance {
   mistakesToAvoid: string[];
 }
 
-const VALID_SUBJECT_SET: ReadonlySet<string> = new Set(ALL_SUBJECT_IDS);
+let validSubjectSetCache: ReadonlySet<string> | null = null;
+function getValidSubjectSet(): ReadonlySet<string> {
+  if (!validSubjectSetCache) {
+    validSubjectSetCache = new Set(ALL_SUBJECT_IDS);
+  }
+  return validSubjectSetCache;
+}
 
 /**
  * Resolves a student's active ExamTrack ('jamb' | 'waec' | 'both') from progress.
@@ -171,7 +177,8 @@ export function normalizeSubjectsForExamTrack(
   subjs: SubjectId[];
   jambQuartet: SubjectId[];
 } {
-  const cleanEnrolled = (enrolled || []).filter((s): s is SubjectId => VALID_SUBJECT_SET.has(s));
+  const validSet = getValidSubjectSet();
+  const cleanEnrolled = (enrolled || []).filter((s): s is SubjectId => validSet.has(s));
   const jambQuartet = normalizeJambQuartet(
     jambSubjects && jambSubjects.length > 0 ? jambSubjects : cleanEnrolled
   );
@@ -186,7 +193,7 @@ export function normalizeSubjectsForExamTrack(
   if (track === 'waec') {
     const unique: SubjectId[] = [];
     for (const sid of ['eng', 'maths', ...cleanEnrolled] as SubjectId[]) {
-      if (VALID_SUBJECT_SET.has(sid) && !unique.includes(sid)) {
+      if (validSet.has(sid) && !unique.includes(sid)) {
         unique.push(sid);
       }
     }
@@ -203,7 +210,7 @@ export function normalizeSubjectsForExamTrack(
   // 'both' -> 4 JAMB subjects lead first, followed by extra WAEC subjects (e.g. Civic, F.Maths, Biology, Trade)
   const combined: SubjectId[] = [...jambQuartet];
   for (const sid of cleanEnrolled) {
-    if (!combined.includes(sid) && VALID_SUBJECT_SET.has(sid)) {
+    if (!combined.includes(sid) && validSet.has(sid)) {
       combined.push(sid);
     }
   }
@@ -232,7 +239,8 @@ export function getVisibleEnrolledSubjects(progress: UserProgress): SubjectId[] 
         : progress.subjs
     );
   }
-  const valid = (progress.subjs || []).filter((sid) => VALID_SUBJECT_SET.has(sid));
+  const validSet = getValidSubjectSet();
+  const valid = (progress.subjs || []).filter((sid) => validSet.has(sid));
   return valid.length > 0 ? valid : ['eng', 'maths', 'chem', 'phys'];
 }
 
@@ -269,9 +277,9 @@ export function getToughJambDrillConfig(
       bossTimeSec: 210, // 3m 30s instead of 5m 00s (30s per question)
       minStartLevel: 3, // Starts directly on harder conceptual & look-alike distractor items
       targetSecPerQ: 33, // Faster than official JAMB 40s/question
-      badgeLabel: 'Tough JAMB Condition · 6/7 in 3:30',
+      badgeLabel: 'Tough JAMB · 6/7 in 3:30',
       conditionSummary:
-        'Stricter timer (30s/question), 86% pass bar, and close look-alike options so your real JAMB score matches or beats your Easy Learn score.',
+        '30s per question, 86% pass bar, and twin-option traps calibrated tougher than UTME.',
     };
   }
   return {
@@ -280,9 +288,9 @@ export function getToughJambDrillConfig(
     bossTimeSec: 300,
     minStartLevel: 2,
     targetSecPerQ: 45,
-    badgeLabel: 'WAEC Exam Standard · 5/7 in 5:00',
+    badgeLabel: 'WAEC Standard · 5/7 in 5:00',
     conditionSummary:
-      'Focuses on WAEC Paper 1 & Theory Paper 2 marking-scheme accuracy, clear workings, and avoiding common candidate mistakes.',
+      'Paper 1 objective speed plus Paper 2 method-mark accuracy and unit checks.',
   };
 }
 
@@ -553,10 +561,10 @@ export function getSaturdayCbtCampaign(
       completedToday: false,
       saturdayStreak,
       bonusXpMultiplier: 2,
-      headline: `Saturday National CBT Arena is LIVE · Closes in ${hoursLeftTodayWat}h`,
+      headline: `Saturday National CBT Live · ${hoursLeftTodayWat}h left`,
       subheadline:
-        'Students across Easy Learn are writing their Saturday CBT right now. Take yours before midnight to get ranked on today’s live board and earn 2× Rank Points!',
-      ctaLabel: 'Enter Saturday CBT Now',
+        'Write today’s timed mock before midnight for live national ranking and 2× XP.',
+      ctaLabel: 'Enter Saturday CBT',
     };
   }
 
@@ -570,9 +578,9 @@ export function getSaturdayCbtCampaign(
       completedToday: true,
       saturdayStreak: Math.max(1, saturdayStreak),
       bonusXpMultiplier: 2,
-      headline: 'Saturday CBT Completed · Live Ranking Active',
+      headline: 'Saturday CBT Completed · Live Rank Active',
       subheadline:
-        'Great job showing up this Saturday! Beat your score before midnight to climb higher on today’s student ranking.',
+        'Beat your score before midnight to climb today’s national leaderboard.',
       ctaLabel: 'Beat Today’s Score',
     };
   }
@@ -588,11 +596,11 @@ export function getSaturdayCbtCampaign(
     bonusXpMultiplier: 1,
     headline:
       daysUntilSaturday === 1
-        ? 'Saturday National CBT Arena opens tomorrow · 2× Rank Bonus'
-        : `Saturday National CBT Arena in ${daysUntilSaturday} days · 2× Rank Bonus`,
+        ? 'Saturday CBT opens tomorrow · 2× XP'
+        : `Saturday National CBT in ${daysUntilSaturday}d · 2× XP`,
     subheadline:
-      'Every Saturday, serious candidates write a full CBT together and get ranked live. Do a quick warm-up mock today so Saturday feels effortless.',
-    ctaLabel: 'Warm-up CBT Today',
+      'Ranked national /400 mock every Saturday. Run a quick warm-up paper today.',
+    ctaLabel: 'Warm-up CBT',
   };
 }
 

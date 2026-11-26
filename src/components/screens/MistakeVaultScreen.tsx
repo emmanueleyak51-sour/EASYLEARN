@@ -267,16 +267,60 @@ export function MistakeVaultScreen({
       {/* Vault List */}
       <SmoothViewSwitch viewKey={`${trapFilter}-${subjFilter}`}>
         {filtered.length === 0 ? (
-          <section className="rtc-card rounded-2xl p-8 text-center flex flex-col items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[var(--ok-soft)] text-[var(--green)] flex items-center justify-center">
-              <Icon name="check" size={24} />
+          <section className="rtc-card rounded-2xl p-8 text-center flex flex-col items-center gap-3.5">
+            <svg
+              width="64"
+              height="64"
+              viewBox="0 0 64 64"
+              fill="none"
+              aria-hidden="true"
+              className="shrink-0"
+            >
+              <rect width="64" height="64" rx="20" fill="var(--ok-soft)" />
+              <path
+                d="M32 14L46 20V31C46 40.5 39.8 47.8 32 51C24.2 47.8 18 40.5 18 31V20L32 14Z"
+                fill="var(--card)"
+                stroke="var(--green)"
+                strokeWidth="2.4"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M25.5 32.5L30 37L39 27.5"
+                stroke="var(--green)"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="flex flex-col gap-1 items-center">
+              <h2 className="h20 text-[var(--ink)]">
+                {scopedList.length === 0
+                  ? 'Clean slate — zero open mistakes'
+                  : 'No mistakes match this filter'}
+              </h2>
+              <p className="text-[14px] text-[var(--dim)] max-w-md leading-relaxed">
+                {scopedList.length === 0
+                  ? 'Every question you miss in practice, topic tests, or mock exams is saved here automatically until you solve it twice in a row.'
+                  : 'Try switching the subject or trap category above to review other saved questions.'}
+              </p>
             </div>
-            <h2 className="h20 text-[var(--ink)]">
-              {scopedList.length === 0 ? 'No mistakes waiting to fix' : 'No mistakes match this filter'}
-            </h2>
-            <p className="text-[14px] text-[var(--dim)] max-w-md">
-              Whenever you miss a question in practice, topic tests, mock exams or duels, it shows up here until you get it right twice.
-            </p>
+            {scopedList.length === 0 ? (
+              <button type="button" onClick={onBack} className="btn-tactile indigo mt-1">
+                <span>Back to study</span>
+                <Icon name="go" size={16} className="ul-arrow" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setTrapFilter('all');
+                  setSubjFilter('all');
+                }}
+                className="btn-tactile paper mt-1"
+              >
+                <span>Show all mistakes</span>
+              </button>
+            )}
           </section>
         ) : (
           <div className="flex flex-col gap-3">

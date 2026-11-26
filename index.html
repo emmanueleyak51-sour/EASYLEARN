@@ -19,15 +19,15 @@
       rel="stylesheet"
     />
     <title>Road to Campus · Easy Learn</title>
-    <meta name="description" content="Complete JAMB UTME and WAEC/NECO preparation across 49 secondary subjects with guided lessons, chapter notes, virtual labs, subject companions, and mock exams." />
+    <meta name="description" content="JAMB UTME and WAEC/NECO mastery across 49 subjects with interactive worlds, virtual labs, voice teachers, and CBT mocks." />
     <meta property="og:title" content="Road to Campus · Easy Learn" />
-    <meta property="og:description" content="Complete JAMB UTME and WAEC/NECO preparation across 49 secondary subjects with guided lessons, chapter notes, virtual labs, subject companions, and mock exams." />
+    <meta property="og:description" content="JAMB UTME and WAEC/NECO mastery across 49 subjects with interactive worlds, virtual labs, voice teachers, and CBT mocks." />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Easy Learn · Your Road to Campus" />
+    <meta property="og:site_name" content="Easy Learn" />
     <meta property="og:image" content="/easylearn-logo.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Road to Campus · Easy Learn" />
-    <meta name="twitter:description" content="Complete JAMB UTME and WAEC/NECO preparation across 49 secondary subjects with guided lessons, chapter notes, virtual labs, subject companions, and mock exams." />
+    <meta name="twitter:description" content="JAMB UTME and WAEC/NECO mastery across 49 subjects with interactive worlds, virtual labs, voice teachers, and CBT mocks." />
     <meta name="twitter:image" content="/easylearn-logo.png" />
     <script type="application/ld+json">
       {
@@ -36,7 +36,7 @@
         "name": "Road to Campus · Easy Learn",
         "applicationCategory": "EducationalApplication",
         "operatingSystem": "All",
-        "description": "Nigerian JAMB UTME and WAEC/NECO preparation across 49 secondary subjects with personal live voice teachers, virtual practical labs, and weekly Saturday CBT rankings.",
+        "description": "JAMB UTME and WAEC/NECO preparation across 49 subjects with live voice teachers, virtual labs, and Saturday CBT rankings.",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -44,10 +44,68 @@
         }
       }
     </script>
+    <style>
+      .rtc-boot-shell {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #F7F8FC;
+        color: #16192C;
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        .rtc-boot-shell {
+          background: #0D1021;
+          color: #F8FAFC;
+        }
+      }
+      .rtc-boot-mark {
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        background: #5B2BD6;
+        color: #FFFFFF;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 22px;
+        box-shadow: 0 8px 24px -6px rgba(91, 43, 214, 0.45);
+      }
+      .rtc-boot-bar {
+        width: 148px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(91, 43, 214, 0.16);
+        overflow: hidden;
+      }
+      .rtc-boot-bar > span {
+        display: block;
+        width: 45%;
+        height: 100%;
+        border-radius: 999px;
+        background: #5B2BD6;
+        animation: rtcBootSlide 1.05s ease-in-out infinite alternate;
+      }
+      @keyframes rtcBootSlide {
+        from { transform: translateX(0%); }
+        to { transform: translateX(122%); }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="rtc-boot-shell" aria-label="Loading Easy Learn">
+        <div class="rtc-boot-mark" aria-hidden="true">EL</div>
+        <div style="font-weight: 700; font-size: 16px; letter-spacing: -0.01em;">Easy Learn</div>
+        <div class="rtc-boot-bar" aria-hidden="true"><span></span></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
 

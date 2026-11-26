@@ -145,7 +145,7 @@ export function PaywallModal({
 
     if (!paystackEnabled) {
       setErrorMsg(
-        'Paystack checkout turns on automatically once PAYSTACK_SECRET_KEY is configured in environment settings.'
+        'Online card checkout is temporarily unavailable. Redeem an Easy Learn Pass PIN below to unlock immediately.'
       );
       return;
     }
@@ -280,9 +280,7 @@ export function PaywallModal({
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1 min-w-0">
             <span className={`text-[12.5px] font-bold ${blocking ? 'text-[var(--coral-ink)]' : 'text-[var(--gold)]'}`}>
-              {blocking
-                ? 'App Locked · Subscription Required to Continue'
-                : 'Easy Learn Subscription · Paystack Auto-Renew & Pass PIN'}
+              {blocking ? 'App Locked · Subscription Required' : 'Easy Learn Study Pass'}
             </span>
             <h2
               id="paywall-dialog-title"
@@ -291,14 +289,14 @@ export function PaywallModal({
               {isAlreadyPremium
                 ? 'Your Easy Learn study pass is active'
                 : blocking
-                  ? 'Your free trial has expired — App Locked'
-                  : 'Subscribe for 100% full access'}
+                  ? 'Free trial expired'
+                  : 'Unlock full access'}
             </h2>
             <p className="text-[13.5px] text-[var(--dim)] leading-snug">
               {blocking
-                ? 'Your 1-day free trial (or cancelled plan) has reached 00:00:00. Everything in Easy Learn is locked until you subscribe below or activate an Easy Learn Pass PIN.'
+                ? 'Subscribe below or redeem an Easy Learn Pass PIN to continue.'
                 : reason ||
-                  'Monthly, 6-Month, and Yearly subscriptions auto-renew at the end of each billing cycle unless you cancel beforehand. Lifetime is a one-time payment and is never auto-debited.'}
+                  'All 49 subjects, voice teachers, virtual labs, and CBT mocks. Cancel anytime.'}
             </p>
           </div>
           {!blocking ? (
@@ -376,18 +374,18 @@ export function PaywallModal({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-2xl bg-[var(--bg)] border border-[var(--line)] p-4">
           <div className="flex flex-col gap-0.5">
             <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-              Live Tutor &amp; Studio Voice Tutor
+              Live &amp; Studio Voice Teachers
             </div>
             <p className="text-[12.5px] text-[var(--dim)] leading-snug">
-              Speak out loud with your personal tutor and hear guided voice explanations on every note and formula.
+              Guided spoken explanations and live Q&amp;A on every topic and formula.
             </p>
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-              Full CBT Mock Exams &amp; Virtual Labs
+              CBT Mock Exams &amp; 87 Labs
             </div>
             <p className="text-[12.5px] text-[var(--dim)] leading-snug">
-              Practise timed 180-question JAMB UTME &amp; WAEC papers plus hands-on Science, Maths and SQL labs.
+              Timed 180-question UTME &amp; WAEC mocks plus Science, Maths, and SQL labs.
             </p>
           </div>
           <div className="flex flex-col gap-0.5">
@@ -395,15 +393,15 @@ export function PaywallModal({
               All 10 Colour Themes
             </div>
             <p className="text-[12.5px] text-[var(--dim)] leading-snug">
-              Unlock Savanna sunrise, Rainforest jade, Starlight observatory, Chancellor obsidian and all 9 extra colour palettes.
+              Customise your study space with 10 curated reading palettes.
             </p>
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-              All 49 subjects &amp; 600+ topics
+              All 49 Subjects &amp; 8 Novels
             </div>
             <p className="text-[12.5px] text-[var(--dim)] leading-snug">
-              Unrestricted access across every JAMB UTME, WAEC school and trade subject — even on the ₦1,000 pass.
+              Every UTME, WAEC school, and trade subject unlocked on every plan.
             </p>
           </div>
         </div>
@@ -412,10 +410,10 @@ export function PaywallModal({
         <div className="flex flex-col gap-2.5">
           <div className="flex items-baseline justify-between gap-2 flex-wrap">
             <h3 className="font-[var(--display)] font-bold text-[15.5px] text-[var(--ink)]">
-              Choose your study plan (100% full access on every plan)
+              Choose your plan
             </h3>
             <span className="text-[12px] font-semibold text-[var(--dim)]">
-              Auto-renews unless cancelled · Lifetime is one-time (no auto-debit)
+              Cancel anytime · Lifetime is one-time
             </span>
           </div>
 
@@ -483,9 +481,7 @@ export function PaywallModal({
               role="status"
               className="rounded-xl bg-[var(--card)] border border-[var(--acc-line)] px-3.5 py-2.5 text-[12.5px] text-[var(--dim)] leading-snug"
             >
-              <strong className="text-[var(--ink)]">Paystack gateway setup pending:</strong> Add{' '}
-              <code className="font-mono text-[12px] text-[var(--gold)]">PAYSTACK_SECRET_KEY</code>{' '}
-              in environment settings to enable live Naira card, bank transfer, and USSD checkout.
+              <strong className="text-[var(--ink)]">Pass PIN mode active:</strong> Online card checkout is currently offline. Enter an Easy Learn Pass PIN below for instant activation.
             </div>
           )}
 
@@ -640,8 +636,7 @@ export function PaywallModal({
               disabled={busy}
               className="w-full min-h-[42px] px-4 rounded-xl bg-[var(--bg)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[13px] font-bold text-[var(--dim)] hover:text-[var(--ink)] transition cursor-pointer tabular-nums"
             >
-              Continue 1-day free trial (
-              {trialCountdownLabel ? `${trialCountdownLabel} left` : '24-hour window'} — locks automatically when time expires)
+              Continue free trial ({trialCountdownLabel ? `${trialCountdownLabel} left` : '24h window'})
             </button>
           </div>
         )}
@@ -770,21 +765,21 @@ export function OneDayTrialLinkCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-col gap-0.5">
           <span className="text-[11.5px] font-bold uppercase tracking-wider text-[var(--gold)]">
-            1-Day (24-Hour) Free Trial · Link Payment Account · Cancel Anytime
+            1-Day Free Trial · Cancel Anytime
           </span>
           <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)]">
             {trialLink?.linked
               ? trialLink.status === 'cancelled'
-                ? 'Trial auto-renewal cancelled — no charge scheduled'
-                : `${trialLink.methodType === 'google_pay' ? 'Google Payment Account' : 'Payment Account'} linked`
-              : 'Link Google Pay or Payment Account for your 1-day free trial'}
+                ? 'Trial auto-renewal cancelled'
+                : `${trialLink.methodType === 'google_pay' ? 'Google Pay' : 'Billing Account'} linked`
+              : 'Link Google Pay or billing account'}
           </div>
           <p className="text-[12.5px] text-[var(--dim)] leading-snug">
             {trialLink?.linked
               ? trialLink.status === 'cancelled'
-                ? 'You keep access until your 24-hour timer hits 00:00:00, then everything locks until you resubscribe.'
-                : `Linked to ${trialLink.billingEmail} (${trialLink.accountLabel}). Auto-renews at ₦1,000/month when the 1-day trial ends unless cancelled beforehand.`
-              : '₦0 today for 24 hours. Link your Google Payment Account or Paystack billing details — auto-renews when your 1-day trial ends unless you cancel anytime before expiry.'}
+                ? 'Access continues until your 24-hour timer ends.'
+                : `Linked to ${trialLink.billingEmail}. Auto-renews at ₦1,000/mo after 24h unless cancelled.`
+              : '₦0 today for 24 hours. Auto-renews after trial unless cancelled beforehand.'}
           </p>
         </div>
         {trialCountdownLabel && !isTrialExpired && (
@@ -1625,8 +1620,8 @@ export function AdminPaystackOverview() {
                 </div>
                 <div className="font-[var(--display)] font-bold text-[15px] text-[var(--ink)] mt-1">
                   {overview.paystackConfigured
-                    ? '✓ Paystack Secret Key Active'
-                    : '▲ Awaiting PAYSTACK_SECRET_KEY'}
+                    ? '✓ Online Checkout Active'
+                    : '▲ Pass PIN Mode'}
                 </div>
               </div>
             </div>

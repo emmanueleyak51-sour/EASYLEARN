@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Variants } from 'motion/react';
 import type { ChemClassId, SubjectId, UserProgress } from '../../types';
-import { getTopics, getTopicsForProgress, SUBJECT_IDS } from '../../data/curriculum';
+import { getTopics, getTopicsForProgress } from '../../data/curriculum';
 import { extractMissionSpeechScript } from '../../utils/chemVoiceLogic';
 import {
   SUBJECT_INFO,
@@ -18,12 +18,12 @@ import {
 import { estimateJambScoreOutOf400 } from '../../utils/examSubjects';
 import { PUBLIC_FREE_LAUNCH_ACTIVE } from '../../utils/freeLaunchAndPwaLogic';
 import { getDailyQuietLine } from '../../utils/motivationLogic';
-import eyakTrophyUrl from '../../assets/images/eyak_golden_trophy_1795315897770.jpg';
+import { buildCalmMomentumCopy, triggerLightHaptic } from '../../utils/readingComfortLogic';
 import { AnimatedNumber } from '../AnimatedNumber';
 import { ChemMadScientistBar } from '../ChemMadScientistBar';
 import { subjectToLiveCoachMode } from '../../context/LiveCoachContext';
 import { Icon, MiniRing } from '../Icons';
-import { StudyBuddyGreeting } from '../StudyBuddy';
+import { StudyBuddy } from '../StudyBuddy';
 import {
   FLUID_SCREEN_EXIT,
   FLUID_SCREEN_SPRING,
@@ -39,11 +39,12 @@ import {
   getSaturdayCbtCampaign,
   getToughJambDrillConfig,
   getVisibleEnrolledSubjects,
-  getWaecMistakeGuidance,
   pickWeightedBothTrackSlot,
   resolveExamTrack,
 } from '../../utils/examTrackLogic';
 import type { QuestionBankTab } from '../QuestionBankManagerModal';
+import { getPlayableWorldForSubject } from '../../data/learningUniverseWorlds';
+import { computeUniverseLevelSummary, loadUniverseProfile } from '../../utils/learningUniverseLogic';
 
 interface SubjectGlideCustom {
   dir: -1 | 0 | 1;
@@ -89,38 +90,47 @@ export function ActivityBars({ act, days = 7 }: { act: Record<number, number>; d
   });
   const maxVal = Math.max(5, ...items.map((x) => x.count));
 
+  const totalCount = items.reduce((sum, it) => sum + it.count, 0);
+
   return (
-    <div className="grid grid-cols-7 gap-2 items-end pt-2" role="img" aria-label="Activity this week">
-      {items.map((it) => {
-        const barH = Math.max(8, Math.round((it.count / maxVal) * 56));
-        const yPos = 60 - barH;
-        return (
-          <div key={it.dayNum} className="flex flex-col items-center gap-1.5">
-            <span className="text-[11.5px] font-bold tabular-nums text-[var(--dim)]">
-              {it.count > 0 ? it.count : ''}
-            </span>
-            <svg width="28" height="62" viewBox="0 0 28 62" aria-hidden="true">
-              <rect x="4" y="4" width="20" height="56" rx="8" fill="var(--bg-out)" />
-              <rect
-                x="4"
-                y={yPos}
-                width="20"
-                height={barH}
-                rx="8"
-                fill={it.isToday ? 'var(--gold)' : it.count > 0 ? 'var(--green)' : 'var(--line)'}
-                className="dg"
-              />
-            </svg>
-            <span
-              className={`text-[11.5px] font-bold ${
-                it.isToday ? 'text-[var(--gold)]' : 'text-[var(--dim)]'
-              }`}
-            >
-              {it.label}
-            </span>
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-7 gap-2 items-end pt-2" role="img" aria-label="Activity this week">
+        {items.map((it) => {
+          const barH = Math.max(8, Math.round((it.count / maxVal) * 56));
+          const yPos = 60 - barH;
+          return (
+            <div key={it.dayNum} className="flex flex-col items-center gap-1.5">
+              <span className="text-[11.5px] font-bold tabular-nums text-[var(--dim)] min-h-[16px]">
+                {it.count > 0 ? it.count : ''}
+              </span>
+              <svg width="28" height="62" viewBox="0 0 28 62" aria-hidden="true">
+                <rect x="4" y="4" width="20" height="56" rx="8" fill="var(--bg-out)" />
+                <rect
+                  x="4"
+                  y={yPos}
+                  width="20"
+                  height={barH}
+                  rx="8"
+                  fill={it.isToday ? 'var(--gold)' : it.count > 0 ? 'var(--green)' : 'var(--line)'}
+                  className="dg"
+                />
+              </svg>
+              <span
+                className={`text-[11.5px] font-bold ${
+                  it.isToday ? 'text-[var(--gold)]' : 'text-[var(--dim)]'
+                }`}
+              >
+                {it.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {totalCount === 0 && (
+        <p className="text-[12px] text-[var(--dim)] pt-1 border-t border-[var(--line)]">
+          Answer 6 questions today to start your week.
+        </p>
+      )}
     </div>
   );
 }
@@ -151,6 +161,7 @@ export function HomeScreen({
   onOpenLeaderboard,
   onOpenQuestionBank,
   onOpenPaywall,
+  onOpenUniverse,
 }: {
   progress: UserProgress;
   dueIds: string[];
@@ -178,6 +189,7 @@ export function HomeScreen({
   onOpenLeaderboard?: () => void;
   onOpenQuestionBank?: (subj?: SubjectId, tab?: QuestionBankTab) => void;
   onOpenPaywall?: (reason?: string) => void;
+  onOpenUniverse?: () => void;
 }) {
   const subj = progress.subj;
   const hasLabs =
@@ -274,16 +286,17 @@ export function HomeScreen({
         : 'Take topic test'
     : 'Revise due questions';
 
-  const buddyGreeting = mission
-    ? `${greet()}, ${progress.name || 'friend'}! Ready for ${mission.t.name.toLowerCase()} in ${SUBJECT_INFO[subj].short}?`
-    : hasLockedRemaining
-      ? `${greet()}, ${progress.name || 'friend'}! Your 1-day free trial has expired — subscribe from ₦1,000/month to unlock the app.`
-      : `${greet()}, ${progress.name || 'friend'}! You have finished every topic in ${SUBJECT_INFO[subj].short}.`;
-
-  const buddySubline =
-    progress.streak.n > 1
-      ? `You have studied ${progress.streak.n} days in a row. One steady step keeps it going.`
-      : 'Take one small step today — learn the idea, practise, then pass the topic test.';
+  const momentum = useMemo(
+    () =>
+      buildCalmMomentumCopy({
+        streakDays: progress.streak.n,
+        subjectShort: SUBJECT_INFO[subj].short,
+        passedTopics: passedCount,
+        totalTopics: topics.length,
+        dueCount,
+      }),
+    [dueCount, passedCount, progress.streak.n, subj, topics.length]
+  );
 
   const prefersReduced = Boolean(useReducedMotion());
   const subjTransRef = useRef<{ subj: SubjectId; dir: -1 | 0 | 1 }>({
@@ -301,13 +314,8 @@ export function HomeScreen({
     reduced: prefersReduced,
   };
 
-  const [trophyFailed, setTrophyFailed] = useState(false);
+  const [showAllTools, setShowAllTools] = useState(false);
   const coachMode = subjectToLiveCoachMode(subj);
-  const mentorQuestionPrefix = mission
-    ? `Ready for ${mission.t.name.toLowerCase()} in`
-    : hasLockedRemaining
-      ? 'Unlock all topics & tutors in'
-      : 'You mastered every topic in';
   const jambPct =
     examTrack === 'waec'
       ? Math.min(
@@ -321,212 +329,171 @@ export function HomeScreen({
 
   const examBadgeLabel =
     examTrack === 'jamb'
-      ? 'Exam: JAMB (4 subjects)'
+      ? 'JAMB · 4 subjects'
       : examTrack === 'waec'
-        ? 'Exam: WAEC'
-        : 'Exam: JAMB 70% + WAEC 30%';
+        ? 'WAEC track'
+        : 'JAMB 70% + WAEC 30%';
+
+  const subjMasteryPct = computeTopicsProgressPct(progress, topics);
+  const currentWorld = useMemo(() => getPlayableWorldForSubject(subj, progress), [subj, progress]);
+  const explorerLevel = useMemo(
+    () => computeUniverseLevelSummary(progress.xp || 0, loadUniverseProfile()),
+    [progress.xp]
+  );
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Illustrated Nigerian Campus Mentor Hero Stage + Integrated Daily Thought */}
-      <StudyBuddyGreeting
-        mood={progress.streak.n >= 3 ? 'cheer' : 'happy'}
-        timeGreeting={greet()}
-        studentName={progress.name || 'Scholar'}
-        questionPrefix={mentorQuestionPrefix}
-        subjectHighlight={SUBJECT_INFO[subj].short}
-        greeting={buddyGreeting}
-        subtext={buddySubline}
-        thoughtLine={getDailyQuietLine(today())}
-        onClickPrompt={
-          mission
-            ? () => onStartMission(mission.t.id, mission.stage)
-            : hasLockedRemaining && onOpenPaywall
-              ? () =>
-                  onOpenPaywall(
-                    'Subscribe from ₦1,000/month for 100% full access to every topic, tutor, mock exam and colour theme.'
-                  )
-              : undefined
-        }
-      />
-
-      {/* Dimensional Royal-Indigo Exam Track Score Showcase Card + Golden Trophy + Interactive Stat Tiles */}
+    <div className="flex flex-col gap-4 sm:gap-5">
+      {/* Calm Daily Momentum & Exam Readiness Bar — Warm greeting + immediate metrics without pushing Today's Next Step below the fold */}
       <section
-        aria-label={
-          examTrack === 'waec'
-            ? 'WAEC readiness and predicted grade'
-            : 'Estimated JAMB score and progress'
-        }
-        className="eyak-jamb-showcase relative overflow-hidden rounded-[22px] text-white p-4 sm:p-5 flex flex-col gap-3"
+        aria-label="Daily greeting and exam readiness"
+        className="rtc-card rounded-2xl p-4 sm:p-5 flex flex-col gap-3.5"
       >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-24 -right-12 w-64 h-64 rounded-full bg-[#7C3AED]/30 blur-2xl"
-        />
-
-        <div className="relative z-10 flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-2 min-w-0">
-            <div className="inline-flex items-center gap-2 flex-wrap text-[13px] sm:text-[14px] font-bold text-white/95">
-              <Icon name="bars" size={16} className="text-[#DDD6FE] shrink-0" />
-              <span>
-                {examTrack === 'waec'
-                  ? 'WAEC exam readiness'
-                  : examTrack === 'both'
-                    ? 'Tough JAMB score · 70% UTME / 30% WAEC'
-                    : 'Tough-calibrated JAMB score'}
-              </span>
-            </div>
-
-            {examTrack === 'waec' ? (
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="font-[var(--display)] font-extrabold text-[38px] sm:text-[46px] leading-none tracking-tight tabular-nums drop-shadow-sm">
-                  <AnimatedNumber value={waecReadinessPct} suffix="%" />
-                </span>
-                <span className="font-[var(--display)] font-semibold text-[16px] sm:text-[18.5px] text-white/85 tabular-nums">
-                  · Grade {waecGradeLabel} · target {progress.target || 75}%
-                </span>
+        <div className="flex flex-col min-[760px]:flex-row min-[760px]:items-center justify-between gap-3.5">
+          {/* Left: Personalized Scholar Greeting */}
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+            <StudyBuddy
+              mood={progress.streak.n >= 3 ? 'cheer' : 'happy'}
+              size={52}
+              className="mt-0.5 sm:mt-0"
+            />
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <div className="flex items-center gap-2 text-[12px] font-bold text-[var(--dim)] flex-wrap">
+                <span className="text-[var(--gold)]">{momentum.headlineTag}</span>
+                <span aria-hidden="true">·</span>
+                <span>{examBadgeLabel}</span>
+                {bothWeightedSlot && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>Focus: {SUBJECT_INFO[bothWeightedSlot.subj].short}</span>
+                  </>
+                )}
               </div>
-            ) : (
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="font-[var(--display)] font-extrabold text-[38px] sm:text-[46px] leading-none tracking-tight tabular-nums drop-shadow-sm">
-                  <AnimatedNumber value={estimatedJamb400} />
-                </span>
-                <span className="font-[var(--display)] font-semibold text-[16px] sm:text-[18.5px] text-white/85 tabular-nums">
-                  / 400 · target {targetJamb400}
-                  {examTrack === 'both' ? ` · WAEC ${waecGradeLabel}` : ''}
-                </span>
-              </div>
-            )}
-
-            <p className="text-[12.5px] text-white/85 leading-snug max-w-[56ch]">
-              {examTrack === 'waec'
-                ? getWaecMistakeGuidance(subj).examFormatLine
-                : examTrack === 'both' && bothWeightedSlot
-                  ? `${bothWeightedSlot.weightLabel} · Next focus: ${SUBJECT_INFO[bothWeightedSlot.subj].short}. ${toughJamb.calibrationNote}`
-                  : toughJamb.calibrationNote}
-            </p>
-
-            <div className="pt-0.5 flex flex-wrap items-center gap-2">
-              {onOpenExamSetup && (
-                <button
-                  type="button"
-                  onClick={onOpenExamSetup}
-                  className="min-h-[36px] px-3.5 rounded-full bg-white/16 hover:bg-white/25 border border-white/30 text-[12.5px] font-bold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-                >
-                  <Icon name="target" size={14} />
-                  <span>{examBadgeLabel}</span>
-                </button>
-              )}
-              {onOpenPlanner && (
-                <button
-                  type="button"
-                  onClick={onOpenPlanner}
-                  className="min-h-[36px] px-3.5 rounded-full bg-[#7C3AED]/55 hover:bg-[#7C3AED]/75 border border-white/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] text-[12.5px] font-bold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-                >
-                  <Icon name="calendar" size={14} />
-                  <span className="tabular-nums">
-                    {hasSetExamDate && daysToExam !== null
-                      ? `${daysToExam} days to exam`
-                      : 'Set exam date'}
-                  </span>
-                  <Icon name="go" size={13} className="opacity-90" />
-                </button>
-              )}
+              <h1 className="h22 text-[var(--ink)] truncate">
+                {greet()}, {progress.name || 'Scholar'}
+              </h1>
+              <p className="text-[13.5px] text-[var(--dim)] leading-snug max-w-[58ch]">
+                {momentum.encouragement}
+              </p>
             </div>
           </div>
 
-          {/* Gleaming Golden Trophy & Laurel Wreath */}
-          <div
-            aria-hidden="true"
-            className="relative w-[82px] h-[82px] sm:w-[104px] sm:h-[104px] rounded-[20px] overflow-hidden shrink-0 flex items-center justify-center select-none pointer-events-none"
-          >
-            {!trophyFailed ? (
-              <img
-                src={eyakTrophyUrl}
-                alt="Golden victory trophy"
-                referrerPolicy="no-referrer"
-                draggable={false}
-                onError={() => setTrophyFailed(true)}
-                className="w-full h-full object-cover mix-blend-lighten scale-[1.08] [mask-image:radial-gradient(circle,black_58%,transparent_95%)]"
+          {/* Right: Tactile Readiness, Streak & Quick Icon Controls */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Streak Counter */}
+            <div
+              className="min-h-[42px] px-3 rounded-xl bg-[var(--bg)] border border-[var(--line)] inline-flex items-center gap-2"
+              title="Daily study streak"
+            >
+              <Icon
+                name="flame"
+                size={17}
+                className={progress.streak.n > 0 ? 'text-[#EA580C]' : 'text-[var(--dim)]'}
               />
-            ) : (
-              <span className="w-14 h-14 rounded-2xl bg-amber-400/20 border border-amber-300/40 text-amber-300 flex items-center justify-center">
-                <Icon name="trophy" size={30} />
+              <span className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
+                <AnimatedNumber value={progress.streak.n} />{' '}
+                {progress.streak.n === 1 ? 'day' : 'days'}
               </span>
-            )}
-          </div>
-        </div>
-
-        {/* Luminous Liquid Target Progress Meter */}
-        <div className="relative z-10 w-full">
-          <SmoothProgressBar
-            value={jambPct}
-            max={100}
-            tone="indigo"
-            heightClass="h-3"
-            trackClass="bg-[#160542]/70 p-0.5 border border-white/15"
-            ariaLabel="Target exam score progress"
-          />
-        </div>
-
-        {/* Warm Peach Streak + Fresh Mint Subject Progress + Sky Revision Tiles */}
-        <div
-          className={`relative z-10 grid grid-cols-1 ${
-            dueCount > 0 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'
-          } gap-2.5 pt-0.5`}
-        >
-          <div className="tile-peach rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2.5 shadow-xs">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-8 h-8 rounded-full bg-[#FB923C]/20 text-[#EA580C] flex items-center justify-center shrink-0">
-                <Icon name="flame" size={17} />
-              </span>
-              <div className="flex flex-col min-w-0">
-                <span className="text-[11.5px] font-bold opacity-85">Study streak</span>
-                <span className="font-[var(--display)] font-extrabold text-[18px] leading-tight tabular-nums">
-                  <AnimatedNumber value={progress.streak.n} />{' '}
-                  {progress.streak.n === 1 ? 'day' : 'days'}
-                </span>
-              </div>
             </div>
-            <Icon name="trendUp" size={16} className="text-[#D97706] shrink-0" />
-          </div>
 
-          <button
-            type="button"
-            onClick={onOpenTopicsMap}
-            className="tile-mint rounded-2xl px-3.5 py-2.5 text-left flex items-center justify-between gap-2.5 cursor-pointer active:translate-y-[1px] transition-transform duration-150 shadow-xs"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-8 h-8 rounded-full bg-[#10B981] text-white flex items-center justify-center shrink-0 shadow-xs">
-                <Icon name="check" size={16} />
-              </span>
-              <div className="flex flex-col min-w-0">
-                <span className="text-[11.5px] font-bold opacity-85 truncate">
-                  {SUBJECT_INFO[subj].short} progress
-                </span>
-                <span className="font-[var(--display)] font-extrabold text-[18px] leading-tight tabular-nums">
-                  <AnimatedNumber value={computeTopicsProgressPct(progress, topics)} suffix="%" />
-                </span>
-              </div>
-            </div>
-            <Icon name="go" size={16} className="shrink-0 opacity-80" />
-          </button>
-
-          {dueCount > 0 && (
+            {/* Exam Readiness Score Trigger */}
             <button
               type="button"
-              onClick={onOpenReview}
-              className="tile-sky rounded-2xl px-3.5 py-2.5 text-left flex items-center justify-between gap-2 cursor-pointer active:translate-y-[1px] transition-transform duration-150 shadow-xs"
+              onClick={() => {
+                triggerLightHaptic(8);
+                onOpenExamSetup?.();
+              }}
+              aria-label={
+                examTrack === 'waec'
+                  ? `WAEC readiness ${waecReadinessPct} percent, grade ${waecGradeLabel}. Configure exam track`
+                  : `Estimated JAMB score ${estimatedJamb400} out of 400. Configure exam track`
+              }
+              title="Configure exam track and target score"
+              className="min-h-[42px] px-3.5 rounded-xl bg-[var(--acc-soft)] hover:brightness-[0.98] border border-[var(--acc-line)] inline-flex items-center gap-2 cursor-pointer transition active:scale-[0.98]"
             >
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-[11.5px] font-bold opacity-85">Revision due</span>
-                <span className="font-[var(--display)] font-extrabold text-[18px] leading-tight tabular-nums">
-                  {dueCount} ready
+              <Icon name="trophy" size={16} className="text-[var(--gold)] shrink-0" />
+              {examTrack === 'waec' ? (
+                <span className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
+                  <AnimatedNumber value={waecReadinessPct} suffix="%" /> · {waecGradeLabel}
                 </span>
-              </div>
-              <Icon name="go" size={16} className="shrink-0 opacity-80" />
+              ) : (
+                <span className="font-[var(--display)] font-bold text-[14.5px] text-[var(--ink)] tabular-nums whitespace-nowrap">
+                  <AnimatedNumber value={estimatedJamb400} />
+                  <span className="text-[var(--dim)] font-semibold"> / 400</span>
+                </span>
+              )}
             </button>
-          )}
+
+            {/* Icon-First Study Plan / Exam Countdown Trigger */}
+            {onOpenPlanner && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerLightHaptic(8);
+                  onOpenPlanner();
+                }}
+                aria-label={
+                  hasSetExamDate && daysToExam !== null
+                    ? `${daysToExam} days to exam. Open study plan`
+                    : 'Set exam date and daily study plan'
+                }
+                title={
+                  hasSetExamDate && daysToExam !== null
+                    ? `${daysToExam} days to exam`
+                    : 'Study plan & exam date'
+                }
+                className="min-h-[42px] min-w-[42px] px-2.5 rounded-xl bg-[var(--bg)] hover:border-[var(--acc-line)] border border-[var(--line)] text-[var(--ink)] inline-flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-[0.98]"
+              >
+                <Icon name="calendar" size={16} className="text-[var(--gold)] shrink-0" />
+                {hasSetExamDate && daysToExam !== null && (
+                  <span className="text-[12.5px] font-bold tabular-nums whitespace-nowrap">
+                    {daysToExam}d
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Icon-First Spaced Revision Due Trigger */}
+            {dueCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerLightHaptic(8);
+                  onOpenReview();
+                }}
+                aria-label={`${dueCount} revision questions due`}
+                title={`${dueCount} revision questions ready`}
+                className="min-h-[42px] px-2.5 rounded-xl tile-sky inline-flex items-center gap-1.5 cursor-pointer transition active:scale-[0.98]"
+              >
+                <Icon name="rev" size={16} className="shrink-0" />
+                <span className="text-[12.5px] font-extrabold tabular-nums whitespace-nowrap">
+                  {dueCount}
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Slim Goal Progress & Quiet Daily Thought */}
+        <div className="pt-2.5 border-t border-[var(--line)] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-28 sm:w-36 shrink-0">
+              <SmoothProgressBar
+                value={jambPct}
+                max={100}
+                tone="indigo"
+                heightClass="h-2"
+                ariaLabel="Target exam score progress"
+              />
+            </div>
+            <span className="text-[12px] font-semibold text-[var(--dim)] tabular-nums truncate">
+              {examTrack === 'waec'
+                ? `Target ${progress.target || 75}% · ${SUBJECT_INFO[subj].short} ${subjMasteryPct}%`
+                : `Target ${targetJamb400}/400 · ${SUBJECT_INFO[subj].short} ${subjMasteryPct}%`}
+            </span>
+          </div>
+          <p className="hidden md:block text-[12px] font-medium text-[var(--dim)] truncate">
+            {getDailyQuietLine(today())}
+          </p>
         </div>
       </section>
 
@@ -542,36 +509,82 @@ export function HomeScreen({
             className="flex flex-col gap-4 will-change-transform"
           >
             <LayoutGroup id={`home-subj-${subj}`}>
-              {/* Student's Next Step (Today's quest) + Subjects */}
+              {/* Unified Learning Worlds Launch Card — connects Subject Exploration & Exam Mastery */}
+              {onOpenUniverse && (
+                <section
+                  aria-label="Learning Worlds"
+                  className="rtc-card rounded-2xl p-4 sm:p-5 flex flex-col min-[760px]:flex-row min-[760px]:items-center justify-between gap-4 border-[var(--acc-line)]"
+                >
+                  <div className="flex items-start gap-3.5 min-w-0">
+                    <span className="w-11 h-11 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] border border-[var(--acc-line)] flex items-center justify-center shrink-0">
+                      <Icon name="compass" size={20} />
+                    </span>
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap text-[12px] font-bold text-[var(--dim)] tabular-nums">
+                        <span className="text-[var(--gold)]">{SUBJECT_INFO[subj].name} World</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Level {explorerLevel.level} Explorer</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{currentWorld.missions.length} interactive missions</span>
+                      </div>
+                      <h2 className="h18 text-[var(--ink)]">
+                        {currentWorld.worldTitle} · {currentWorld.heroMissionHeadline}
+                      </h2>
+                      <p className="text-[13.5px] text-[var(--dim)] leading-snug max-w-[54ch]">
+                        Interactive simulations and syllabus missions built to raise your exam score.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerLightHaptic(10);
+                      onOpenUniverse();
+                    }}
+                    className="btn-tactile indigo shrink-0 whitespace-nowrap"
+                  >
+                    <span>Explore Worlds</span>
+                    <Icon name="go" size={16} className="ul-arrow" />
+                  </button>
+                </section>
+              )}
+
+              {/* Student's Next Step (Primary Focal Anchor) + Subjects */}
               <div className="grid grid-cols-1 min-[820px]:grid-cols-12 gap-4 items-stretch">
                 <section
                   aria-label="Your next step"
-                  className="min-[820px]:col-span-7 rtc-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4"
+                  className="min-[820px]:col-span-7 rtc-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4 border-[var(--acc-line)]"
                 >
                   <div className="flex flex-col gap-2.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="tile-peach inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-bold">
-                        <Icon name="spark" size={13} />
-                        <span>Today&apos;s quest</span>
-                      </span>
-                      <span className="text-[12px] font-bold text-[var(--dim)]">
-                        {SUBJECT_INFO[subj].name}
-                      </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap text-[12px] font-bold">
+                      <div className="flex items-center gap-1.5 text-[var(--gold)]">
+                        <Icon name="bolt" size={14} />
+                        <span>Today&apos;s next step</span>
+                        <span aria-hidden="true" className="text-[var(--dim)]">
+                          ·
+                        </span>
+                        <span className="text-[var(--dim)]">{SUBJECT_INFO[subj].name}</span>
+                      </div>
+                      {mission && (
+                        <span className="text-[var(--dim)] tabular-nums">
+                          {passedCount}/{topics.length} passed
+                        </span>
+                      )}
                     </div>
 
                     {mission ? (
                       <>
                         <h2 className="h22 text-[var(--ink)]">{mission.t.name}</h2>
-                        <p className="text-[15px] text-[var(--dim)] leading-relaxed">
+                        <p className="text-[14.5px] text-[var(--dim)] leading-snug">
                           {mission.stage === 'lesson'
-                            ? `Learn the main idea of ${mission.t.name.toLowerCase()} with clear examples before trying questions.`
+                            ? `Master core concepts and worked examples in ${mission.t.name.toLowerCase()}.`
                             : mission.stage === 'practice'
                               ? drillCfg.isToughJamb
-                                ? `Answer 6 tough JAMB-level questions with close look-alike options (A–D).`
-                                : `Nice work on the lesson. Now answer 6 practice questions to build steady speed.`
-                              : `Last step for this topic: pass ${drillCfg.bossHp} out of 7 questions in ${
+                                ? '6 tough UTME questions with twin-option traps.'
+                                : '6 practice questions to build accuracy and speed.'
+                              : `Pass ${drillCfg.bossHp}/7 questions in ${
                                   drillCfg.isToughJamb ? '3:30' : '5:00'
-                                }.`}
+                                } to clear this topic.`}
                         </p>
 
                         {/* 3-Step Track: Learn -> Practise -> Topic test (12px meters) */}
@@ -637,15 +650,15 @@ export function HomeScreen({
                         <h2 className="h22 text-[var(--ink)]">
                           Unlock all {topics.length} topics in {SUBJECT_INFO[subj].name}
                         </h2>
-                        <p className="text-[15px] text-[var(--dim)] leading-relaxed">
-                          Your 1-day free trial has expired. Subscribe from ₦1,000/month (auto-renews unless cancelled; Lifetime is one-time) to unlock all 49 subjects, tutors, mock exams, virtual labs and colour themes.
+                        <p className="text-[14.5px] text-[var(--dim)] leading-snug">
+                          Free trial ended. Subscribe from ₦1,000/month to unlock all 49 subjects, tutors, mocks, and labs.
                         </p>
                       </>
                     ) : (
                       <>
-                        <h2 className="h22 text-[var(--ink)]">You finished every topic here</h2>
-                        <p className="text-[15px] text-[var(--dim)]">
-                          All {passedCount} topics in {SUBJECT_INFO[subj].name} are passed. Keep them fresh with quick revision.
+                        <h2 className="h22 text-[var(--ink)]">All {passedCount} topics passed</h2>
+                        <p className="text-[14.5px] text-[var(--dim)]">
+                          Keep {SUBJECT_INFO[subj].name} sharp with quick spaced revision.
                         </p>
                       </>
                     )}
@@ -656,7 +669,10 @@ export function HomeScreen({
                       <>
                         <button
                           type="button"
-                          onClick={() => onStartMission(mission.t.id, mission.stage)}
+                          onClick={() => {
+                            triggerLightHaptic(12);
+                            onStartMission(mission.t.id, mission.stage);
+                          }}
                           className="btn-tactile indigo flex-1 min-w-[190px] whitespace-nowrap"
                         >
                           <span>{missionLabel}</span>
@@ -664,10 +680,16 @@ export function HomeScreen({
                         </button>
                         <button
                           type="button"
-                          onClick={() => onOpenTopic(mission.t.id)}
-                          className="btn-tactile paper whitespace-nowrap"
+                          onClick={() => {
+                            triggerLightHaptic(8);
+                            onOpenTopic(mission.t.id);
+                          }}
+                          aria-label={`Open ${mission.t.name} topic overview and notes`}
+                          title="Topic overview & study notes"
+                          className="btn-tactile paper whitespace-nowrap px-3.5"
                         >
-                          <span>Topic page</span>
+                          <Icon name="book" size={16} />
+                          <span>Notes &amp; overview</span>
                         </button>
                       </>
                     ) : hasLockedRemaining && onOpenPaywall ? (
@@ -718,10 +740,10 @@ export function HomeScreen({
                         </h2>
                         <p className="text-[12px] text-[var(--dim)]">
                           {examTrack === 'jamb'
-                            ? 'Strictly your 4 UTME subjects — tap to switch'
+                            ? '4 UTME subjects · Tap to switch'
                             : examTrack === 'both'
-                              ? '70% JAMB core + 30% WAEC subjects'
-                              : 'Tap a subject to switch right away'}
+                              ? '70% JAMB · 30% WAEC'
+                              : 'Tap to switch subject'}
                         </p>
                       </div>
                       <button
@@ -925,7 +947,7 @@ export function HomeScreen({
                     <div>
                       <h2 className="h18 text-[var(--ink)]">Continue learning</h2>
                       <p className="text-[12.5px] text-[var(--dim)]">
-                        Pick up where you left off in {SUBJECT_INFO[subj].name}
+                        Active {SUBJECT_INFO[subj].name} topics
                       </p>
                     </div>
                     <button
@@ -990,28 +1012,49 @@ export function HomeScreen({
                 </section>
               </div>
 
-              {/* Other Tools in Plain Words */}
-              <section aria-label="More study tools" className="flex flex-col gap-2.5">
-                <h2 className="h18 text-[var(--ink)]">Study tools</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 min-[920px]:grid-cols-3 gap-2.5">
+              {/* Calm Progressive-Disclosure Study Tools (4 Core Daily Workspaces + Expandable Drawer) */}
+              <section aria-label="Study workspaces" className="flex flex-col gap-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h2 className="h18 text-[var(--ink)]">Workspaces</h2>
+                    <p className="text-[12px] text-[var(--dim)]">
+                      Novels, mistake vault, formulas, and study plan
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-expanded={showAllTools}
+                    onClick={() => {
+                      triggerLightHaptic(8);
+                      setShowAllTools((v) => !v);
+                    }}
+                    className="min-h-[34px] px-3 rounded-xl bg-[var(--card)] border border-[var(--line)] hover:border-[var(--acc-line)] text-[12px] font-bold text-[var(--ink)] inline-flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap shrink-0"
+                  >
+                    <Icon name="grid" size={14} className="text-[var(--gold)]" />
+                    <span>{showAllTools ? 'Fewer tools' : 'All workspaces'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 min-[920px]:grid-cols-4 gap-2.5">
                   {onOpenNovels && (
                     <button
                       type="button"
-                      onClick={() =>
-                        onOpenNovels(subj === 'lit' ? 'so-the-path' : 'lekki-headmaster')
-                      }
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      onClick={() => {
+                        triggerLightHaptic(8);
+                        onOpenNovels(subj === 'lit' ? 'so-the-path' : 'lekki-headmaster');
+                      }}
+                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
                           <Icon name="book" size={16} />
                         </span>
                         <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            JAMB &amp; WAEC Novels
+                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                            Set Novels
                           </div>
                           <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            8 set texts · Lekki Headmaster, Mockingbird &amp; more
+                            8 JAMB &amp; WAEC texts
                           </div>
                         </div>
                       </div>
@@ -1022,46 +1065,24 @@ export function HomeScreen({
                   {onOpenMistakes && (
                     <button
                       type="button"
-                      onClick={onOpenMistakes}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      onClick={() => {
+                        triggerLightHaptic(8);
+                        onOpenMistakes();
+                      }}
+                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="w-9 h-9 rounded-xl bg-[var(--bad-soft)] text-[var(--coral-ink)] flex items-center justify-center shrink-0">
                           <Icon name="target" size={16} />
                         </span>
                         <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
+                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
                             Mistakes to fix
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
+                          <div className="text-[11.5px] text-[var(--dim)] truncate tabular-nums">
                             {openMistakesCount > 0
-                              ? `${openMistakesCount} to practise again`
-                              : 'No missed questions right now'}
-                          </div>
-                        </div>
-                      </div>
-                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
-                    </button>
-                  )}
-
-                  {onOpenPlanner && (
-                    <button
-                      type="button"
-                      onClick={onOpenPlanner}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
-                          <Icon name="calendar" size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Study plan
-                          </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            {hasSetExamDate && daysToExam !== null
-                              ? `${daysToExam} days left · Daily timetable`
-                              : 'Set your exam date and daily goal'}
+                              ? `${openMistakesCount} waiting`
+                              : 'Clean slate'}
                           </div>
                         </div>
                       </div>
@@ -1072,21 +1093,22 @@ export function HomeScreen({
                   {onOpenFormulas && (
                     <button
                       type="button"
-                      onClick={onOpenFormulas}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      onClick={() => {
+                        triggerLightHaptic(8);
+                        onOpenFormulas();
+                      }}
+                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="w-9 h-9 rounded-xl tile-sky flex items-center justify-center shrink-0">
                           <Icon name={subj === 'eng' ? 'book' : 'sigma'} size={16} />
                         </span>
                         <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
+                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
                             {subj === 'eng' ? 'Grammar rules' : 'Formulas'}
                           </div>
                           <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            {subj === 'eng'
-                              ? 'Key concord, stress and sentence rules'
-                              : 'Key equations and quick workouts'}
+                            {subj === 'eng' ? 'Concord & stress' : 'Equations & drills'}
                           </div>
                         </div>
                       </div>
@@ -1094,22 +1116,27 @@ export function HomeScreen({
                     </button>
                   )}
 
-                  {onOpenSandboxes && (
+                  {onOpenPlanner && (
                     <button
                       type="button"
-                      onClick={onOpenSandboxes}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
+                      onClick={() => {
+                        triggerLightHaptic(8);
+                        onOpenPlanner();
+                      }}
+                      className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
-                          <Icon name="cpu" size={16} />
+                          <Icon name="calendar" size={16} />
                         </span>
                         <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Try-it tools
+                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                            Study plan
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            Graphs, tables, logic gates and maps
+                          <div className="text-[11.5px] text-[var(--dim)] truncate tabular-nums">
+                            {hasSetExamDate && daysToExam !== null
+                              ? `${daysToExam} days left`
+                              : 'Set exam date'}
                           </div>
                         </div>
                       </div>
@@ -1117,119 +1144,146 @@ export function HomeScreen({
                     </button>
                   )}
 
-                  {onOpenTheory && (
-                    <button
-                      type="button"
-                      onClick={onOpenTheory}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl tile-mint flex items-center justify-center shrink-0">
-                          <Icon name="pen" size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Theory answers
+                  {showAllTools && (
+                    <>
+                      {onOpenSandboxes && (
+                        <button
+                          type="button"
+                          onClick={onOpenSandboxes}
+                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                              <Icon name="cpu" size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                                Try-it tools
+                              </div>
+                              <div className="text-[11.5px] text-[var(--dim)] truncate">
+                                Graphs, logic &amp; maps
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            Practise written answers with marking guides
-                          </div>
-                        </div>
-                      </div>
-                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
-                    </button>
-                  )}
+                          <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                        </button>
+                      )}
 
-                  {onOpenDuel && (
-                    <button
-                      type="button"
-                      onClick={onOpenDuel}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl tile-peach flex items-center justify-center shrink-0">
-                          <Icon name="trophy" size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Duels
+                      {onOpenTheory && (
+                        <button
+                          type="button"
+                          onClick={onOpenTheory}
+                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-9 h-9 rounded-xl tile-mint flex items-center justify-center shrink-0">
+                              <Icon name="pen" size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                                Theory answers
+                              </div>
+                              <div className="text-[11.5px] text-[var(--dim)] truncate">
+                                Written marking guides
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            10-question race with a classmate
-                          </div>
-                        </div>
-                      </div>
-                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
-                    </button>
-                  )}
+                          <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                        </button>
+                      )}
 
-                  {onOpenLeaderboard && (
-                    <button
-                      type="button"
-                      onClick={onOpenLeaderboard}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
-                          <Icon name="crown" size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Leaderboard
+                      {onOpenDuel && (
+                        <button
+                          type="button"
+                          onClick={onOpenDuel}
+                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-9 h-9 rounded-xl tile-peach flex items-center justify-center shrink-0">
+                              <Icon name="trophy" size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                                Duels
+                              </div>
+                              <div className="text-[11.5px] text-[var(--dim)] truncate">
+                                10-question classmate race
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            See how students across Nigeria are doing
-                          </div>
-                        </div>
-                      </div>
-                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
-                    </button>
-                  )}
+                          <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                        </button>
+                      )}
 
-                  {onOpenTranscript && (
-                    <button
-                      type="button"
-                      onClick={onOpenTranscript}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl tile-sky flex items-center justify-center shrink-0">
-                          <Icon name="award" size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Report card
+                      {onOpenLeaderboard && (
+                        <button
+                          type="button"
+                          onClick={onOpenLeaderboard}
+                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                              <Icon name="crown" size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                                Leaderboard
+                              </div>
+                              <div className="text-[11.5px] text-[var(--dim)] truncate">
+                                National scholar standings
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            Shareable summary for parents and teachers
-                          </div>
-                        </div>
-                      </div>
-                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
-                    </button>
-                  )}
+                          <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                        </button>
+                      )}
 
-                  {isOwner && onOpenQuestionBank && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenQuestionBank(subj, 'overview')}
-                      className="study-card rtc-card rounded-xl px-3.5 py-2.5 sm:py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
-                          <Icon name="database" size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)]">
-                            Question bank (owner)
+                      {onOpenTranscript && (
+                        <button
+                          type="button"
+                          onClick={onOpenTranscript}
+                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-9 h-9 rounded-xl tile-sky flex items-center justify-center shrink-0">
+                              <Icon name="award" size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                                Report card
+                              </div>
+                              <div className="text-[11.5px] text-[var(--dim)] truncate">
+                                Shareable mastery summary
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[11.5px] text-[var(--dim)] truncate">
-                            Manage and export question sets
+                          <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                        </button>
+                      )}
+
+                      {isOwner && onOpenQuestionBank && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenQuestionBank(subj, 'overview')}
+                          className="study-card rtc-card rounded-2xl px-3.5 py-3 text-left flex items-center justify-between gap-2.5 cursor-pointer anim-rise"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-9 h-9 rounded-xl bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
+                              <Icon name="database" size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <div className="font-[var(--display)] font-bold text-[14px] text-[var(--ink)] truncate">
+                                Question bank (owner)
+                              </div>
+                              <div className="text-[11.5px] text-[var(--dim)] truncate">
+                                Manage &amp; export sets
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                      <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
-                    </button>
+                          <Icon name="go" size={14} className="text-[var(--dim)] shrink-0 ul-arrow" />
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </section>

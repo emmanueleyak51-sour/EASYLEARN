@@ -1,22 +1,11 @@
-import '@fontsource/fredoka/500.css';
 import '@fontsource/fredoka/600.css';
 import '@fontsource/fredoka/700.css';
 import '@fontsource/nunito/400.css';
-import '@fontsource/nunito/500.css';
 import '@fontsource/nunito/600.css';
 import '@fontsource/nunito/700.css';
-import '@fontsource/nunito/800.css';
-import '@fontsource/nunito/400-italic.css';
-import '@fontsource/nunito/600-italic.css';
-import '@fontsource/nunito/700-italic.css';
 import '@fontsource/stix-two-text/400.css';
-import '@fontsource/stix-two-text/500.css';
 import '@fontsource/stix-two-text/600.css';
-import '@fontsource/stix-two-text/700.css';
 import '@fontsource/stix-two-text/400-italic.css';
-import '@fontsource/stix-two-text/500-italic.css';
-import '@fontsource/stix-two-text/600-italic.css';
-import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/600.css';
 
@@ -27,6 +16,22 @@ import './index.css';
 import { initEarlyPWAInstallCapture } from './utils/usePWAInstall';
 
 initEarlyPWAInstallCapture();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault();
+    try {
+      const key = 'rtc_chunk_reload_ts';
+      const prev = Number(window.sessionStorage.getItem(key) || '0');
+      if (Date.now() - prev > 15_000) {
+        window.sessionStorage.setItem(key, String(Date.now()));
+        window.location.reload();
+      }
+    } catch {
+      /* ignore storage restrictions */
+    }
+  });
+}
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   let hasRefreshedForSwUpdate = false;
@@ -53,4 +58,5 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
+
 

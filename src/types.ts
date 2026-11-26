@@ -100,6 +100,7 @@ export type ScreenName =
   | 'duel'
   | 'leaderboard'
   | 'novels'
+  | 'universe'
   | 'more'
   | 'subjs';
 

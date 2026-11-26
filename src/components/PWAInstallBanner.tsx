@@ -359,10 +359,12 @@ export function PWAInstallModal({
 
 export function PWAInstallButton({
   compact = false,
+  iconOnly = false,
   label,
   className = '',
 }: {
   compact?: boolean;
+  iconOnly?: boolean;
   label?: string;
   className?: string;
 }) {
@@ -381,14 +383,18 @@ export function PWAInstallButton({
       <button
         type="button"
         onClick={() => void install()}
+        aria-label={iconOnly ? buttonText : undefined}
+        title={iconOnly ? buttonText : undefined}
         className={
-          compact
-            ? `w-full min-h-[36px] px-3 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--gold)] hover:bg-[var(--gold)] hover:text-[var(--on-acc)] flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${className}`
-            : `btn-tactile indigo whitespace-nowrap ${className}`
+          iconOnly
+            ? `w-8 h-8 rounded-full bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[var(--gold)] hover:bg-[var(--gold)] hover:text-[var(--on-acc)] inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${className}`
+            : compact
+              ? `w-full min-h-[36px] px-3 rounded-xl bg-[var(--acc-soft)] border border-[var(--acc-line)] text-[12.5px] font-bold text-[var(--gold)] hover:bg-[var(--gold)] hover:text-[var(--on-acc)] flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${className}`
+              : `btn-tactile indigo whitespace-nowrap ${className}`
         }
       >
-        <Icon name="download" size={15} />
-        <span>{label || 'Install Easy Learn App'}</span>
+        <Icon name="download" size={14} />
+        {!iconOnly && <span>{label || 'Install Easy Learn App'}</span>}
       </button>
     );
   }
@@ -398,14 +404,18 @@ export function PWAInstallButton({
       <button
         type="button"
         onClick={() => setShowGuide(true)}
+        aria-label={iconOnly ? buttonText : undefined}
+        title={iconOnly ? buttonText : undefined}
         className={
-          compact
-            ? `w-full min-h-[36px] px-3 rounded-xl bg-[var(--acc-soft)]/70 border border-[var(--acc-line)] hover:bg-[var(--acc-soft)] text-[12.5px] font-bold text-[var(--gold)] flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${className}`
-            : `btn-tactile paper whitespace-nowrap ${className}`
+          iconOnly
+            ? `w-8 h-8 rounded-full bg-[var(--acc-soft)]/70 border border-[var(--acc-line)] hover:bg-[var(--acc-soft)] text-[var(--gold)] inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${className}`
+            : compact
+              ? `w-full min-h-[36px] px-3 rounded-xl bg-[var(--acc-soft)]/70 border border-[var(--acc-line)] hover:bg-[var(--acc-soft)] text-[12.5px] font-bold text-[var(--gold)] flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${className}`
+              : `btn-tactile paper whitespace-nowrap ${className}`
         }
       >
-        <Icon name="download" size={15} className="text-[var(--gold)] shrink-0" />
-        <span>{buttonText}</span>
+        <Icon name="download" size={14} className="text-[var(--gold)] shrink-0" />
+        {!iconOnly && <span>{buttonText}</span>}
       </button>
 
       <PWAInstallModal open={showGuide} onClose={() => setShowGuide(false)} />
@@ -488,10 +498,10 @@ export function InstallAppHubCard() {
             <span className="text-[var(--dim)]">Android, iPhone, Windows &amp; Mac</span>
           </div>
           <h3 className="font-[var(--display)] font-extrabold text-[23px] sm:text-[27px] leading-tight text-[var(--ink)] text-balance">
-            Install Easy Learn on your laptop now, or scan the QR code with your phone.
+            Install on your laptop or scan for your phone.
           </h3>
           <p className="text-[14px] leading-relaxed text-[var(--dim)]">
-            No Play Store or App Store needed. Open the full tab on your laptop to pin Easy Learn to your Taskbar/Dock, and scan the QR code below with your phone camera to add it to your Android or iPhone home screen.
+            Pin Easy Learn to your desktop or scan the QR code to add the offline app to Android or iPhone.
           </p>
         </div>
 

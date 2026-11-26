@@ -149,6 +149,7 @@ test('buildSecurityHeaders outputs strict OWASP headers and conditional HSTS', (
   assert.equal(httpHeaders['X-Content-Type-Options'], 'nosniff');
   assert.equal(httpHeaders['Cross-Origin-Opener-Policy'], 'same-origin-allow-popups');
   assert.match(httpHeaders['Content-Security-Policy'], /object-src 'none'/);
+  assert.match(httpHeaders['Content-Security-Policy'], /connect-src[^;]*https:\/\/fonts\.gstatic\.com/);
   assert.equal(httpHeaders['Strict-Transport-Security'], undefined);
 
   const httpsHeaders = buildSecurityHeaders(true);

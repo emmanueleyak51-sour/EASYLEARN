@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { GoogleGenAI, Modality, Type, type LiveServerMessage, type Session } from '@google/genai';
+import { GoogleGenAI, Modality, ThinkingLevel, Type, type LiveServerMessage, type Session } from '@google/genai';
 import {
   buildHardenedTutorSystemPrompt,
   buildSecurityHeaders,
@@ -945,8 +945,333 @@ async function startServer() {
       res.json({
         questions: validQuestions,
         generatedCount: validQuestions.length,
-        model: 'gemini-4-hydrogen',
       });
+    } catch (err) {
+      const formatted = formatGeminiError(err);
+      res.status(formatted.status).json({ error: formatted.message });
+    }
+  });
+
+  // Personalised 4-Stage Learning Adventure Generator (Server-Side Structured JSON)
+  app.post('/api/universe/adventure', enforceRateLimit(genLimiter), async (req, res) => {
+    try {
+      const subjectSpec = resolveAuthoritativeSubject(req.body?.subject);
+      if (!subjectSpec) {
+        res.status(400).json({ error: 'A valid curriculum subject is required.' });
+        return;
+      }
+      const topicName = sanitizePromptSnippet(req.body?.topicName, 100);
+      if (topicName.length < 2) {
+        res.status(400).json({ error: 'Please select a valid syllabus topic.' });
+        return;
+      }
+      const sectionName = sanitizePromptSnippet(req.body?.sectionName, 80) || 'Core Syllabus';
+      const examTrap = sanitizePromptSnippet(req.body?.examTrap, 180);
+      const classLevelRaw = sanitizePromptSnippet(req.body?.classLevel, 16).toUpperCase();
+      const classLabel =
+        classLevelRaw === 'SS1' || classLevelRaw === 'SS2' || classLevelRaw === 'SS3'
+          ? classLevelRaw
+          : 'SS1–SS3 / UTME';
+      const tutor = SUBJECT_TUTOR_REGISTRY[subjectSpec.id] || SUBJECT_TUTOR_REGISTRY.bio;
+
+      const ai = createAiClient();
+      const prompt = [
+        `Design an engaging, academically rigorous 4-stage interactive learning mission for a Nigerian Senior Secondary (${classLabel}) student studying "${topicName}" (${sectionName}) in ${subjectSpec.fullName}.`,
+        `Field guide persona: ${tutor.tutorName} (${tutor.roleTitle}).`,
+        examTrap ? `Target this common student misconception/exam trap: ${examTrap}.` : '',
+        `Rules:`,
+        `1. Write natural, concise, vivid mission prose (never mention prompts, AI, or internal instructions).`,
+        `2. Stage 1 (Discover) introduces a concrete real-world or scientific problem scenario and 3 crisp principles.`,
+        `3. Stage 2 (Explore) defines 4 sequential interactive inspection checkpoints showing cause and effect.`,
+        `4. Stage 3 (Decision) & Stage 4 (Application + Teach-Back) must each have 3 plausible options where Option Index 0, 1, or 2 is factually/mathematically verified, plus 2 helpful Socratic hints and a clear worked explanation.`,
+        `5. Use clean plain-text mathematical/scientific symbols (e.g. H₂O, x², √, →, °C, Ω) rather than raw LaTeX backslashes.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const questionSchema = {
+        type: Type.OBJECT,
+        properties: {
+          prompt: { type: Type.STRING },
+          options: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: 'Exactly 3 distinct options',
+          },
+          correctIndex: {
+            type: Type.INTEGER,
+            description: '0, 1, or 2 matching the verified correct option',
+          },
+          hints: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: '2 progressive Socratic hints without giving away the letter directly',
+          },
+          explanation: { type: Type.STRING },
+        },
+        required: ['prompt', 'options', 'correctIndex', 'hints', 'explanation'],
+      };
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              subtitle: { type: Type.STRING },
+              unlockTitle: { type: Type.STRING },
+              hook: { type: Type.STRING },
+              companionIntro: { type: Type.STRING },
+              keyFacts: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    label: { type: Type.STRING },
+                    detail: { type: Type.STRING },
+                  },
+                  required: ['label', 'detail'],
+                },
+              },
+              exploreInstruction: { type: Type.STRING },
+              pathwayNodes: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    label: { type: Type.STRING },
+                    stateNote: { type: Type.STRING },
+                  },
+                  required: ['label', 'stateNote'],
+                },
+              },
+              scenarioContext: { type: Type.STRING },
+              decision: questionSchema,
+              applicationChallenge: questionSchema,
+              teachBackChallenge: questionSchema,
+              victoryNarrative: { type: Type.STRING },
+            },
+            required: [
+              'title',
+              'subtitle',
+              'unlockTitle',
+              'hook',
+              'companionIntro',
+              'keyFacts',
+              'exploreInstruction',
+              'pathwayNodes',
+              'scenarioContext',
+              'decision',
+              'applicationChallenge',
+              'teachBackChallenge',
+              'victoryNarrative',
+            ],
+          },
+        },
+      });
+
+      const rawText = response.text;
+      if (!rawText) {
+        res.status(502).json({ error: 'Adventure builder returned an empty response.' });
+        return;
+      }
+
+      const parsed = JSON.parse(rawText) as Record<string, unknown>;
+      const normalizeCheck = (rawCheck: unknown) => {
+        const c = (rawCheck && typeof rawCheck === 'object' ? rawCheck : {}) as Record<
+          string,
+          unknown
+        >;
+        const opts = Array.isArray(c.options)
+          ? c.options
+              .map((o) => String(o || '').trim().slice(0, 220))
+              .filter(Boolean)
+              .slice(0, 4)
+          : [];
+        if (opts.length < 2) return null;
+        const idxRaw = Number(c.correctIndex);
+        const correctIndex =
+          Number.isInteger(idxRaw) && idxRaw >= 0 && idxRaw < opts.length ? idxRaw : 0;
+        const rawHints = Array.isArray(c.hints)
+          ? c.hints.map((h) => String(h || '').trim().slice(0, 200)).filter(Boolean)
+          : [];
+        const hints: [string, string] = [
+          rawHints[0] || 'Check the core principle from Stage 1.',
+          rawHints[1] || 'Eliminate options that violate units or conditions.',
+        ];
+        return {
+          prompt: String(c.prompt || '').trim().slice(0, 320),
+          options: opts,
+          correctIndex,
+          hints,
+          explanation: String(c.explanation || 'Verified from first principles.').trim().slice(0, 340),
+        };
+      };
+
+      const dec = normalizeCheck(parsed.decision);
+      const appCheck = normalizeCheck(parsed.applicationChallenge);
+      const tbCheck = normalizeCheck(parsed.teachBackChallenge);
+      if (!dec || !appCheck || !tbCheck || !dec.prompt || !appCheck.prompt || !tbCheck.prompt) {
+        res.status(502).json({ error: 'Generated adventure was incomplete. Please try again.' });
+        return;
+      }
+
+      const keyFacts = Array.isArray(parsed.keyFacts)
+        ? parsed.keyFacts
+            .slice(0, 3)
+            .map((kf: unknown, i: number) => {
+              const item = (kf && typeof kf === 'object' ? kf : {}) as Record<string, unknown>;
+              return {
+                label: String(item.label || `Key Principle 0${i + 1}`).trim().slice(0, 60),
+                detail: String(item.detail || '').trim().slice(0, 240),
+              };
+            })
+            .filter((k) => k.detail.length > 0)
+        : [];
+
+      const pathwayNodes = Array.isArray(parsed.pathwayNodes)
+        ? parsed.pathwayNodes
+            .slice(0, 4)
+            .map((pn: unknown, i: number) => {
+              const item = (pn && typeof pn === 'object' ? pn : {}) as Record<string, unknown>;
+              return {
+                id: `cp-${i + 1}`,
+                label: String(item.label || `${i + 1}. Checkpoint ${i + 1}`).trim().slice(0, 60),
+                stateNote: String(item.stateNote || '').trim().slice(0, 140),
+              };
+            })
+            .filter((n) => n.stateNote.length > 0)
+        : [];
+
+      res.json({
+        mission: {
+          id: `custom-${subjectSpec.id}-${Date.now()}`,
+          worldId: subjectSpec.id,
+          levelLabel: 'Personalised Mission',
+          title: String(parsed.title || `Operation: ${topicName}`).trim().slice(0, 90),
+          subtitle: String(parsed.subtitle || `Master ${topicName} through active problem solving.`)
+            .trim()
+            .slice(0, 200),
+          xpReward: 250,
+          unlockTitle: String(parsed.unlockTitle || `${topicName.split(' ')[0]} Specialist`)
+            .trim()
+            .slice(0, 44),
+          isDynamicRescue: true,
+          stage1Discover: {
+            hook: String(parsed.hook || `Field challenge detected in ${topicName}.`)
+              .trim()
+              .slice(0, 260),
+            companionIntro: String(
+              parsed.companionIntro || `${tutor.tutorName} guides you through ${topicName}.`
+            )
+              .trim()
+              .slice(0, 300),
+            keyFacts:
+              keyFacts.length > 0
+                ? keyFacts
+                : [{ label: topicName, detail: `Apply core principles of ${sectionName}.` }],
+          },
+          stage2Explore: {
+            simulationKind: 'concept_pathway',
+            instruction: String(
+              parsed.exploreInstruction || `Inspect each reasoning step for ${topicName}.`
+            )
+              .trim()
+              .slice(0, 200),
+            targetGoalLabel: 'Inspect all 4 interactive checkpoints',
+            pathwayNodes: pathwayNodes.length >= 2 ? pathwayNodes : undefined,
+          },
+          stage3Decision: {
+            scenarioContext: String(
+              parsed.scenarioContext || `Apply ${topicName} to make the right call.`
+            )
+              .trim()
+              .slice(0, 240),
+            ...dec,
+          },
+          stage4Complete: {
+            applicationChallenge: appCheck,
+            teachBackChallenge: tbCheck,
+            victoryNarrative: String(
+              parsed.victoryNarrative || `Mission accomplished! You proved mastery of ${topicName}.`
+            )
+              .trim()
+              .slice(0, 220),
+          },
+        },
+      });
+    } catch (err) {
+      const formatted = formatGeminiError(err);
+      res.status(formatted.status).json({ error: formatted.message });
+    }
+  });
+
+  // Contextual In-World Companion Guidance for 3D Circulatory Adventure
+  app.post('/api/universe/companion', enforceRateLimit(genLimiter), async (req, res) => {
+    try {
+      const currentZone = sanitizePromptSnippet(req.body?.currentZone, 80) || 'Right Ventricle';
+      const missionPhase = sanitizePromptSnippet(req.body?.missionPhase, 80) || 'Pulmonary Launch';
+      const lastAction = sanitizePromptSnippet(req.body?.lastAction, 160);
+      const heartRateBpm = Math.min(180, Math.max(40, Math.round(Number(req.body?.heartRateBpm) || 72)));
+      const oxygenSatPct = Math.min(100, Math.max(35, Math.round(Number(req.body?.oxygenSatPct) || 45)));
+      const valveLeakActive = Boolean(req.body?.valveLeakActive);
+      const studentQuestion = sanitizePromptSnippet(req.body?.question, 200);
+
+      const ai = createAiClient();
+      const prompt = [
+        `You are Dr. Amaka, a warm, razor-sharp Nigerian cardiovascular scientist guiding a student piloting a micro-vessel inside a living 3D human circulatory system.`,
+        `Current 3D location: ${currentZone}.`,
+        `Active mission objective: ${missionPhase}.`,
+        `Live physiology state: Heart Rate ${heartRateBpm} BPM, Blood O₂ Saturation ${oxygenSatPct}%, Valve Regurgitation: ${valveLeakActive ? 'Leaky (backflow occurring)' : 'Sealed one-way'}.`,
+        lastAction ? `Recent student action in 3D space: ${lastAction}.` : '',
+        studentQuestion ? `Student asks: "${studentQuestion}"` : 'Give one concise, high-impact contextual clue for what to observe or do next without spoiling the fun.',
+        `Rules:`,
+        `1. Keep guidance to 1-2 short, vivid sentences (max 38 words) so it never interrupts gameplay.`,
+        `2. Ground every word in accurate mammalian double-circulation biology (chambers, tricuspid/mitral/semilunar valves, pulmonary gas exchange, thick left ventricular wall).`,
+        `3. Never mention AI, prompts, models, or software.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-4-hydrogen',
+        contents: prompt,
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              guidance: {
+                type: Type.STRING,
+                description: '1-2 short sentences of contextual biological guidance (max 220 chars)',
+              },
+              scientificPrinciple: {
+                type: Type.STRING,
+                description: 'Short 3-7 word physiological rule tag',
+              },
+            },
+            required: ['guidance', 'scientificPrinciple'],
+          },
+        },
+      });
+
+      const rawText = response.text;
+      if (!rawText) {
+        res.status(502).json({ error: 'Companion channel temporarily unavailable.' });
+        return;
+      }
+      const parsed = JSON.parse(rawText) as { guidance?: unknown; scientificPrinciple?: unknown };
+      const guidance = String(parsed.guidance || '').trim().slice(0, 260);
+      const scientificPrinciple = String(parsed.scientificPrinciple || 'Double Circulation').trim().slice(0, 64);
+      if (!guidance) {
+        res.status(502).json({ error: 'Companion response was empty.' });
+        return;
+      }
+      res.json({ guidance, scientificPrinciple });
     } catch (err) {
       const formatted = formatGeminiError(err);
       res.status(formatted.status).json({ error: formatted.message });

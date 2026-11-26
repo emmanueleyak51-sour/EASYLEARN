@@ -247,7 +247,7 @@ const DIGITECH_DOMAIN_TABS: { id: DigiTechDomainFilter; label: string }[] = [
   { id: 'representation', label: 'Binary & Logic Gates' },
   { id: 'software', label: 'Software & Algorithms' },
   { id: 'networks', label: 'Networks & Cloud' },
-  { id: 'cyber', label: 'Cybersecurity & AI' },
+  { id: 'cyber', label: 'Cybersecurity' },
 ];
 
 const DATAPROC_DOMAIN_TABS: { id: DataProcDomainFilter; label: string }[] = [
@@ -741,7 +741,7 @@ export function TopicsMapScreen({
           <span className="eyebrow text-[var(--gold)]">Topics</span>
           <h1 className="h28 text-[var(--ink)]">{SUBJECT_INFO[progress.subj].name}</h1>
           <p className="text-[13px] text-[var(--dim)] mt-0.5 tabular-nums">
-            One short topic at a time · {overallPct}% progress
+            {overallPct}% mastered
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
@@ -821,15 +821,11 @@ export function TopicsMapScreen({
             <MiniRing value={mpct(progress, mission.t.id)} size={40} />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 text-[11.5px] font-bold text-[var(--gold)]">
-                <span>Next topic</span>
-                <span aria-hidden="true" className="text-[var(--dim)]">·</span>
-                <span className="text-[var(--green)] font-semibold">
-                  Take it one step at a time
-                </span>
+                <span>Recommended next</span>
               </div>
               <h2 className="h18 text-[var(--ink)] mt-0.5 truncate">{mission.t.name}</h2>
               <p className="text-[12.5px] text-[var(--dim)] truncate">
-                {mission.t.sec} · {mission.t.parts.length} short chapters + 6 practice questions
+                {mission.t.sec} · {mission.t.parts.length} parts · 6 practice questions
               </p>
             </div>
           </div>
@@ -855,8 +851,8 @@ export function TopicsMapScreen({
                   ? 'Full WAEC/NECO syllabus'
                   : 'Full JAMB and WAEC syllabus'}
               </div>
-              <div className="text-[12.5px] text-[var(--dim)]">
-                {allSubjectTopics.length} topics arranged in one clear syllabus block
+              <div className="text-[12.5px] text-[var(--dim)] tabular-nums">
+                {allSubjectTopics.length} syllabus topics
               </div>
             </div>
           ) : (

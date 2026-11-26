@@ -44,7 +44,7 @@ test('htmlToSpeakableChem converts Oral English IPA slash transcriptions into sp
   assert.ok(!spoken.includes('/θ/'));
 });
 
-test('extractBeatSpeechScript welcomes ONLY on Step 1 and omits intro on Steps 2+ across Chem & English', () => {
+test('extractBeatSpeechScript announces Topic focus ONLY on Step 1 and omits intro on Steps 2+ across Chem & English', () => {
   const chemTopics = SUBJECTS.chem.topics;
   assert.equal(chemTopics.length, 32);
   for (const topic of chemTopics) {
@@ -52,26 +52,27 @@ test('extractBeatSpeechScript welcomes ONLY on Step 1 and omits intro on Steps 2
     assert.ok(il && il.parts.length > 0);
     const firstBeat = il.parts[0].beats[0];
     const step1Script = extractBeatSpeechScript(firstBeat, topic.name, il.parts[0].title, true);
-    assert.ok(step1Script.includes('Welcome to Professor Spark'), 'Step 1 includes welcome');
+    assert.ok(step1Script.includes('Topic focus:'), 'Step 1 includes Topic focus');
+    assert.ok(!step1Script.includes('Welcome to Professor Spark'), 'Zero repeated self-intro');
     assert.ok(step1Script.length <= 1120, `script for ${topic.id} stays bounded`);
     assert.ok(!step1Script.includes('<span'), `script for ${topic.id} has no raw HTML`);
 
     const secondBeat = il.parts[0].beats[1] || firstBeat;
     const step2Script = extractBeatSpeechScript(secondBeat, topic.name, il.parts[0].title, false);
-    assert.ok(!step2Script.includes('Welcome to Professor Spark'), 'Step 2+ has zero welcome intro');
+    assert.ok(!step2Script.includes('Topic focus:'), 'Step 2+ omits Topic focus header');
   }
 
   const engTopics = SUBJECTS.eng.topics;
-  assert.equal(engTopics.length, 32);
+  assert.equal(engTopics.length, 34);
   for (const topic of engTopics) {
     const il = SUBJECTS.eng.il[topic.id];
     assert.ok(il && il.parts.length > 0, `English lesson exists for ${topic.id}`);
     const firstBeat = il.parts[0].beats[0];
     const step1Eng = extractBeatSpeechScript(firstBeat, topic.name, il.parts[0].title, true, 'eng');
-    assert.ok(step1Eng.includes("Welcome to Miss Adaeze's English Studio"), 'English Step 1 welcomes to Miss Adaeze');
+    assert.ok(step1Eng.includes('Topic focus:'), 'English Step 1 includes Topic focus');
     const secondBeat = il.parts[0].beats[1] || firstBeat;
     const step2Eng = extractBeatSpeechScript(secondBeat, topic.name, il.parts[0].title, false, 'eng');
-    assert.ok(!step2Eng.includes('Welcome to Miss Adaeze'), 'English Step 2+ has zero welcome intro');
+    assert.ok(!step2Eng.includes('Topic focus:'), 'English Step 2+ omits Topic focus');
   }
 
   const econTopics = SUBJECTS.econ.topics;
@@ -81,11 +82,11 @@ test('extractBeatSpeechScript welcomes ONLY on Step 1 and omits intro on Steps 2
     assert.ok(il && il.parts.length > 0, `Economics lesson exists for ${topic.id}`);
     const firstBeat = il.parts[0].beats[0];
     const step1Econ = extractBeatSpeechScript(firstBeat, topic.name, il.parts[0].title, true, 'econ');
-    assert.ok(step1Econ.includes("Welcome to Dr. Ngozi's Economics Studio"), 'Economics Step 1 welcomes to Dr. Ngozi');
+    assert.ok(step1Econ.includes('Topic focus:'), 'Economics Step 1 includes Topic focus');
     assert.ok(step1Econ.length <= 920, `Economics beat script for ${topic.id} stays concise`);
     const secondBeat = il.parts[0].beats[1] || firstBeat;
     const step2Econ = extractBeatSpeechScript(secondBeat, topic.name, il.parts[0].title, false, 'econ');
-    assert.ok(!step2Econ.includes('Welcome to Dr. Ngozi'), 'Economics Step 2+ has zero welcome intro');
+    assert.ok(!step2Econ.includes('Topic focus:'), 'Economics Step 2+ omits Topic focus');
   }
 });
 
@@ -98,9 +99,8 @@ test('extractLabStepSpeechScript introduces experiment ONLY on Step 1 for both C
     false,
     'chem'
   );
-  assert.ok(chemStep1.includes("Welcome to Professor Spark's lab"));
-  assert.ok(chemStep1.includes('Acid–base titration'));
-  assert.ok(chemStep1.startsWith("Welcome to Professor Spark's lab"));
+  assert.ok(chemStep1.startsWith('Investigation: Acid–base titration. Step 1:'));
+  assert.ok(!chemStep1.includes('Professor Spark'));
 
   const chemStep2 = extractLabStepSpeechScript(
     'Acid–base titration',
@@ -110,8 +110,7 @@ test('extractLabStepSpeechScript introduces experiment ONLY on Step 1 for both C
     false,
     'chem'
   );
-  assert.ok(!chemStep2.includes('Welcome'), 'Step 2 must not welcome again');
-  assert.ok(!chemStep2.includes('Professor Spark'), 'Step 2 must not re-introduce Professor Spark');
+  assert.ok(!chemStep2.includes('Investigation:'), 'Step 2 must not repeat Investigation header');
   assert.ok(!chemStep2.includes('Acid–base titration'), 'Step 2 must not repeat experiment title');
   assert.ok(chemStep2.startsWith('Step 2:'), 'Step 2 starts directly with Step 2:');
 
@@ -123,7 +122,7 @@ test('extractLabStepSpeechScript introduces experiment ONLY on Step 1 for both C
     false,
     'maths'
   );
-  assert.ok(mathStep1.includes('Welcome to the Constructions Lab'));
+  assert.ok(mathStep1.startsWith('Investigation: Construct an angle of 30 degrees . Step 1:') || mathStep1.startsWith('Investigation: Construct an angle of 30'));
   assert.ok(!mathStep1.includes('Professor Spark'));
 
   const mathStep3 = extractLabStepSpeechScript(
@@ -136,7 +135,7 @@ test('extractLabStepSpeechScript introduces experiment ONLY on Step 1 for both C
   );
   assert.ok(mathStep3.startsWith('Step 3:'));
   assert.ok(mathStep3.includes('Practical tip: Keep compass radius equal.'));
-  assert.ok(!mathStep3.includes('Welcome'));
+  assert.ok(!mathStep3.includes('Investigation:'));
 });
 
 test('Chemistry & English overview, notes, mission, and quiz voice script builders generate clean scripts', () => {
@@ -145,19 +144,19 @@ test('Chemistry & English overview, notes, mission, and quiz voice script builde
   assert.ok(overview.includes(topic.name));
 
   const mission = extractMissionSpeechScript(topic.name, 'lesson', 4, topic.trap);
-  assert.ok(mission.includes('Professor Spark'));
+  assert.ok(mission.includes('Chemistry'));
 
   const engTopic = SUBJECTS.eng.topics[0];
   const engMission = extractMissionSpeechScript(engTopic.name, 'lesson', 5, engTopic.trap, 'eng');
-  assert.ok(engMission.includes("Miss Adaeze's English Studio"));
+  assert.ok(engMission.includes('English'));
 
   const bioTopic = SUBJECTS.bio.topics[0];
   const bioMission = extractMissionSpeechScript(bioTopic.name, 'lesson', 4, bioTopic.trap, 'bio');
-  assert.ok(bioMission.includes("Dr. Amaka's Biology Studio"));
+  assert.ok(bioMission.includes('Biology'));
 
   const econTopic = SUBJECTS.econ.topics[0];
   const econMission = extractMissionSpeechScript(econTopic.name, 'lesson', 5, econTopic.trap, 'econ');
-  assert.ok(econMission.includes("Dr. Ngozi's Economics Studio"));
+  assert.ok(econMission.includes('Economics'));
 
   const noteScript = extractNotePartSpeechScript(topic.name, 0, topic.parts[0], { trap: topic.trap });
   assert.ok(noteScript.includes("Come closer — let's teach through"));
@@ -189,7 +188,7 @@ test('buildMadScientistSystemPrompt and buildEnglishCoachSystemPrompt ground coa
     examTrap: 'Remember 1 Faraday = 96,500 C per mole of electrons.',
   });
   assert.ok(prompt.includes('Professor Spark'));
-  assert.ok(prompt.includes('NEVER re-introduce yourself'));
+  assert.ok(prompt.includes('NEVER introduce yourself'));
   assert.ok(prompt.includes('Electrolysis'));
   assert.ok(prompt.includes('96,500 C'));
 
@@ -202,7 +201,7 @@ test('buildMadScientistSystemPrompt and buildEnglishCoachSystemPrompt ground coa
     examTrap: 'With "as well as", match the first subject.',
   });
   assert.ok(engPrompt.includes('Miss Adaeze'));
-  assert.ok(engPrompt.includes('NEVER re-introduce yourself'));
+  assert.ok(engPrompt.includes('NEVER introduce yourself'));
   assert.ok(engPrompt.includes('Concord'));
 });
 

@@ -62,8 +62,8 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     priceNgn: 1000,
     priceKobo: 100_000,
     isRecurring: true,
-    billingCycleLabel: 'Auto-renews monthly · Cancel anytime',
-    blurb: 'Full access to all 49 subjects, tutors, CBT mocks, virtual labs and colour themes.',
+    billingCycleLabel: 'Auto-renews monthly',
+    blurb: 'All 49 subjects, tutors, mocks, and labs.',
   },
   {
     id: 'biannual',
@@ -73,9 +73,9 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     priceNgn: 4500,
     priceKobo: 450_000,
     isRecurring: true,
-    billingCycleLabel: 'Auto-renews every 6 months · Cancel anytime',
+    billingCycleLabel: 'Every 6 months',
     savingsBadge: 'Save ₦1,500',
-    blurb: '6 months of full unrestricted access across all classes and exams — save ₦1,500.',
+    blurb: 'Full 2-term access across all subjects.',
   },
   {
     id: 'annual',
@@ -85,10 +85,10 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     priceNgn: 9000,
     priceKobo: 900_000,
     isRecurring: true,
-    billingCycleLabel: 'Auto-renews yearly · Cancel anytime',
+    billingCycleLabel: 'Auto-renews yearly',
     popular: true,
     savingsBadge: 'Save ₦3,000',
-    blurb: 'Full academic year for JAMB UTME, WAEC and NECO with every tutor, lab and theme.',
+    blurb: 'Full session for JAMB, WAEC, and NECO.',
   },
   {
     id: 'lifetime',
@@ -98,9 +98,9 @@ export const PREMIUM_PLANS: readonly PremiumPlanDef[] = [
     priceNgn: 27800,
     priceKobo: 2_780_000,
     isRecurring: false,
-    billingCycleLabel: 'One-time payment · Never auto-debited',
+    billingCycleLabel: 'One-time · No auto-debit',
     savingsBadge: 'Pay once',
-    blurb: 'Pay once for permanent lifetime access across SS1–SS3, JAMB UTME, WAEC and NECO.',
+    blurb: 'Permanent access across all exams.',
   },
 ];
 

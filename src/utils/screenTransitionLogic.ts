@@ -49,6 +49,7 @@ export const SCREEN_HIERARCHY_DEPTH: Record<ScreenName, number> = {
   duel: 1,
   leaderboard: 1,
   novels: 1,
+  universe: 1,
   notes: 2,
   lesson: 2,
   quiz: 2,

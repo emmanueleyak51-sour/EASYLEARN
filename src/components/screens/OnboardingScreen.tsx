@@ -544,8 +544,8 @@ export function WelcomeScreen({
                 </h1>
               </div>
             </div>
-            <p className="text-[15.5px] text-white/90 leading-relaxed">
-              Learn each topic in plain English, test yourself with timed mock papers, and see step-by-step explanations whenever you miss a question.
+            <p className="text-[15px] text-white/90 leading-snug">
+              Clear lessons, timed /400 mocks, and step-by-step solutions for every missed question.
             </p>
             <div className="grid grid-cols-3 gap-2.5 pt-1">
               <div className="rounded-[16px] tile-peach p-3">
@@ -741,7 +741,7 @@ export function WelcomeScreen({
               <div>
                 <h2 className="h22 text-[var(--ink)]">Create your account</h2>
                 <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
-                  Free open launch access across all 49 JAMB &amp; WAEC subjects, interactive labs, and novels.
+                  All 49 JAMB &amp; WAEC subjects, virtual labs, and set novels.
                 </p>
               </div>
 
@@ -921,7 +921,7 @@ export function WelcomeScreen({
                   <div>
                     <h2 className="h22 text-[var(--ink)]">Welcome back</h2>
                     <p className="text-[13.5px] text-[var(--dim)] mt-0.5">
-                      Sign in with your registered email and password, or recover with Google.
+                      Sign in with email or continue with Google.
                     </p>
                   </div>
 
@@ -1019,8 +1019,7 @@ export function WelcomeScreen({
           )}
 
           <div className="pt-3 border-t border-[var(--line)] text-[12.5px] text-[var(--dim)] leading-snug">
-            One account per email address. Forgot your password? Verify with Google anytime to
-            reset your password or sign straight back in.
+            One account per email. Recover your password anytime with Google.
           </div>
         </section>
       </div>
@@ -1053,8 +1052,8 @@ export function DxIntroScreen({
             <h1 className="h28 text-white">Welcome, {name}</h1>
           </div>
         </div>
-        <p className="text-[15.5px] leading-relaxed text-white/90">
-          Answer {questionCount} quick {SUBJECT_INFO[subj].name} questions. It takes about 5 minutes and shows which topics you already know and where to begin.
+        <p className="text-[15px] leading-snug text-white/90">
+          {questionCount} quick {SUBJECT_INFO[subj].name} questions (~5 min) to pinpoint your starting level.
         </p>
       </div>
 
@@ -1062,8 +1061,8 @@ export function DxIntroScreen({
         <span className="w-9 h-9 rounded-[14px] bg-[var(--acc-soft)] text-[var(--gold)] flex items-center justify-center shrink-0">
           <Icon name="bolt" size={17} />
         </span>
-        <p className="text-[14.5px] text-[var(--dim)] leading-relaxed">
-          <strong className="text-[var(--ink)]">No pressure:</strong> If a question is new to you, pick your best answer. Any missed ones go into your revision list with clear explanations.
+        <p className="text-[14px] text-[var(--dim)] leading-snug">
+          <strong className="text-[var(--ink)]">No pressure:</strong> Pick your best answer — missed items go straight to revision with worked steps.
         </p>
       </div>
 

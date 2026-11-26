@@ -187,13 +187,16 @@ export function tstate(p: UserProgress, id: string): TopicProgress {
 export function mastery(p: UserProgress, id: string): number {
   let s = 0.5;
   let w = 2;
-  const att = tstate(p, id).att.slice(-12);
-  for (const [ok, lvl] of att) {
-    const k = 0.6 + 0.2 * lvl;
+  const att = tstate(p, id).att.slice(-14);
+  const n = att.length;
+  for (let i = 0; i < n; i++) {
+    const [ok, lvl] = att[i];
+    const recency = n > 1 ? 0.72 + 0.56 * ((i + 1) / n) : 1;
+    const k = (0.6 + 0.2 * lvl) * recency;
     w += k;
     if (ok) s += k;
   }
-  return s / w;
+  return Math.max(0, Math.min(1, s / w));
 }
 
 export const pct = (x: number): number => Math.round(x * 100);
@@ -269,6 +272,38 @@ export function isTopicLocked(
   return isTopicPaywalled(p, tid, subjectTopics, d);
 }
 
+export function countOverdueReviewsForTopic(
+  p: UserProgress,
+  topicId: string,
+  d = today()
+): number {
+  const prefix = `${topicId}-`;
+  const customIds = new Set(p.cust.add.filter((q) => q.t === topicId).map((q) => q.id));
+  let count = 0;
+  for (const [qid, rev] of Object.entries(p.rev)) {
+    if (rev && rev.due <= d && (qid.startsWith(prefix) || customIds.has(qid))) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function computeTopicPriorityScore(
+  p: UserProgress,
+  topic: Topic,
+  d = today()
+): number {
+  const st = tstate(p, topic.id);
+  if (st.boss) return -1000;
+  const targetRatio = Math.min(0.95, Math.max(0.5, subjTarget(p) / 100));
+  const m = mastery(p, topic.id);
+  const deficitScore = Math.max(0, targetRatio - m) * 100;
+  const startedBonus = st.lesson || st.practice ? 65 : 0;
+  const overdueBonus = Math.min(135, countOverdueReviewsForTopic(p, topic.id, d) * 45);
+  const trapBonus = topic.trap || topic.qs.some((q) => q.w?.length) ? 4 : 0;
+  return startedBonus + overdueBonus + deficitScore + trapBonus;
+}
+
 export function nextMission(
   p: UserProgress,
   topics: Topic[],
@@ -279,11 +314,11 @@ export function nextMission(
     (t) => !tstate(p, t.id).boss && !isTopicLocked(p, t.id, allSubjectTopics, d)
   );
   if (!open.length) return null;
-  const started = (t: Topic) => {
-    const s = tstate(p, t.id);
-    return s.lesson || s.practice ? 0 : 1;
-  };
-  open.sort((a, b) => started(a) - started(b) || mastery(p, a.id) - mastery(p, b.id));
+  open.sort(
+    (a, b) =>
+      computeTopicPriorityScore(p, b, d) - computeTopicPriorityScore(p, a, d) ||
+      mastery(p, a.id) - mastery(p, b.id)
+  );
   const t = open[0];
   const s = tstate(p, t.id);
   const stage: 'lesson' | 'practice' | 'boss' = !s.lesson
@@ -306,11 +341,16 @@ export function homeTopics(
     const st = tstate(p, t.id);
     if (st.boss) return 3;
     if (locked) return 2;
-    return st.lesson || st.practice ? 0 : 1;
+    return st.lesson || st.practice || countOverdueReviewsForTopic(p, t.id, d) > 0 ? 0 : 1;
   };
   return topics
     .slice()
-    .sort((a, b) => rank(a) - rank(b) || mastery(p, a.id) - mastery(p, b.id))
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        computeTopicPriorityScore(p, b, d) - computeTopicPriorityScore(p, a, d) ||
+        mastery(p, a.id) - mastery(p, b.id)
+    )
     .slice(0, 4);
 }
 
@@ -342,17 +382,25 @@ export function pickPractice(
   p: UserProgress,
   t: Topic,
   lvl: number,
-  seen: string[]
+  seen: string[],
+  d = today()
 ): Question | null {
   const qs = bankForTopic(p, t).filter((q) => !seen.includes(q.id));
   if (!qs.length) return null;
   const toughJamb = isToughJambModeForSubject(resolveExamTrack(p), p.subj, p.jambSubjects);
   const targetLvl = toughJamb ? Math.max(3, lvl) : lvl;
+  const isOverdue = (qid: string) => (p.rev[qid] && p.rev[qid].due <= d ? 1 : 0);
+  const missRate = (qid: string) => {
+    const st = hstat(p, qid);
+    return st.n > 0 ? (st.n - st.ok) / st.n : 0.35;
+  };
   qs.sort(
     (a, b) =>
+      isOverdue(b.id) - isOverdue(a.id) ||
       Math.abs(a.l - targetLvl) - Math.abs(b.l - targetLvl) ||
       (toughJamb ? (b.w?.length ? 1 : 0) - (a.w?.length ? 1 : 0) : 0) ||
-      hstat(p, a.id).n - hstat(p, b.id).n
+      hstat(p, a.id).n - hstat(p, b.id).n ||
+      missRate(b.id) - missRate(a.id)
   );
   return qs[0];
 }
@@ -436,12 +484,17 @@ export function recordAnswer(
   let revok = prev.revok;
 
   if (!ok) {
-    nextRev[q.id] = { due: d + 1, st: 0 };
+    const prevStage = nextRev[q.id]?.st ?? 0;
+    nextRev[q.id] = {
+      due: d + 1,
+      st: prevStage >= 2 ? prevStage - 1 : 0,
+    };
   } else if (nextRev[q.id] && src === 'review') {
+    const intervals = q.l >= 4 && q.w?.length ? [1, 3, 7, 14] : [1, 3, 7];
     const r = { ...nextRev[q.id], st: nextRev[q.id].st + 1 };
-    if (r.st >= 3) delete nextRev[q.id];
+    if (r.st >= intervals.length) delete nextRev[q.id];
     else {
-      r.due = d + [1, 3, 7][r.st];
+      r.due = d + intervals[r.st];
       nextRev[q.id] = r;
     }
     revok += 1;
@@ -598,17 +651,17 @@ export const SUBJECT_INFO: Record<
 export const ONBOARDING_SLIDES = [
   {
     id: 'score',
-    title: 'Track your true mastery every day',
-    body: 'A short diagnostic maps your starting mastery across SS1–SS3 topics. Every concept you learn and question you solve moves your mastery meter toward your personal goal.',
+    title: 'Track mastery every day',
+    body: 'A quick diagnostic maps your SS1–SS3 baseline and updates your score as you solve.',
   },
   {
     id: 'lessons',
-    title: 'Lessons & labs that make concepts click',
-    body: 'Every topic is taught in crisp steps with publication-grade equations, live interactive simulations, virtual laboratories, and professional AI voice mentors.',
+    title: 'Interactive worlds & virtual labs',
+    body: 'Step-by-step lessons, live voice teachers, and hands-on practical labs make tough topics click.',
   },
   {
     id: 'practice',
-    title: 'Practise until nothing surprises you',
-    body: 'Progressive mastery questions from foundational to advanced, each with a step-by-step solution. Missed concepts return in spaced review until they become second nature.',
+    title: 'Adaptive spaced practice',
+    body: 'Questions scale with your level, and missed concepts return automatically until mastered.',
   },
 ];

@@ -156,20 +156,20 @@ const SCHOLAR_OUTCOMES: readonly {
 
 const FAQ_ITEMS: readonly { q: string; a: string }[] = [
   {
-    q: 'What happens after I choose JAMB Only, WAEC Only, or Both (70/30)?',
-    a: 'If you choose JAMB Only, Easy Learn locks onto Use of English plus your 3 UTME electives, introduces only those 4 voice teachers once, hides WAEC-only trade subjects, and calibrates topic tests to 6/7 in 3:30 with twin-option traps. WAEC Only unlocks 7–9 school and trade subjects with Paper 2 Theory Coach and Chief Examiner mistake shields. Choosing Both combines them with 70% daily focus on your 4 JAMB subjects and 30% on WAEC.',
+    q: 'How do JAMB Only, WAEC Only, and Both (70/30) differ?',
+    a: 'JAMB Only locks onto Use of English plus 3 electives with 6/7 in 3:30 topic tests. WAEC Only covers 7–9 subjects with Paper 2 Theory Coach and practicals. Both splits daily study 70% JAMB / 30% WAEC.',
   },
   {
-    q: 'Do the live voice teachers repeat their introduction every time I open a lesson?',
-    a: 'No. Your teachers introduce themselves once during exam track setup so you can hear each teacher’s distinct personality. Inside lessons, chapter notes, and live two-way voice calls, they skip pleasantries and explain your exact step immediately.',
+    q: 'Do voice teachers repeat introductions in every lesson?',
+    a: 'No. Teachers introduce themselves once during setup. Inside lessons, notes, and live voice calls, they go straight to explaining your step.',
   },
   {
-    q: 'How does the Saturday National CBT Arena ranking work?',
-    a: 'Every Saturday (with early warm-up reminders from Thursday), Easy Learn opens the timed /400 UTME and WASSCE CBT Arena with double study XP. As soon as you submit, your scaled score and accuracy are ranked against every student who completed CBT that day, and missed questions move straight into your Mistake Vault.',
+    q: 'How does Saturday National CBT ranking work?',
+    a: 'Every Saturday opens a timed /400 mock with 2× XP, live same-day national ranking, and automatic Mistake Vault logging.',
   },
   {
-    q: 'How does the 1-day free trial and recurring subscription work?',
-    a: 'Every new scholar account gets a 1-day (24-hour) free trial with a live countdown when you link your Google Payment Account or payment details — and you can cancel anytime. Monthly, 6-Month, and Yearly plans auto-renew at expiry unless cancelled beforehand (if cancelled, everything locks when time runs out until you resubscribe). Lifetime is a one-time payment and is never auto-debited.',
+    q: 'How do the 1-day trial and subscriptions work?',
+    a: 'New accounts get a 24-hour free trial (cancel anytime). Monthly, 6-Month, and Yearly plans auto-renew unless cancelled; Lifetime is a one-time payment.',
   },
 ];
 
@@ -696,7 +696,7 @@ export function LandingWebsiteScreen({
         const qSeats = data.quote?.seats || parsed.emails.length;
         const qTotal = data.quote?.totalNgn || cohortEstimate.totalNgn;
         setSponsorStatusMsg(
-          `Paystack quote ready for ${qSeats} ${qSeats === 1 ? 'scholar' : 'scholars'} (${formatNairaPrice(qTotal)}). Add an active PAYSTACK_SECRET_KEY (sk_live_... or sk_test_...) in Settings -> Secrets to open Paystack checkout directly.`
+          `Quote ready for ${qSeats} ${qSeats === 1 ? 'scholar' : 'scholars'} (${formatNairaPrice(qTotal)}). Request cohort Pass PINs below while online card checkout is offline.`
         );
       } else {
         setSponsorError(
@@ -934,8 +934,8 @@ export function LandingWebsiteScreen({
                   Train tougher than JAMB. Walk into your exam hall already ahead.
                 </h1>
 
-                <p className="text-[16px] sm:text-[16.5px] leading-[1.64] text-[var(--dim)] max-w-[56ch]">
-                  Combine JAMB UTME speed with WAEC Paper 2 precision in one disciplined study studio. Meet your subject voice teachers once during setup, master look-alike examiner traps, and rank nationally every Saturday.
+                <p className="text-[16px] sm:text-[16.5px] leading-[1.6] text-[var(--dim)] max-w-[52ch]">
+                  UTME speed and WAEC Paper 2 precision in one focused workspace — voice teachers, 87 virtual labs, twin-option drills, and live Saturday /400 rankings.
                 </p>
               </div>
 
@@ -1136,7 +1136,7 @@ export function LandingWebsiteScreen({
                 <AnimatedNumber value={49} suffix=" Subjects" />
               </div>
               <div className="text-[13.5px] text-[var(--dim)] leading-snug">
-                25 official JAMB UTME subjects plus 24 WAEC school &amp; trade syllabuses
+                25 JAMB UTME + 24 WAEC school &amp; trade syllabuses
               </div>
             </div>
 
@@ -1145,7 +1145,7 @@ export function LandingWebsiteScreen({
                 6/7 in 3:30
               </div>
               <div className="text-[13.5px] text-[var(--dim)] leading-snug">
-                Tough JAMB topic pass bar engineered with twin-option traps
+                Tough UTME topic bar with twin-option traps
               </div>
             </div>
 
@@ -1154,7 +1154,7 @@ export function LandingWebsiteScreen({
                 /<AnimatedNumber value={400} suffix=" CBT" />
               </div>
               <div className="text-[13.5px] text-[var(--dim)] leading-snug">
-                Every Saturday timed mock arena with same-day national student ranking
+                Saturday national mocks &amp; same-day ranking
               </div>
             </div>
 
@@ -1163,7 +1163,7 @@ export function LandingWebsiteScreen({
                 <AnimatedNumber value={87} suffix=" Labs" />
               </div>
               <div className="text-[13.5px] text-[var(--dim)] leading-snug">
-                Interactive Chemistry, Physics, Biology &amp; compass construction benches
+                Chemistry, Physics, Bio &amp; compass benches
               </div>
             </div>
           </div>
@@ -1184,10 +1184,10 @@ export function LandingWebsiteScreen({
                   01. Exam Track Architecture
                 </span>
                 <h2 className="eyak-display font-extrabold text-[26px] sm:text-[34px] leading-[1.12] text-[var(--ink)] text-balance">
-                  Choose one exam or combine both. Watch Easy Learn re-weight your syllabus.
+                  Pick one exam or combine both.
                 </h2>
                 <p className="text-[15px] text-[var(--dim)] leading-relaxed">
-                  Switch tracks to see how your subject scope, daily mission split, and live trap drills adapt immediately on the right.
+                  Switch tracks to preview your daily focus split and live trap drills.
                 </p>
               </div>
 
@@ -1422,8 +1422,8 @@ export function LandingWebsiteScreen({
                 <h2 className="eyak-display font-extrabold text-[26px] sm:text-[34px] leading-[1.14] text-[var(--ink)] text-balance">
                   49 subject teachers, each with their own voice and personality — introduced only once.
                 </h2>
-              <p className="text-[15.5px] text-[var(--dim)] leading-relaxed">
-                Audition your exact 4 {activeCourseTitle} JAMB teachers back-to-back in a single relay — just like Easy Learn’s one-time setup lineup — or explore individual specialists. Inside lessons, they skip small talk and teach immediately.
+              <p className="text-[15px] text-[var(--dim)] leading-relaxed">
+                Audition your 4 {activeCourseTitle} teachers or specialist tutors. They introduce themselves once at setup, then go straight to teaching.
               </p>
             </div>
 
@@ -1708,7 +1708,7 @@ export function LandingWebsiteScreen({
                     Saturday National CBT Arena &amp; Same-Day Cohort Rank
                   </h3>
                   <p className="text-[14.5px] leading-relaxed text-[var(--dim)]">
-                    Every week builds toward Saturday morning. Sit a full timed 4-subject UTME paper under strict exam-hall rules, see your exact percentile and rank against every scholar who took CBT that Saturday, and clear every missed question inside your Mistake Vault.
+                    Sit a timed 4-subject UTME paper every Saturday, rank live against peers nationwide, and clear missed questions in your Mistake Vault.
                   </p>
                 </div>
 
@@ -1763,7 +1763,7 @@ export function LandingWebsiteScreen({
                     Hands-On Science Labs &amp; Compass Constructions
                   </h3>
                   <p className="text-[14.5px] leading-relaxed text-[var(--dim)]">
-                    Practise 20 Chemistry titrations and ion tests, 16 Physics optics and metre-bridge experiments, 28 Biology and Agric specimens, and 23 animated compass-and-ruler locus constructions — even if your school lab equipment is locked.
+                    Run 20 Chemistry titrations, 16 Physics optics &amp; circuit labs, 28 Biology/Agric specimens, and 23 compass-and-ruler constructions anytime.
                   </p>
                 </div>
 
@@ -2674,7 +2674,7 @@ export function LandingWebsiteScreen({
                   Sponsor a Scholar or Pay for School Seats on Paystack
                 </h3>
                 <p className="text-[13.5px] text-[var(--dim)] leading-relaxed">
-                  Enter your scholar’s email (or paste a class email list for automatic 15%–25% volume discounts) and pay directly on Paystack. Every scholar unlocks automatically when they sign in.
+                  Enter scholar emails (15%–25% automatic class discounts) and pay via Paystack. Access unlocks on sign-in.
                 </p>
               </div>
 
@@ -2941,12 +2941,12 @@ export function LandingWebsiteScreen({
               <span className="eyak-mono text-[var(--green)]">{blueprint.scoreLine}</span>
             </div>
             <h2 className="eyak-display font-extrabold text-[28px] sm:text-[36px] leading-[1.1] text-[var(--ink)] text-balance">
-              Step onto your Road to Campus with your subjects and voice teachers already waiting.
+              Your subjects and voice teachers are ready.
             </h2>
             <p className="text-[15px] text-[var(--dim)] leading-relaxed">
               {PUBLIC_FREE_LAUNCH_ACTIVE
-                ? 'Start studying 100% free in under 60 seconds, install the offline app, or jump straight into an instant classroom session right now.'
-                : 'Start your 1-day free trial (cancel anytime) in under 60 seconds, or try the strict 5-minute demo right now.'}
+                ? 'Start free in under 60 seconds or install the offline app.'
+                : 'Start your 1-day free trial (cancel anytime) or try the 5-minute demo.'}
             </p>
           </div>
 

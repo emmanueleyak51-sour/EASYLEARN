@@ -125,17 +125,17 @@ describe('Mathematics Formula & Calculation Studio (30 Formulas)', () => {
     const step1 = extractBeatSpeechScript(sampleBeat, 'Modular Arithmetic', 'Clock Arithmetic', true, 'maths');
     const step2 = extractBeatSpeechScript(sampleBeat, 'Modular Arithmetic', 'Clock Arithmetic', false, 'maths');
 
-    assert.ok(step1.includes("Welcome to Master Chike's Mathematics Studio"));
-    assert.equal(step2.includes("Welcome to Master Chike's Mathematics Studio"), false);
+    assert.ok(step1.includes('Topic focus: Modular Arithmetic'));
+    assert.equal(step2.includes('Topic focus:'), false);
 
     const mission = extractMissionSpeechScript('Quadratic Equations', 'lesson', 4, 'Watch signs', 'maths');
-    assert.ok(mission.includes("Master Chike's Mathematics Studio"));
+    assert.ok(mission.includes('Mathematics'));
 
     const livePrompt = buildMathCoachSystemPrompt({
       topicName: 'Bearings & Distances',
       stepText: 'Back bearing adds or subtracts 180 degrees.',
     });
     assert.ok(livePrompt.includes('Master Chike'));
-    assert.ok(livePrompt.includes('NEVER re-introduce yourself'));
+    assert.ok(livePrompt.includes('NEVER introduce yourself'));
   });
 });

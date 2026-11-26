@@ -58,6 +58,14 @@ export interface LoggedLabTrial {
   inputsSummary: string;
   primaryOutput: string;
   statusLabel: string;
+  xValue: number;
+  yValue: number;
+}
+
+export interface LabTrialStats {
+  count: number;
+  meanY: number | null;
+  slope: number | null;
 }
 
 function makeCurve(
@@ -1018,5 +1026,45 @@ export function formatLabTrialRow(
     inputsSummary,
     primaryOutput,
     statusLabel: evalResult.statusLabel.replace(/^[●◆▲]\s*/, ''),
+    xValue: evalResult.curve.currentPoint.x,
+    yValue: evalResult.curve.currentPoint.y,
   };
+}
+
+export function computeLabTrialStats(trials: readonly LoggedLabTrial[]): LabTrialStats {
+  const n = trials.length;
+  if (n === 0) return { count: 0, meanY: null, slope: null };
+  const meanY = trials.reduce((acc, tr) => acc + tr.yValue, 0) / n;
+  if (n < 2) return { count: n, meanY, slope: null };
+
+  const meanX = trials.reduce((acc, tr) => acc + tr.xValue, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const tr of trials) {
+    const dx = tr.xValue - meanX;
+    num += dx * (tr.yValue - meanY);
+    den += dx * dx;
+  }
+  const slope = den > 1e-9 ? num / den : null;
+  return { count: n, meanY, slope };
+}
+
+export function formatLabReportText(
+  labTitle: string,
+  primaryLabel: string,
+  trials: readonly LoggedLabTrial[],
+  stats: LabTrialStats
+): string {
+  const lines = [
+    `${labTitle} — Practical Readings`,
+    ...trials.map(
+      (t) => `#${t.trialNo} | ${t.inputsSummary} | ${primaryLabel}: ${t.primaryOutput} (${t.statusLabel})`
+    ),
+  ];
+  if (stats.meanY !== null) {
+    lines.push(
+      `Mean: ${stats.meanY.toFixed(2)}${stats.slope !== null ? ` · Best-fit slope (Δy/Δx): ${stats.slope.toFixed(3)}` : ''}`
+    );
+  }
+  return lines.join('\n');
 }

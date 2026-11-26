@@ -2634,6 +2634,93 @@ html {
   will-change: transform, opacity;
 }
 
+/* ── Apple Books Reading Comfort Surfaces & Typography Scale ── */
+.eyak-reading-canvas {
+  transition: background-color 0.22s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.eyak-reading-canvas[data-reading-surface="sepia"] {
+  --bg: #F5EEDB;
+  --bg-out: #ECE2C8;
+  --deep: #EFE6D0;
+  --card: #FBF6E9;
+  --row-alt: #F6EFE0;
+  --line: #DFD2B5;
+  --ink: #2B2114;
+  --dim: #6B5842;
+  --gold: #8F4B10;
+  --acc-hi: #A85914;
+  --acc-d: #663409;
+  --acc-soft: #F3E4CB;
+  --acc-line: #DFC196;
+  --ok-soft: #E1F2E7;
+  --ok-line: #9ED1B2;
+  --green: #136F4B;
+  color-scheme: light;
+}
+
+.eyak-reading-canvas[data-reading-surface="night"] {
+  --bg: #111520;
+  --bg-out: #0B0E16;
+  --deep: #1B2132;
+  --card: #161B29;
+  --row-alt: #1A2030;
+  --line: #283149;
+  --ink: #E8ECF4;
+  --dim: #9AA6BF;
+  --gold: #8AB4F8;
+  --acc-hi: #A3C4FA;
+  --acc-d: #3B66B8;
+  --acc-soft: #1E2842;
+  --acc-line: #344773;
+  --ok-soft: #122B24;
+  --ok-line: #235847;
+  --green: #4ADE80;
+  color-scheme: dark;
+}
+
+.eyak-reading-canvas p,
+.eyak-reading-canvas .lead {
+  max-width: 68ch;
+}
+
+.eyak-reading-canvas[data-reading-scale="compact"] .lead {
+  font-size: 14.75px;
+  line-height: 1.62;
+}
+.eyak-reading-canvas[data-reading-scale="compact"] p,
+.eyak-reading-canvas[data-reading-scale="compact"] .rules li,
+.eyak-reading-canvas[data-reading-scale="compact"] .sm {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.eyak-reading-canvas[data-reading-scale="comfort"] .lead {
+  font-size: 16.5px;
+  line-height: 1.74;
+}
+.eyak-reading-canvas[data-reading-scale="comfort"] p,
+.eyak-reading-canvas[data-reading-scale="comfort"] .rules li,
+.eyak-reading-canvas[data-reading-scale="comfort"] .sm {
+  font-size: 15.75px;
+  line-height: 1.72;
+}
+
+.eyak-reading-canvas[data-reading-scale="large"] .lead {
+  font-size: 18.25px;
+  line-height: 1.8;
+}
+.eyak-reading-canvas[data-reading-scale="large"] p,
+.eyak-reading-canvas[data-reading-scale="large"] .rules li,
+.eyak-reading-canvas[data-reading-scale="large"] .sm {
+  font-size: 17.5px;
+  line-height: 1.78;
+}
+.eyak-reading-canvas[data-reading-scale="large"] .qt {
+  font-size: 18.5px;
+  line-height: 1.65;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

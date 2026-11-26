@@ -319,7 +319,7 @@ export function buildSecurityHeaders(isHttps: boolean): Record<string, string> {
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: blob: https://*.googleusercontent.com",
     "media-src 'self' blob: data:",
-    "connect-src 'self' ws: wss: https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com",
+    "connect-src 'self' ws: wss: https://*.googleapis.com https://fonts.gstatic.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com",
     "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com",
     "manifest-src 'self'",
     "worker-src 'self' blob:",

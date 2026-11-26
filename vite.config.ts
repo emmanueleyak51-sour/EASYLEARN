@@ -69,7 +69,7 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           skipWaiting: true,
           clientsClaim: true,
-          maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg,woff,woff2}'],
           runtimeCaching: [
             {
@@ -115,7 +115,19 @@ export default defineConfig(() => {
       },
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'react-dom/client', 'motion/react', 'lucide-react'],
+      include: ['react', 'react-dom', 'react-dom/client', 'motion/react', 'lucide-react', 'three'],
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/three')) return 'vendor-3d';
+            if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) return 'vendor-cloud';
+            if (id.includes('node_modules/motion') || id.includes('node_modules/framer-motion')) return 'vendor-motion';
+            return undefined;
+          },
+        },
+      },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

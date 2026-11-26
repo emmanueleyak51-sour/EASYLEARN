@@ -39,6 +39,14 @@ import {
 import { NOVEL_SCENE_ARTWORK } from './novelSceneArtwork';
 import { Icon } from '../Icons';
 import { SmoothProgressBar } from '../ULessonMotion';
+import {
+  loadReadingComfortPrefs,
+  saveReadingComfortPrefs,
+  triggerLightHaptic,
+  type ReadingComfortPrefs,
+  type ReadingFontScale,
+  type ReadingSurface,
+} from '../../utils/readingComfortLogic';
 
 import lekkiCoverUrl from '../../assets/images/novel_lekki_headmaster_1795401841840.jpg';
 import lifeChangerCoverUrl from '../../assets/images/novel_life_changer_1795401841190.jpg';
@@ -245,6 +253,17 @@ export function JambWaecNovelsStudio({
   const [activePlayingKey, setActivePlayingKey] = useState<string | null>(null);
   const [ttsGlobalError, setTtsGlobalError] = useState<string>('');
   const [ttsModeLabel, setTtsModeLabel] = useState<string>('');
+  const [comfort, setComfort] = useState<ReadingComfortPrefs>(() => loadReadingComfortPrefs());
+  const [showComfortBar, setShowComfortBar] = useState<boolean>(false);
+
+  const updateComfort = (patch: Partial<ReadingComfortPrefs>) => {
+    triggerLightHaptic(8);
+    setComfort((prev) => {
+      const next = { ...prev, ...patch };
+      saveReadingComfortPrefs(next);
+      return next;
+    });
+  };
 
   const audioCacheRef = useRef<Map<string, DecodedTtsPayload>>(new Map());
   const activeHandleRef = useRef<ActiveAudioHandle | null>(null);
@@ -1222,7 +1241,11 @@ export function JambWaecNovelsStudio({
                 </div>
 
                 {/* Active Chapter Reader Pane */}
-                <div className="lg:col-span-8 flex flex-col gap-5">
+                <div
+                  className="lg:col-span-8 eyak-reading-canvas flex flex-col gap-5"
+                  data-reading-surface={comfort.surface}
+                  data-reading-scale={comfort.fontScale}
+                >
                   <div className="rounded-2xl bg-[var(--bg)] border border-[var(--line)] overflow-hidden flex flex-col">
                     {/* Event-Based Memory-Retention Scene Illustration */}
                     <div className="relative aspect-[16/9] w-full overflow-hidden bg-[var(--card)]">
@@ -1248,7 +1271,7 @@ export function JambWaecNovelsStudio({
                         </div>
                       )}
                       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-4 sm:p-5">
-                        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-300">
+                        <div className="text-[11.5px] font-bold text-amber-300">
                           Visual Event Scene · Chapter {activeChapter.number} of{' '}
                           {activeNovel.chapters.length}
                         </div>
@@ -1281,22 +1304,128 @@ export function JambWaecNovelsStudio({
                             {activeChapter.title}
                           </h4>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleChapter(activeChapter.number)}
-                          className={`min-h-[38px] px-3.5 rounded-xl text-[13px] font-bold border transition-colors cursor-pointer whitespace-nowrap ${
-                            activeEntry.chaptersRead.includes(activeChapter.number)
-                              ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--green)]'
-                              : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--gold)]'
-                          }`}
-                        >
-                          {activeEntry.chaptersRead.includes(activeChapter.number)
-                            ? 'Marked Read ✓'
-                            : 'Mark Chapter Read'}
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            aria-expanded={showComfortBar}
+                            aria-label="Reading comfort: paper tone and text size"
+                            title="Reading comfort (Aa)"
+                            onClick={() => {
+                              triggerLightHaptic(8);
+                              setShowComfortBar((v) => !v);
+                            }}
+                            className={`min-h-[38px] min-w-[40px] px-2.5 rounded-xl border font-[var(--display)] font-bold text-[13.5px] inline-flex items-center justify-center cursor-pointer transition ${
+                              showComfortBar || comfort.surface !== 'default' || comfort.fontScale !== 'comfort'
+                                ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)]'
+                                : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--gold)]'
+                            }`}
+                          >
+                            <span>Aa</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerLightHaptic(12);
+                              handleToggleChapter(activeChapter.number);
+                            }}
+                            className={`min-h-[38px] px-3.5 rounded-xl text-[13px] font-bold border transition-colors cursor-pointer whitespace-nowrap active:scale-[0.98] ${
+                              activeEntry.chaptersRead.includes(activeChapter.number)
+                                ? 'bg-[var(--ok-soft)] border-[var(--ok-line)] text-[var(--green)]'
+                                : 'bg-[var(--card)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--gold)]'
+                            }`}
+                          >
+                            {activeEntry.chaptersRead.includes(activeChapter.number)
+                              ? 'Marked Read ✓'
+                              : 'Mark Chapter Read'}
+                          </button>
+                        </div>
                       </div>
 
-                      <p className="text-[15px] leading-relaxed text-[var(--ink)]">
+                      {showComfortBar && (
+                        <div
+                          aria-label="Novel reading appearance controls"
+                          className="rounded-xl bg-[var(--card)] border border-[var(--line)] p-3 flex flex-wrap items-center justify-between gap-2.5 anim-rise"
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11.5px] font-bold text-[var(--dim)] mr-0.5">Paper</span>
+                            {(
+                              [
+                                {
+                                  id: 'default',
+                                  label: 'Default',
+                                  aria: 'Default theme paper',
+                                  swatch: 'bg-[var(--card)] border-[var(--line)]',
+                                },
+                                {
+                                  id: 'sepia',
+                                  label: 'Sepia',
+                                  aria: 'Warm Sepia paper',
+                                  swatch: 'bg-[#F5EEDB] border-[#DFC196]',
+                                },
+                                {
+                                  id: 'night',
+                                  label: 'Night',
+                                  aria: 'Quiet Night paper',
+                                  swatch: 'bg-[#161B29] border-[#344773]',
+                                },
+                              ] as Array<{
+                                id: ReadingSurface;
+                                label: string;
+                                aria: string;
+                                swatch: string;
+                              }>
+                            ).map((opt) => {
+                              const active = comfort.surface === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  aria-label={opt.aria}
+                                  aria-pressed={active}
+                                  onClick={() => updateComfort({ surface: opt.id })}
+                                  className={`min-h-[34px] px-2.5 rounded-lg border text-[12px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition whitespace-nowrap ${
+                                    active
+                                      ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--ink)]'
+                                      : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
+                                  }`}
+                                >
+                                  <span className={`w-3 h-3 rounded-full border ${opt.swatch} shrink-0`} />
+                                  <span>{opt.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {(
+                              [
+                                { id: 'compact', label: 'A−', aria: 'Compact text size' },
+                                { id: 'comfort', label: 'Aa', aria: 'Comfortable text size' },
+                                { id: 'large', label: 'A+', aria: 'Large text size' },
+                              ] as Array<{ id: ReadingFontScale; label: string; aria: string }>
+                            ).map((sz) => {
+                              const active = comfort.fontScale === sz.id;
+                              return (
+                                <button
+                                  key={sz.id}
+                                  type="button"
+                                  aria-label={sz.aria}
+                                  aria-pressed={active}
+                                  onClick={() => updateComfort({ fontScale: sz.id })}
+                                  className={`min-h-[34px] min-w-[38px] px-2 rounded-lg border font-[var(--display)] font-bold text-[12.5px] inline-flex items-center justify-center cursor-pointer transition ${
+                                    active
+                                      ? 'bg-[var(--acc-soft)] border-[var(--gold)] text-[var(--gold)]'
+                                      : 'bg-[var(--bg)] border-[var(--line)] text-[var(--dim)] hover:text-[var(--ink)]'
+                                  }`}
+                                >
+                                  {sz.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <p className="lead text-[var(--ink)]">
                         {activeChapter.summary}
                       </p>
 

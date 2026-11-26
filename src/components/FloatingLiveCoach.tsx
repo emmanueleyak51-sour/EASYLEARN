@@ -134,6 +134,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   const [promptInput, setPromptInput] = useState('');
   const [transcripts, setTranscripts] = useState<TranscriptTurn[]>([]);
   const [callSeconds, setCallSeconds] = useState(0);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const connectedModeRef = useRef<LiveCoachMode>(mode);
@@ -147,8 +148,21 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   const turnIdRef = useRef(1);
   const retryTimerRef = useRef<number | null>(null);
   const stopRingRef = useRef<(() => void) | null>(null);
-  const mutedLiveRef = useRef<boolean>(muted);
-  mutedLiveRef.current = muted;
+  const meterBarsRef = useRef<(HTMLSpanElement | null)[]>([]);
+  const mutedLiveRef = useRef<boolean>(muted || speakerMuted);
+  mutedLiveRef.current = muted || speakerMuted;
+
+  const updateMeterBars = useCallback((rms: number) => {
+    const clamped = Math.min(1, Math.max(0.12, rms * 4.2));
+    const weights = [0.55, 1, 0.8, 0.6];
+    for (let i = 0; i < 4; i++) {
+      const el = meterBarsRef.current[i];
+      if (el) {
+        const scale = Math.min(1, Math.max(0.22, clamped * weights[i]));
+        el.style.transform = `scaleY(${scale.toFixed(2)})`;
+      }
+    }
+  }, []);
 
   // Track exact pill dimensions as it switches between "Go Live" and active pill states
   useLayoutEffect(() => {
@@ -403,11 +417,11 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   }, [clearScheduledLiveAudio]);
 
   useEffect(() => {
-    if (muted) {
+    if (muted || speakerMuted) {
       stopCallRinging();
       clearScheduledLiveAudio();
     }
-  }, [muted, clearScheduledLiveAudio, stopCallRinging]);
+  }, [muted, speakerMuted, clearScheduledLiveAudio, stopCallRinging]);
 
   // Live call elapsed timer while connected to the teacher
   useEffect(() => {
@@ -439,6 +453,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
   }, []);
 
   const schedulePcm24kChunk = useCallback((base64Pcm: string) => {
+    if (mutedLiveRef.current) return;
     if (!outputCtxRef.current) {
       const AC =
         window.AudioContext ||
@@ -453,6 +468,15 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
     const floatSamples = pcm16Base64ToFloat32(base64Pcm);
     if (!floatSamples.length) return;
+
+    let sumSq = 0;
+    const step = Math.max(1, Math.floor(floatSamples.length / 64));
+    let count = 0;
+    for (let i = 0; i < floatSamples.length; i += step) {
+      sumSq += floatSamples[i] * floatSamples[i];
+      count += 1;
+    }
+    updateMeterBars(count > 0 ? Math.sqrt(sumSq / count) : 0.25);
 
     const audioBuffer = ctx.createBuffer(1, floatSamples.length, 24000);
     audioBuffer.getChannelData(0).set(floatSamples);
@@ -470,11 +494,12 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
       activeSourcesRef.current.delete(src);
       if (activeSourcesRef.current.size === 0) {
         setProfSpeaking(false);
+        updateMeterBars(0.12);
       }
     };
 
     src.start(startAt);
-  }, []);
+  }, [updateMeterBars]);
 
   const startLiveSession = useCallback(
     (targetMode: LiveCoachMode = mode, opts?: { preserveExpanded?: boolean; retryAttempt?: number }) => {
@@ -588,7 +613,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
           return;
         }
         stopCallRinging();
-        setLiveError('Call could not connect right now. Check your network and tap Call again.');
+        setLiveError('Connection lost. Check network and retry.');
         setLiveStatus('closed');
       };
 
@@ -686,7 +711,13 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
         if (!micActiveRef.current) return;
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const pcmBase64 = float32ToPcm16Base64(e.inputBuffer.getChannelData(0));
+        const chan = e.inputBuffer.getChannelData(0);
+        let sumSq = 0;
+        for (let i = 0; i < chan.length; i += 32) {
+          sumSq += chan[i] * chan[i];
+        }
+        updateMeterBars(Math.sqrt(sumSq / Math.max(1, Math.ceil(chan.length / 32))));
+        const pcmBase64 = float32ToPcm16Base64(chan);
         ws.send(JSON.stringify({ type: 'audio', data: pcmBase64 }));
       };
 
@@ -696,8 +727,8 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
       stopMicCapture();
       setLiveError(
         (err as Error).message?.includes('Permission')
-          ? `Microphone access was blocked. You can still type or tap questions below to hear ${coachName} live!`
-          : `Could not access microphone. Use the quick buttons or text box below to talk to ${coachName}.`
+          ? 'Mic blocked — type or tap a question below.'
+          : 'Mic unavailable — type or tap a question below.'
       );
     }
   };
@@ -796,9 +827,23 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
             >
               <button
                 type="button"
+                aria-pressed={speakerMuted}
+                onClick={() => setSpeakerMuted((v) => !v)}
+                aria-label={speakerMuted ? 'Unmute teacher speaker' : 'Mute teacher speaker'}
+                title={speakerMuted ? 'Unmute teacher voice' : 'Mute teacher voice'}
+                className={`w-8 h-8 rounded-lg border flex items-center justify-center cursor-pointer transition ${
+                  speakerMuted
+                    ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                    : 'bg-white/8 hover:bg-white/14 border-white/10 text-slate-200'
+                }`}
+              >
+                <Icon name={speakerMuted ? 'mute' : 'vol'} size={14} />
+              </button>
+              <button
+                type="button"
                 onClick={() => setPanelExpanded(false)}
                 aria-label="Minimize teacher call panel"
-                title="Minimize call to floating bar (keeps call active)"
+                title="Minimize call"
                 className="w-8 h-8 rounded-lg bg-white/8 hover:bg-white/14 border border-white/10 text-slate-200 flex items-center justify-center cursor-pointer transition"
               >
                 <Icon name="minus" size={14} />
@@ -818,19 +863,46 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
 
           {/* Body */}
           <div className="p-3.5 flex flex-col gap-3">
-            {/* Mic & Call Again Row */}
+            {/* Mic, Live Voice Meter & Call Again Row */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-medium text-slate-300 truncate">
-                {liveStatus === 'closed'
-                  ? 'Call disconnected'
-                  : liveStatus === 'connecting'
-                    ? `Ringing ${coachName}...`
-                    : profSpeaking
-                      ? `${coachName} is speaking...`
-                      : micActive
-                        ? 'Listening to your voice...'
-                        : 'Connected — turn on mic or type'}
-              </span>
+              <div className="flex items-center gap-2 min-w-0">
+                {liveStatus === 'ready' && (
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex items-end gap-0.5 h-3.5 shrink-0"
+                  >
+                    {[0, 1, 2, 3].map((i) => (
+                      <span
+                        key={i}
+                        ref={(el) => {
+                          meterBarsRef.current[i] = el;
+                        }}
+                        style={{ transform: 'scaleY(0.24)', transformOrigin: 'bottom' }}
+                        className={`w-1 h-3.5 rounded-full transition-transform duration-75 ${
+                          profSpeaking
+                            ? 'bg-emerald-400'
+                            : micActive
+                              ? 'bg-rose-400'
+                              : 'bg-slate-500'
+                        }`}
+                      />
+                    ))}
+                  </span>
+                )}
+                <span className="text-[12px] font-medium text-slate-300 truncate">
+                  {liveStatus === 'closed'
+                    ? 'Disconnected'
+                    : liveStatus === 'connecting'
+                      ? `Ringing ${coachName}...`
+                      : speakerMuted
+                        ? 'Speaker muted'
+                        : profSpeaking
+                          ? `${coachName} speaking`
+                          : micActive
+                            ? 'Listening...'
+                            : 'Mic off · Speak or type'}
+                </span>
+              </div>
 
               {liveStatus === 'closed' ? (
                 <button
@@ -855,7 +927,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
                   }`}
                 >
                   <Icon name={micActive ? 'mic' : 'micOff'} size={14} />
-                  <span>{micActive ? 'Mic Live — Speak' : 'Turn on Mic'}</span>
+                  <span>{micActive ? 'Mic Live' : 'Mic On'}</span>
                 </button>
               )}
             </div>
@@ -875,7 +947,7 @@ export function FloatingLiveCoach({ muted = false }: { muted?: boolean }) {
                 <p className="text-slate-300 text-[12.5px] leading-snug">
                   {liveStatus === 'connecting'
                     ? activeTutorMeta.connectingLine
-                    : `${coachName} is ready for "${context.topicName}". Turn on your mic or tap a prompt below!`}
+                    : `Ready for "${context.topicName}". Speak or tap a prompt.`}
                 </p>
               ) : (
                 transcripts.map((t) => (

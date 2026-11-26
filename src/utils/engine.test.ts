@@ -8,6 +8,7 @@ import {
   mpct,
   computeRatioPct,
   computeTopicsProgressPct,
+  computeTopicPriorityScore,
   predicted,
   nextMission,
   pickPractice,
@@ -147,6 +148,41 @@ describe('Mastery, practice progression, and spaced repetition', () => {
 
     const pq = pickPractice(p, topics[0], 3, []);
     assert.ok(pq);
+  });
+
+  it('weights recent attempts higher in mastery and prioritizes overdue review items in nextMission and pickPractice', () => {
+    const pImproving = makeBlankProgress();
+    pImproving.t['bases'] = {
+      att: [[0, 3], [0, 3], [0, 3], [1, 3], [1, 3], [1, 3]],
+      lesson: 1,
+      practice: 0,
+      boss: 0,
+    };
+    const pDeclining = makeBlankProgress();
+    pDeclining.t['bases'] = {
+      att: [[1, 3], [1, 3], [1, 3], [0, 3], [0, 3], [0, 3]],
+      lesson: 1,
+      practice: 0,
+      boss: 0,
+    };
+    assert.ok(
+      mastery(pImproving, 'bases') > mastery(pDeclining, 'bases'),
+      'Recent streak of right answers should yield higher mastery than early streak followed by recent misses'
+    );
+
+    const topics = SUBJECTS.maths.topics;
+    const pOverdue = makeBlankProgress();
+    const secondTopic = topics[1];
+    pOverdue.rev[`${secondTopic.id}-2`] = { due: 100, st: 0 };
+    assert.ok(
+      computeTopicPriorityScore(pOverdue, secondTopic, 100) >
+        computeTopicPriorityScore(pOverdue, topics[0], 100)
+    );
+    const mission = nextMission(pOverdue, topics.slice(0, 3), topics, 100);
+    assert.equal(mission?.t.id, secondTopic.id);
+
+    const picked = pickPractice(pOverdue, secondTopic, 1, [], 100);
+    assert.equal(picked?.id, `${secondTopic.id}-2`);
   });
 
   it('evaluates hard-earned Elemental Rank badges deterministically', () => {

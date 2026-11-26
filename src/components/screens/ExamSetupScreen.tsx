@@ -481,7 +481,7 @@ export function ExamSetupScreen({
                   Which exam are you preparing for?
                 </h2>
                 <span className="text-[12.5px] font-semibold text-[var(--dim)]">
-                  Tap one or select both if you are in secondary school
+                  Pick one, or both for SS3
                 </span>
               </div>
 
@@ -490,7 +490,7 @@ export function ExamSetupScreen({
                   type="button"
                   aria-pressed={jambSelected}
                   onClick={handleToggleJambOption}
-                  className={`p-4 rounded-[22px] border-2 text-left flex flex-col gap-2.5 transition-[border-color,background-color,transform] duration-150 active:translate-y-[1px] cursor-pointer ${
+                  className={`p-4 rounded-[22px] border-2 text-left flex flex-col gap-2 transition-[border-color,background-color,transform] duration-150 active:translate-y-[1px] cursor-pointer ${
                     jambSelected
                       ? 'bg-[var(--acc-soft)] border-[var(--gold)]'
                       : 'bg-[var(--card)] border-[var(--line)] hover:border-[var(--acc-line)]'
@@ -510,11 +510,11 @@ export function ExamSetupScreen({
                       <Icon name="check" size={14} />
                     </span>
                   </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-relaxed">
-                    Displays strictly your 4 JAMB subjects, trains you under tougher-than-UTME timing with tricky look-alike options, and unlocks Saturday /400 CBT rankings.
+                  <p className="text-[13px] text-[var(--muted)] leading-snug">
+                    Locks onto your 4 UTME subjects with 6/7 in 3:30 topic tests, twin-option traps, and Saturday /400 rankings.
                   </p>
                   <div className="text-[12px] font-bold text-[var(--gold)]">
-                    4 UTME subjects · Deep concepts · Tough /400 grading
+                    4 UTME subjects · Tough /400 grading
                   </div>
                 </button>
 
@@ -522,7 +522,7 @@ export function ExamSetupScreen({
                   type="button"
                   aria-pressed={waecSelected}
                   onClick={handleToggleWaecOption}
-                  className={`p-4 rounded-[22px] border-2 text-left flex flex-col gap-2.5 transition-[border-color,background-color,transform] duration-150 active:translate-y-[1px] cursor-pointer ${
+                  className={`p-4 rounded-[22px] border-2 text-left flex flex-col gap-2 transition-[border-color,background-color,transform] duration-150 active:translate-y-[1px] cursor-pointer ${
                     waecSelected
                       ? 'bg-[var(--acc-soft)] border-[var(--gold)]'
                       : 'bg-[var(--card)] border-[var(--line)] hover:border-[var(--acc-line)]'
@@ -542,11 +542,11 @@ export function ExamSetupScreen({
                       <Icon name="check" size={14} />
                     </span>
                   </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-relaxed">
-                    Trains you on WAEC Paper 1 Objectives + Paper 2 Theory marking-scheme points, practicals, and the common mistakes candidates must avoid.
+                  <p className="text-[13px] text-[var(--muted)] leading-snug">
+                    Paper 1 Objectives, Paper 2 Theory method rubrics, virtual practicals, and Chief Examiner alerts.
                   </p>
                   <div className="text-[12px] font-bold text-[var(--gold)]">
-                    Objectives + Theory rubric · Chief Examiner mistake shield
+                    Objectives + Theory rubric · Practicals
                   </div>
                 </button>
               </div>
@@ -555,38 +555,38 @@ export function ExamSetupScreen({
             {/* Dynamic Track Commitment Callout */}
             <SmoothViewSwitch viewKey={activeTrack || 'none'}>
               {activeTrack === 'jamb' && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1.5">
+                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1">
                   <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--gold)]">
-                    JAMB-Only Tough Mode Active
+                    JAMB-Only Tough Mode
                   </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-relaxed">
-                    Only your <strong>4 chosen JAMB subjects</strong> and <strong>4 Live Voice Teachers</strong> will appear across the app. Topic Tests require <strong>6/7 in 3:30</strong> with look-alike options so your real JAMB score matches or beats your Easy Learn score.
+                  <p className="text-[13px] text-[var(--muted)] leading-snug">
+                    Shows strictly your <strong>4 UTME subjects</strong> and <strong>4 voice teachers</strong>. Topic tests require <strong>6/7 in 3:30</strong>.
                   </p>
                 </div>
               )}
               {activeTrack === 'both' && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1.5">
+                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1">
                   <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--gold)]">
-                    Combined Secondary School Track · 70% JAMB + 30% WAEC
+                    Combined Track · 70% JAMB + 30% WAEC
                   </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-relaxed">
-                    Built for SS3 &amp; school candidates writing both exams: <strong>70% of your daily missions</strong> drill your 4 JAMB subjects under tough UTME conditions, while <strong>30%</strong> sharpens your WAEC theory steps and extra school subjects.
+                  <p className="text-[13px] text-[var(--muted)] leading-snug">
+                    <strong>70% of daily missions</strong> drill your 4 UTME subjects; <strong>30%</strong> covers WAEC theory and extra subjects.
                   </p>
                 </div>
               )}
               {activeTrack === 'waec' && (
-                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1.5">
+                <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--acc-line)] flex flex-col gap-1">
                   <div className="font-[var(--display)] font-bold text-[14.5px] text-[var(--gold)]">
-                    WAEC Distinction Track Active
+                    WAEC Distinction Track
                   </div>
-                  <p className="text-[13px] text-[var(--muted)] leading-relaxed">
-                    Trains you on how WASSCE papers are marked — full workings, SI units, labelled diagrams, and avoiding the top candidate mistakes flagged by WAEC Chief Examiners.
+                  <p className="text-[13px] text-[var(--muted)] leading-snug">
+                    Method workings, SI units, labelled diagrams, and Chief Examiner pitfall checks.
                   </p>
                 </div>
               )}
               {!activeTrack && (
                 <div className="p-4 rounded-[20px] bg-[var(--card)] border border-[var(--line)] text-[13px] font-semibold text-[var(--muted)]">
-                  Tap <strong>JAMB UTME</strong>, <strong>WAEC / SSCE</strong>, or <strong>both</strong> above to configure your subjects.
+                  Select <strong>JAMB UTME</strong>, <strong>WAEC / SSCE</strong>, or <strong>both</strong> above.
                 </div>
               )}
             </SmoothViewSwitch>
@@ -804,18 +804,16 @@ export function ExamSetupScreen({
             </div>
           </div>
         ) : (
-          /* Step 2: One-Time AI Voice Assistant Lineup */
+          /* Step 2: One-Time Voice Teacher Lineup */
           <div className="flex flex-col gap-5">
-            <p className="text-[13.5px] text-[var(--muted)] leading-relaxed">
-              {effectiveTrack === 'jamb'
-                ? 'Switch between your 4 JAMB Live Voice Teachers below just like choosing an AI voice assistant. They introduce themselves right here once — inside lessons and live calls, they skip all introductions and jump straight to teaching.'
-                : 'Switch between your subject Live Voice Teachers below to hear their voices once. Inside your lessons and calls, they never repeat introductions — they go straight into teaching.'}
+            <p className="text-[13.5px] text-[var(--muted)] leading-snug">
+              Preview your subject teachers below. They introduce themselves once here — inside lessons and calls, they teach right away.
             </p>
 
-            {/* Liquid Glass AI Voice Switcher */}
+            {/* Liquid Glass Voice Switcher */}
             <LiquidCapsuleBar
               roleType="tablist"
-              ariaLabel="Switch AI voice teacher"
+              ariaLabel="Switch voice teacher"
               size="lg"
               items={teacherLineup.map((card) => ({
                 id: card.subj,

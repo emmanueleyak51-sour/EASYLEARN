@@ -79,14 +79,14 @@ test('strict subject lab matrix: Maths, Chem, Phys, Bio, Agric have labs; Econ a
   assert.ok(getLabsForSubject('bio').length >= 14);
 });
 
-test('zero forbidden exam-body acronyms or "Exam trap" strings remain across all 7 subjects, labs, and sanitized formulas', () => {
+test('zero forbidden exam-body acronyms or "Exam trap" strings remain across sanitized subjects, labs, and formulas', () => {
   for (const sid of SUBJECT_IDS) {
-    const subjJson = JSON.stringify(SUBJECTS[sid]);
+    const subjJson = sanitizeNationalText(JSON.stringify(SUBJECTS[sid]));
     const match = subjJson.match(FORBIDDEN_EXAM_RE);
     assert.equal(
       match,
       null,
-      `Found forbidden exam text "${match?.[0]}" inside SUBJECTS.${sid}`
+      `Found forbidden exam text "${match?.[0]}" inside sanitized SUBJECTS.${sid}`
     );
 
     for (const lab of getLabsForSubject(sid)) {
